@@ -1,0 +1,41 @@
+# ============================================================================
+# Files never sent to the Docker build context — keeps builds fast and
+# prevents secrets/host-specific artifacts from ever reaching an image layer.
+# ============================================================================
+
+# dependencies (installed fresh inside the image)
+node_modules
+
+# build output (regenerated inside the image)
+.next
+out
+build
+*.tsbuildinfo
+next-env.d.ts
+
+# environment / secrets — the image must never bake in real credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# version control
+.git
+.gitignore
+
+# editor / OS
+.vscode
+.idea
+.DS_Store
+
+# tests, docs, and CI-only assets — not needed at runtime
+coverage
+tests
+docs
+*.md
+!README.md
+
+# Docker/compose files themselves (irrelevant inside the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml

@@ -13,7 +13,11 @@
     "type-check": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prepare": "husky"
+    "prepare": "husky",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app",
+    "docker:reset": "docker compose down -v"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

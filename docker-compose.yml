@@ -1,0 +1,144 @@
+# ============================================================================
+# Mudrax CRM — local development environment
+#
+# Per ADR 0001 (Accepted, frozen): Mudrax CRM is ONE deployable Next.js
+# application — the backend is Next.js Route Handlers running inside the same
+# app, not a separate service. This file therefore defines exactly ONE
+# application container (`app`), plus its two infrastructure dependencies
+# (`postgres`, `redis`). It intentionally does NOT define separate
+# frontend/backend containers, and does not introduce NestJS or any other
+# framework — doing so would redesign accepted architecture.
+#
+# Usage:
+#   cp .env.example .env        # fill in real local values first
+#   docker compose up -d --build
+#   docker compose logs -f app
+#
+# See docs/development/local-environment.md for the full setup guide.
+# ============================================================================
+
+networks:
+  # Single private bridge network shared by every service in this file, named
+  # explicitly (rather than relying on Compose's default network name) so it
+  # reads unambiguously in `docker network ls` and can be joined deliberately
+  # by any future local-only tooling (e.g. a DB GUI) without editing this file.
+  mudrax-network:
+    name: mudrax-crm-network
+    driver: bridge
+
+volumes:
+  # Named, Docker-managed volumes so database/cache state survives
+  # `docker compose down` and container rebuilds — only `down -v` (explicit,
+  # deliberate) destroys this data.
+  postgres-data:
+    name: mudrax-crm-postgres-data
+  redis-data:
+    name: mudrax-crm-redis-data
+
+services:
+  # ---------------------------------------------------------------------
+  # app — the ONE Next.js application (frontend UI + Route Handler
+  # "backend" APIs, per ADR 0001). Built from the `dev` stage of the root
+  # Dockerfile, which installs dependencies and generates the Prisma
+  # Client; the actual source code is bind-mounted below so edits on the
+  # host hot-reload inside the container without an image rebuild.
+  # ---------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: mudrax-crm-app
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      # Overrides the host-oriented values in .env so the app — when it runs
+      # *inside* this Compose network — reaches Postgres/Redis by their
+      # service name instead of "localhost". Every other variable (AUTH_*,
+      # APP_URL, etc.) still comes from .env via env_file above.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mudrax}:${POSTGRES_PASSWORD:-mudrax_dev_password}@postgres:5432/${POSTGRES_DB:-mudrax_crm}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:-mudrax_dev_password}@redis:6379
+      WATCHPACK_POLLING: "true" # reliable file-change detection from bind mounts on Windows/macOS Docker Desktop
+    volumes:
+      - .:/app
+      # Anonymous volumes: keep the container's own (Linux-built) copies of
+      # these directories instead of letting the bind mount above overwrite
+      # them with the host's copies — critical on Windows/macOS hosts, since
+      # node_modules can contain OS-specific native binaries (e.g. Prisma
+      # engines) that must match the container's Linux/musl runtime.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # No dedicated health-check Route Handler exists yet (no backend code
+      # has been generated per this task's scope) — this checks that the
+      # Next.js dev server responds at all. Point this at a real
+      # `/api/health` route once one exists.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - mudrax-network
+
+  # ---------------------------------------------------------------------
+  # postgres — primary relational datastore (Prisma's `db push`/`migrate`
+  # target). No schema/migrations are created by this task — this is the
+  # empty, ready-to-migrate-against server only.
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: mudrax-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mudrax}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mudrax_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mudrax_crm}
+    ports:
+      # Published to the host so `npx prisma studio` / a local DB GUI / the
+      # app running natively with `npm run dev` (outside Docker) can all
+      # still reach Postgres at localhost.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mudrax} -d ${POSTGRES_DB:-mudrax_crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mudrax-network
+
+  # ---------------------------------------------------------------------
+  # redis — general-purpose infrastructure, provisioned but not yet used by
+  # any application code (see .env.example for the documented future
+  # seams: sessions, caching, job queues, rate limiting, distributed
+  # locks). No module, port, or repository currently depends on this
+  # service — it exists so those future needs don't require re-visiting
+  # the development environment later.
+  # ---------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: mudrax-crm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-mudrax_dev_password}", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a ${REDIS_PASSWORD:-mudrax_dev_password} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mudrax-network
