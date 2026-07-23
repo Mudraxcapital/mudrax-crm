@@ -914,6 +914,197 @@ RBAC-scoping, freshness, and versioning discipline, the same
 owned-by-the-module-that-needs-it treatment already given to Trunk
 (Telephony) and Storage Location (Documents).
 
+## AI Platform Bounded Context
+
+This bounded context records accepted decisions from
+[ADR 0010](../adr/0010-ai-platform-intelligence-governance-and-provider-abstraction.md).
+It covers the pure intelligence layer of Mudrax CRM: a bounded context that
+consumes domain events already published by CRM Core, Loan Management,
+Telephony, Document Management, Notifications, and Reports & Analytics, and
+produces AI-derived artifacts — scores, summaries, classifications,
+predictions, recommendations, and automation — without ever owning any of
+those bounded contexts' business data. All entities below are owned by one
+of six modules under a single `ai-platform` top-level boundary, structurally
+parallel to `src/modules/*`: `ai-core`, `ai-documents`, `ai-telephony`,
+`ai-crm`, `ai-analytics`, and `ai-governance`.
+
+### Core AI
+
+Owner module: `ai-core`
+
+| Entity | Business responsibility |
+| --- | --- |
+| AI Provider | One vendor/runtime integration (OpenAI, Anthropic, Gemini, Azure OpenAI, Local, Ollama, future) behind a single `IAIProviderAdapter` port, discriminated by `ProviderType` |
+| AI Model | One invokable model version offered by an AI Provider, referenced by identity, never embedded |
+| AI Capability | Catalog of discrete AI function types (TextGeneration, Embedding, VisionOCR, SpeechToText, Classification, Scoring, Summarization, FunctionCalling, Reasoning), referenced many-to-many by Model, Agent, and Task |
+| AI Agent | Named, role-scoped AI actor bundling Capability requirements, Prompt Template(s), a Safety Policy, and a routing preference; never writes business-module state directly |
+| AI Workflow | Versioned orchestration definition — a sequence/graph of AI Tasks, single- or multi-agent; a running instance is a correlation over Task/Job records, never its own persisted aggregate |
+| AI Task | The durable business intent for one unit of AI work, referencing its trigger via a `SourceContext`; immutable once Requested |
+| AI Job | One concrete execution attempt of an AI Task against one Provider/Model; a retry always creates a new Job, never mutates a prior one |
+| AI Result | Generic, provider-agnostic output envelope, child of AI Job; always advisory, never a business module's trusted fact |
+| AI Configuration | Tenant/environment defaults — provider preferences, budget ceilings, feature flags; Global by default with an Organization-specific override by reference |
+| Prompt Template | Versioned, reusable, named prompt definition; Global by default with an Organization-specific override by reference |
+| Prompt Version | Child of Prompt Template; one immutable, effective-dated snapshot of prompt content, pinned by every Job that used it |
+| Prompt Variable | Child of Prompt Version; one named, typed placeholder — a PII-flagged Variable is always redacted/tokenized before leaving the AI Platform boundary |
+| Token Usage | Append-only child of AI Job; the atomic metering fact (tokens today; GPU-seconds/audio-seconds/images via a `UsageUnit` discriminator as new modalities land) |
+| AI Cost | Computed, immutable valuation of Token Usage against the AI Model's effective-dated pricing snapshot; rollups are always derived, never an independent counter |
+| AI Audit Log | Platform-level, structurally append-only record of every significant AI Platform action |
+
+### Document AI
+
+Owner module: `ai-documents`
+
+| Entity | Business responsibility |
+| --- | --- |
+| OCR Request | AI-side intent to extract text/data from one Document Version, raised in response to `documents`' published event |
+| OCR Result | Child of OCR Request; document-domain-interpreted output — full text, structured layout, confidence |
+| Extracted Entity | Child of OCR Result; one recognized field (PAN, Name, Amount, Date...) with type/value/location/confidence, always advisory |
+| Document Classification | AI-predicted Document Type/Category with confidence, surfaced as a suggestion only |
+| Face Match (future) | Biometric comparison score feeding `documents`' future eKYC Verification / Face Match Result |
+
+### Telephony AI
+
+Owner module: `ai-telephony`
+
+| Entity | Business responsibility |
+| --- | --- |
+| Transcription Job | References a Call Attempt/Call Recording by identity; delegates execution to AI Task/AI Job |
+| Call Transcript | Child of Transcription Job; diarized text transcript, external storage reference for large payloads |
+| Call Summary | Abstractive summary of one call (discussion points, commitments, next steps); never auto-writes `leads`' Follow-up |
+| Sentiment Analysis | Sentiment/tone/escalation-risk classification per call or segment |
+| Quality Score | AI-computed QA/compliance score for a call; never auto-affects an Agent's HR/performance record |
+
+### CRM AI
+
+Owner module: `ai-crm`
+
+| Entity | Business responsibility |
+| --- | --- |
+| Lead Score | AI-computed propensity/priority score for a Lead; never changes Lead Stage or Lead Assignment |
+| Lead Recommendation | Suggested action/content for a Lead; never creates a Loan Application or Loan Offer directly |
+| Next Best Action | Synthesis of Lead Score, Lead Recommendation, and Sentiment Analysis into cross-entity guidance; UI guidance only |
+| Duplicate Detection | AI-assisted probabilistic/semantic match signal supplementing, never replacing, `customers`' deterministic identity resolution |
+
+### Analytics AI
+
+Owner module: `ai-analytics`
+
+| Entity | Business responsibility |
+| --- | --- |
+| Forecast | AI-generated time-series projection of a future metric, consumed from `reports`' published Analytics Dataset |
+| Prediction | Single-instance AI-predicted outcome for one business entity |
+| Trend Analysis | AI-identified pattern/trend across a Dataset over time |
+| Anomaly Detection | Flagged statistical outlier requiring human attention; compliance/fraud-adjacent anomalies always route through Human Approval |
+
+### Platform Governance
+
+Owner module: `ai-governance`
+
+| Entity | Business responsibility |
+| --- | --- |
+| Model Routing Rule | Declarative (Capability, cost/latency/quality preference, tenant) -> ordered candidate Model list; resolved and pinned at Job dispatch |
+| Provider Failover Policy | Ordered Provider/Model priority list plus a health-threshold switch rule |
+| Provider Health Check | Child of AI Provider, append-only; recorded health-probe signal feeding failover decisions |
+| Rate Limit Policy | Enforced ceilings (requests/min, tokens/day, cost/day) per Provider/Agent/Organization, checked pre-flight |
+| Safety Policy | Versioned, immutable-per-version content-safety/PII/prompt-injection/topic rules applied to every Job's input and output |
+| Human Approval | One discrete human review-and-decide gate on an AI Result/Task, risk-tiered by an `AutomationTier` |
+| Feedback | Human correction/acceptance/rejection signal, aggregated per Prompt Version, Agent, and AI Experiment Variant |
+| AI Trigger Subscription | Admin-configured mapping from a consumed domain event to the AI Agent/Workflow that should react |
+| AI Experiment | Governed comparison of two or more configuration Variants (Prompt, Model, Provider, Temperature, Routing strategy) against a declared success metric |
+| AI Experiment Variant | Child of AI Experiment; one arm's configuration-override bundle and traffic-allocation percentage |
+
+### AI Platform Never Owns Business Data; It Owns Its Own Derived Artifacts
+
+`ai-platform` consumes domain events published by `leads`, `customers`,
+`loan-applications`, `loan-accounts`, `disbursements`, `telephony`,
+`documents`, and `notifications`, and consumes `reports`' published
+Analytics Dataset through the Export Job seam (rule 58) — the identical
+one-directional dependency discipline already established for
+`campaigns -> leads` (rule 11), `* -> notifications` (rule 48), and
+`reports` (rule 49), extended uniformly to AI. It never performs a live
+query or writes state back into any of them; it legitimately owns only its
+own derived artifacts — AI Result and every domain-specific specialization
+of it, Token Usage/AI Cost, and AI Audit Log — the same
+owned-by-the-module-that-needs-it treatment already given to Analytics
+Dataset (rule 58).
+
+### AI Task and AI Job Are Separate Aggregate Roots
+
+AI Task (the durable business intent) and AI Job (one concrete execution
+attempt against one Provider/Model) are permanently separate Aggregate
+Roots — the same intent/execution split already established for Loan
+Application/Loan Account (rule 15), Call Attempt retries (rule 25),
+Notification/Notification Delivery (rule 41), and Report Execution (rule
+55). A Job retry never mutates a completed/failed Job; it always creates a
+new Job linked by an additive `retryOfJobId` reference.
+
+### AI Result Is Generic and Advisory; Domain-Specific Entities Reference It, Never Replace Business-Module Records
+
+AI Result is the single, generic, provider-agnostic output envelope of an
+AI Job. Every domain-specific specialization — OCR Result, Call Summary,
+Lead Score, Forecast, and the rest — references it by `sourceAiResultId`
+rather than duplicating it, and is itself always advisory: it never
+auto-writes into another module's trusted state without an explicit
+human/confirmation step, extending rule 34's Extracted-Field discipline
+platform-wide. `ai-documents`' OCR Request/Result/Extracted Entity and
+future Face Match are AI execution detail only — `documents` remains the
+sole owner and sole writer of its own OCR Job, Extracted Field, and future
+Face Match Result (ADR 0007). `ai-crm`'s Duplicate Detection is a
+probabilistic signal only — `customers` remains the sole owner and sole
+writer of Customer Duplicate Candidate and Customer Merge (rule 9).
+
+### Prompt Template Is an Aggregate Root; Prompt Version Is Immutable Once Published
+
+Prompt Template is an Aggregate Root, Global by default with an
+Organization-specific override by reference — the same pattern already
+accepted for Notification Template (ADR 0008) and Report Template (rule
+50). Prompt Version is immutable once Published; any change creates a new
+Version, the same discipline already applied to Commission Policy Version
+(rule 20), IVR Flow Version, and Report Template Version (rule 55), so
+every AI Job can always prove exactly what prompt produced its Result.
+
+### Provider Abstraction Is a Single Discriminated Aggregate Root Behind One Port
+
+AI Provider is the single Aggregate Root through which `ai-core` reaches
+OpenAI, Anthropic, Gemini, Azure OpenAI, Local, and Ollama, distinguished
+only by a `ProviderType` discriminator — the same pattern already accepted
+for Trunk (rule 27), Storage Location (rule 38), and Notification Provider
+(rule 43). Domain logic depends only on the `IAIProviderAdapter` port;
+vendor-specific code lives in `src/integrations/ai-providers/*`. Model
+Routing Rule, Rate Limit Policy, and Provider Failover Policy resolutions
+are pinned onto the AI Job at dispatch time and never re-resolved
+retroactively, mirroring Eligibility Snapshot (rule 21) and the immutable
+Report Filter (rule 57).
+
+### AI Never Owns a Business Decision; Human Approval and Feedback Govern Every Automation Boundary
+
+Human Approval gates an AI Result by risk tier (`AutomationTier`) rather
+than by uniform default, so autonomous automation is possible without AI
+ever becoming the accountable decision-maker for money, compliance, or
+identity outcomes; an expired Pending approval always defaults to Rejected,
+never to silent auto-approval. Feedback never edits a Prompt Version — it
+can only inform a new candidate Version, optionally run as an AI
+Experiment, promoted only by an explicit human decision. AI Trigger
+Subscription is the only mechanism other bounded contexts' published events
+use to cause an AI Agent/Workflow to react, mirroring Notifications' Event
+Trigger Subscription (rule 48).
+
+### AI Experiment Governs Comparison Without Redesigning Prompt Version, AI Job, or Feedback
+
+AI Experiment is an independent Aggregate Root owning many AI Experiment
+Variant children, covering Prompt A/B testing, Prompt Version comparison,
+Model comparison, Provider comparison, Temperature comparison, and Routing
+strategy comparison as one generic construct rather than six parallel
+entity families — the same discriminator-generalization discipline already
+applied to Metric Definition (rule 53). It only ever references existing
+Prompt Versions/Models/Providers, never edits or forks them; AI Job and
+Feedback carry only additive, optional `experimentId`/`variantId`
+references, leaving their own definitions and lifecycles unchanged.
+Promotion is always an explicit human decision that creates a new version
+of whatever downstream configuration won — never an in-place mutation —
+which is what makes rollback symmetric and safe: it simply re-promotes the
+still-intact prior configuration.
+
 ## Future Platform Entities
 
 The following entities are approved for the future domain model but are not
@@ -1029,6 +1220,18 @@ flowchart LR
   Documents -.-> Reports
   LoanAccounts -- publishes events via Event Trigger Subscription --> Notifications
   Documents -- publishes events via Event Trigger Subscription --> Notifications
+  AIPlatform[AI Platform]
+  Leads -- publishes events --> AIPlatform
+  Telephony -- publishes events --> AIPlatform
+  Documents -- publishes events --> AIPlatform
+  LoanApplications -- publishes events --> AIPlatform
+  LoanAccounts -- publishes events --> AIPlatform
+  Notifications -- publishes events --> AIPlatform
+  Reports -- publishes Analytics Dataset via Export Job --> AIPlatform
+  AIPlatform -- publishes AI-derived events, never a direct write --> Leads
+  AIPlatform -- publishes AI-derived events, never a direct write --> Documents
+  AIPlatform -- publishes AI-derived events, never a direct write --> Telephony
+  AIPlatform -.-> Reports
 ```
 
 ## Domain Boundary Rules
@@ -1310,3 +1513,113 @@ flowchart LR
     governed by `reports`' own RBAC-scoping, freshness, and versioning
     discipline, the same owned-by-the-module-that-needs-it treatment already
     given to Trunk (rule 27) and Storage Location (rule 38).
+59. `ai-platform` owns no business data. It consumes domain events published
+    by `leads`, `customers`, `loan-applications`, `loan-accounts`,
+    `disbursements`, `telephony`, `documents`, and `notifications`, and
+    `reports`' published Analytics Dataset — the same one-directional
+    dependency discipline already established for `campaigns -> leads`
+    (rule 11), `* -> notifications` (rule 48), and `reports` (rule 49) — and
+    never performs a live query or a direct write against any of their
+    aggregates.
+60. AI Provider (owned by `ai-core`) is the single Aggregate Root
+    abstracting OpenAI, Anthropic, Gemini, Azure OpenAI, Local, and Ollama
+    behind a `ProviderType` discriminator and one `IAIProviderAdapter` port
+    — the same pattern already established for Trunk (rule 27), Storage
+    Location (rule 38), and Notification Provider (rule 43). Vendor-specific
+    code lives only in `src/integrations/ai-providers/*`.
+61. AI Model (owned by `ai-core`) is its own Aggregate Root referencing AI
+    Provider by identity — never embedded, mirroring "Bank offers Loan
+    Products" (rule 16). Pricing/context-window metadata is itself versioned
+    and effective-dated; a price change creates a new pricing record, never
+    edits history.
+62. AI Task (intent) and AI Job (execution), both owned by `ai-core`, are
+    permanently separate Aggregate Roots — the same intent/execution split
+    already established for Loan Application/Loan Account (rule 15), Call
+    Attempt retries (rule 25), Notification/Notification Delivery (rule 41),
+    and Report Execution (rule 55). A Job retry never mutates a
+    completed/failed Job; it creates a new Job linked by an additive
+    `retryOfJobId` reference.
+63. AI Result (owned by `ai-core`, child of AI Job) is always advisory and
+    never auto-writes into another module's trusted state — extending rule
+    34's Extracted-Field discipline platform-wide. Domain-specific result
+    entities (OCR Result, Lead Score, Call Summary, Forecast, and the rest)
+    reference it via `sourceAiResultId`, never duplicate it.
+64. Prompt Template (owned by `ai-core`) is an Aggregate Root, Global by
+    default with an Organization-specific override by reference — the same
+    pattern as Notification Template (ADR 0008) and Report Template (rule
+    50). Prompt Version is immutable once Published; any change creates a
+    new Version, the same discipline as Commission Policy Version (rule 20)
+    and IVR Flow Version.
+65. Token Usage (owned by `ai-core`) is an append-only child of AI Job; AI
+    Cost is a computed, immutable valuation pinned to the AI Model's
+    effective-dated pricing at the time of the Job — never an independently
+    mutable counter, the same discipline as Batch progress rollups (rule 46)
+    and Dashboard's never-stores-computed-values rule (rule 52).
+66. AI Audit Log (owned by `ai-core`, platform-level) exposes no
+    update/delete use-case at the domain layer at all — the same structural
+    append-only guarantee already established for Audit Trail (rule 8's
+    discipline / ADR 0007) and Communication Log (rule 47).
+67. `ai-documents`' OCR Request, OCR Result, Extracted Entity, and future
+    Face Match are AI execution detail only. `documents` remains the sole
+    owner and sole writer of its own OCR Job, Extracted Field (rule 34), and
+    future Face Match Result — never bypassed, never duplicated. Document
+    Classification never auto-sets `documents`' Document Type; it is always
+    a suggestion.
+68. `ai-telephony`'s Transcription Job never begins before a Call Recording
+    is finalized, referencing it by external Storage Reference only (rule
+    26's discipline). Call Summary, Sentiment Analysis, and Quality Score
+    are advisory only: Call Summary never auto-writes `leads`' Follow-up,
+    and Quality Score never auto-affects an Agent's HR/performance record
+    owned by `organization`/`users`.
+69. `ai-crm`'s Duplicate Detection is a probabilistic signal only.
+    `customers` remains the sole owner and sole writer of Customer
+    Duplicate Candidate and Customer Merge (rule 9) — AI never merges or
+    writes a Customer record. Lead Score, Lead Recommendation, and Next
+    Best Action never change Lead Stage, Lead Assignment, or create a Loan
+    Application/Offer directly.
+70. `ai-analytics` consumes only `reports`' published Analytics Dataset
+    through the Export Job seam (rule 58) — never Analytics Snapshot
+    internals or a live cross-module join. Any AI-derived metric
+    re-surfaced to `reports` is a new Metric Definition with `Domain = AI`
+    (rule 53), never a redesign of Metric Definition. Compliance/
+    fraud-adjacent Anomaly Detection always routes through Human Approval
+    before any downstream action.
+71. Model Routing Rule and Rate Limit Policy (owned by `ai-governance`) are
+    resolved and pinned onto the AI Job at dispatch time and never
+    re-resolved retroactively — mirroring the Eligibility Snapshot (rule
+    21) and immutable Report Filter (rule 57) discipline. Provider Failover
+    Policy and Provider Health Check mirror the identical Notifications
+    Provider Failover pattern (rule 43's section).
+72. Safety Policy (owned by `ai-governance`) is versioned and immutable per
+    version; every AI Job records which version applied. An input violation
+    blocks dispatch; an output violation forces Human Approval regardless
+    of the Task's normal auto-accept configuration.
+73. Human Approval (owned by `ai-governance`) is risk-tiered by an
+    `AutomationTier` value (autonomous / policy-pre-approved /
+    always-live-approval) so AI is never the accountable decision-maker for
+    a Tier-3 (money, compliance, identity) outcome. An expired Pending
+    approval always defaults to Rejected, never to silent auto-approval.
+74. Feedback (owned by `ai-governance`) never edits a Prompt Version; it can
+    only inform the creation of a new candidate Prompt Version, optionally
+    run as an AI Experiment, before a human Prompt Owner explicitly
+    promotes it — AI never self-promotes its own configuration changes.
+75. AI Trigger Subscription (owned by `ai-governance`) is the only
+    mechanism other bounded contexts' published events use to cause an AI
+    Agent/Workflow to react — the same one-directional seam already
+    established for Notifications' Event Trigger Subscription (rule 48).
+76. AI Experiment (owned by `ai-governance`) is an independent Aggregate
+    Root owning many AI Experiment Variant children; it references, but
+    never edits or forks, existing Prompt Versions, Models, and Providers.
+    AI Job and Feedback carry only additive, optional
+    `experimentId`/`variantId` references — their own definitions and
+    lifecycles (rules 62 and 74) are otherwise unchanged.
+77. AI Experiment promotion is always a manual, explicit human decision and
+    always creates a new version of whatever downstream configuration won
+    (a new Prompt Template pointer, a new Model Routing Rule version, a new
+    AI Configuration version) — never an in-place mutation. Rollback is
+    symmetric: it re-promotes the still-intact prior configuration, never
+    deletes or overwrites Experiment history.
+78. Tier-3 (compliance-sensitive) AI Experiments require Human Approval on
+    every Result during the run and a second human sign-off distinct from
+    the Experiment Owner at promotion — the same four-eyes discipline
+    already implied by Escalation Rule's tiered routing in `organization`.
