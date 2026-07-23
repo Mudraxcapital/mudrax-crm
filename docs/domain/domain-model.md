@@ -480,6 +480,177 @@ for Lead Stage vs. Call Feedback Status (ADR 0004). On completion,
 resulting Call Feedback Status record, mirroring the one-directional
 `campaigns -> leads` dependency already established for Lead Assignment.
 
+## Document Management Bounded Context
+
+This bounded context records accepted decisions from
+[ADR 0007](../adr/0007-document-management-aggregate-boundaries-and-storage-abstraction.md).
+It covers everything required to receive, classify, version, extract data
+from, verify, package, retain, and safely expose every file Mudrax Capitals
+collects — KYC evidence, income proof, collateral papers, loan execution
+documents — independent of, and referenced by identity from, CRM Core, Loan
+Management, and Telephony. All entities below are owned by a single module,
+`documents`.
+
+### Core File Entities
+
+| Entity | Business responsibility |
+| --- | --- |
+| Attachment | Generic registration of any raw uploaded file, before any business meaning is attached to it; used by any module, not only compliance documents |
+| Document | Business-classified, workflow-bearing wrapper around one Attachment's version lineage; the entity that enters KYC/loan/compliance workflows |
+| Document Version | Child entity of Document; one immutable file revision; file bytes are always an external Storage Reference, never inlined |
+
+### Classification Catalogs
+
+| Entity | Business responsibility |
+| --- | --- |
+| Document Type | Admin catalog entry ("PAN Card," "Aadhaar," "Salary Slip," "Bank Statement," "Photo," "Signature") |
+| Document Category | Admin catalog grouping Document Types (KYC, Income Proof, Collateral, Loan Execution, Compliance, Other) |
+
+### Checklist & Bundling
+
+| Entity | Business responsibility |
+| --- | --- |
+| Document Checklist Template | Reusable definition of required Document Types; Global by default or scoped to one Loan Product by reference |
+| Checklist Template Item | Child entity of Document Checklist Template; one required Document Type entry with a mandatory/optional flag |
+| Document Checklist | Independent Aggregate Root; the materialized, per-case tracking instance generated from the applicable templates |
+| Checklist Item | Child entity of Document Checklist; one required-item tracking row referencing a fulfilling Document |
+| Document Bundle | Independent Aggregate Root; a complete, presentable, verifiable, shareable package of Documents for one business process ("Loan Application Documents," "KYC Package," "Property Documents," "Co-applicant Documents") |
+| Bundle Member | Child entity of Document Bundle; links one Document (and its fulfilled Checklist Item, if any) into the Bundle |
+
+### Verification & Extraction
+
+| Entity | Business responsibility |
+| --- | --- |
+| Document Verification | Independent Aggregate Root; one decision cycle confirming a specific, pinned Document Version is genuine, legible, and correct |
+| OCR Job | Child entity of Document Version; one background text/data extraction run, carrying an engine/type discriminator |
+| Extracted Field | Child entity of OCR Job; one recognized key/value with a confidence score, always advisory |
+
+### Storage & Upload
+
+| Entity | Business responsibility |
+| --- | --- |
+| Storage Location | One configured storage backend binding (Local Disk, NAS, S3, Azure Blob) behind an `IStorageProvider` port |
+| Upload Session | One resumable/chunked/multi-file upload operation, idempotent by session token |
+
+### Retention & Sharing
+
+| Entity | Business responsibility |
+| --- | --- |
+| Retention Policy | Versioned, append-only rule set for how long a Document Category/Type must be retained and under what trigger |
+| Document Sharing | Independent Aggregate Root; one controlled, time-boxed exposure of a Document or Document Bundle, pinned to specific Versions |
+| Share Access Log Entry | Child entity of Document Sharing; one recorded access event, append-only |
+| Audit Trail | Platform-level Aggregate Root; immutable, append-only record of every significant action across this bounded context |
+
+### Future Entities
+
+| Entity | Business responsibility |
+| --- | --- |
+| Digital Signature | Cryptographically verifiable execution of a pinned Document Version by a named signatory; permanently distinct from Watermark |
+| eKYC Verification | Automated identity-proofing session producing a Document Verification with `method = eKYC` |
+| Face Match Result | Child entity of eKYC Verification; one biometric comparison outcome |
+
+### Attachment vs. Document
+
+Attachment and Document are deliberately separate entities. Attachment is
+the generic, low-level registration of any raw uploaded file — an Excel
+import file, a WhatsApp media capture, an export — that carries no business
+meaning by itself and never needs KYC-grade classification, verification,
+checklist linkage, or retention rules. Document is the business-classified
+wrapper, built on one Attachment's version lineage, that participates in
+KYC/loan/compliance workflows. Not every Attachment is promoted to a
+Document; every Document traces back to exactly one Attachment lineage. A
+file must pass virus/malware scanning before it may be promoted, OCR'd, or
+shared.
+
+### Document Version, OCR, and Extracted Fields Stay Child Entities
+
+Document Version and OCR Job are child entities — of Document and Document
+Version respectively — never independent Aggregate Roots, because neither
+has dominant queries or invariants outside its immediate parent, the same
+test that rejected EMI Schedule and Campaign Analytics as standalone
+aggregates. OCR execution itself is background-job orchestration, not domain
+state; the domain only records the Job's lifecycle and its Extracted Field
+children. Extracted Fields are permanently advisory and never auto-write
+into another module's trusted state (e.g., `customers`' Customer Identifier)
+without an explicit human/Verification confirmation step.
+
+### Document Verification, Document Bundle, and Document Sharing Are Independent Aggregate Roots
+
+Document Verification, Document Bundle, and Document Sharing are each
+promoted to independent Aggregate Roots, applying the same
+independent-lifecycle test already used to pull Follow-up out of Lead (ADR
+0004) and keep Agent Session independent of Call Attempt (ADR 0006): each
+has dominant, portfolio-wide queries (a verification queue, packages awaiting
+lock, everything shared externally this quarter) that a parent-scoped
+child entity could not efficiently answer. Document Verification and
+Document Sharing always pin the exact Document Version(s) they act on —
+never "the current version" — the same defense-in-depth Commission applies
+by snapshotting Commission Policy Version (ADR 0005).
+
+### Document Checklist and Document Bundle
+
+Document Checklist Template can be Global or scoped to one Loan Product **by
+reference**, never embedded — the identical "Bank offers Loan Product"
+pattern from ADR 0005. Document Checklist is the per-case materialized
+tracking instance. Document Bundle is an additive grouping layer on top:
+Checklist defines *what's required*; Bundle curates *how required items are
+grouped and delivered* into a presentable, lockable, shareable package (one
+case can have one Checklist but several Bundles — KYC Package, Property
+Documents, Co-applicant Documents, Loan Execution Documents). Bundle
+completeness is always a derived rollup over its members' existing Document
+Verification outcomes — never a parallel or shortcut verification path.
+Multiple applicants are supported through Document Bundle's optional
+`Subject` reference (`PrimaryApplicant` / `CoApplicant` / `Asset` / `None`),
+with `CoApplicant` resolving by identity against `loan-applications`'
+existing Co-applicant entity.
+
+### Documents Are Polymorphic Through a Single Owner Context
+
+Every Document carries exactly one `OwnerContext = {ownerType: Customer |
+Lead | LoanApplication | LoanAccount | Disbursement, ownerId}` — the same
+discriminator pattern already accepted for `TrunkType` and Application Type.
+Customer is the permanent anchor for KYC-classified Documents, mirroring
+`customers`' own principle that Customer is the durable identity anchor;
+cross-case reuse is always an explicit Link (a Checklist Item or Bundle
+Member referencing an existing Document), never a re-parenting of `Owner
+Context`. Customer Documents, Loan Documents, and KYC Documents are
+therefore not separate entity types — they are a Document classified by
+`OwnerContext.ownerType` and/or `Document Category`. A Customer Merge
+redirect (ADR 0004) must resolve every Document that pointed at the
+merged-away Customer — never orphaned.
+
+### Storage Abstraction
+
+Storage Location is the single Aggregate Root through which `documents`
+reaches Local Disk, NAS, S3, and Azure Blob, distinguished only by a
+`StorageProviderType` discriminator — the same pattern already used for
+Telephony's Trunk (ADR 0006). Domain logic depends only on the
+`IStorageProvider` port; vendor-specific code lives in
+`src/integrations/storage/*`. This is what lets S3-compatible providers,
+GCS, or a NAS replacement be added later as new Storage Location records and
+adapters, never as a redesign of Attachment, Document, or Document Version.
+
+### Retention, Archive, and Document Workflow State Stay Separate
+
+Retention Policy (owned by `documents`, versioned and append-only) answers
+"how long must this be kept." Archive is a storage-tier lifecycle state on
+Document/Document Version, not a new entity duplicating Document data.
+Document's own workflow state (Draft/Active/Superseded/Verified/Rejected)
+is a third, separate concern. These three must never be collapsed into one
+concept, the same discipline already applied to Application Status vs. Loan
+Status vs. EMI Installment pay-status (ADR 0005) and Call Disposition vs.
+Call Feedback Status (ADR 0006). Purge is the only hard, irreversible
+action and requires policy eligibility, no active Legal Hold, and no open
+Verification/Sharing/Bundle-lock referencing the Document.
+
+### Watermark vs. Digital Signature
+
+Watermark is a declarative rendering policy applied at view/export time, not
+a persisted per-view entity. It is permanently distinct from the future
+Digital Signature capability — cosmetic overlay versus legally binding
+cryptographic execution — and the two must never be collapsed into one
+concept.
+
 ## Future Platform Entities
 
 The following entities are approved for the future domain model but are not
@@ -578,6 +749,14 @@ flowchart LR
   LoanApplications -- references originating account --> LoanAccounts
   LoanApplications -.-> Reports
   LoanAccounts -.-> Reports
+  Documents[Documents]
+  Customers -- OwnerContext: KYC anchor --> Documents
+  Leads -- OwnerContext --> Documents
+  LoanApplications -- OwnerContext + Checklist Template scope --> Documents
+  LoanAccounts -- OwnerContext --> Documents
+  Disbursements -- OwnerContext --> Documents
+  LoanProducts -- Checklist Template scope --> Documents
+  Documents -.-> Reports
 ```
 
 ## Domain Boundary Rules
@@ -681,3 +860,44 @@ flowchart LR
 32. Call Disposition (owned by `telephony`, system-detected) and Call
     Feedback Status (owned by `leads`, human-entered) are permanently
     separate catalogs and must never be collapsed into one concept.
+33. Attachment (generic raw-file registration) and Document (business-
+    classified wrapper), both owned by `documents`, are permanently separate
+    entities. Not every Attachment is promoted to a Document; a file must
+    pass virus/malware scanning before promotion, OCR, or sharing.
+34. Document Version and OCR Job (owned by `documents`) are child entities —
+    of Document and Document Version respectively — never independent
+    Aggregate Roots. File bytes are always an external Storage Reference,
+    never inlined. Extracted Fields are always advisory and never auto-write
+    into another module's trusted state without an explicit human/
+    Verification confirmation step.
+35. Document Verification, Document Bundle, and Document Sharing (owned by
+    `documents`) are independent Aggregate Roots, each pinning the exact
+    Document Version(s) they act on — never "the current version."
+36. Document Checklist Template (owned by `documents`) can be Global or
+    scoped to one Loan Product by reference — never embedded inside Loan
+    Product. Document Bundle derives its required-item list from the case's
+    Document Checklist and never invents its own; Bundle completeness is
+    always a derived rollup over its members' Document Verification
+    outcomes, never a parallel verification path.
+37. Every Document (owned by `documents`) carries exactly one accountable
+    `OwnerContext` (`Customer` / `Lead` / `LoanApplication` / `LoanAccount` /
+    `Disbursement`) at a time. Customer is the permanent anchor for
+    KYC-classified Documents; cross-case reuse is always an explicit Link,
+    never a re-parenting of `OwnerContext`. Customer Documents, Loan
+    Documents, and KYC Documents are classifications of Document, not
+    separate entity types.
+38. Storage Location (owned by `documents`) is the single Aggregate Root
+    abstracting Local Disk, NAS, S3, and Azure Blob behind a
+    `StorageProviderType` discriminator. Domain logic depends only on the
+    `IStorageProvider` port; vendor-specific code lives in
+    `src/integrations/storage/*`, never in the domain layer.
+39. Retention Policy, Archive (a storage-tier lifecycle state, not an
+    entity), and Document's own workflow state (owned by `documents`) are
+    three permanently separate concerns and must never be collapsed. Purge
+    is the only hard, irreversible action and requires policy eligibility,
+    no active Legal Hold, and no open Verification/Sharing/Bundle-lock
+    referencing the Document.
+40. Watermark (a declarative rendering policy) and future Digital Signature
+    (a legally binding cryptographic execution artifact), both owned by
+    `documents`, are permanently separate concepts and must never be
+    collapsed into one.
