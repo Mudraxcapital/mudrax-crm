@@ -676,7 +676,7 @@ module, `notifications`.
 | Entity | Business responsibility |
 | --- | --- |
 | Notification Template | Aggregate Root; versioned, reusable content definition. Global by default, with an Organization-specific override by reference |
-| Notification Channel | Aggregate Root; tenant-level configuration of one medium (Email/SMS/WhatsApp/Push/In-App/future Webhook) |
+| Notification Channel | Aggregate Root; Organization-level configuration of one medium (Email/SMS/WhatsApp/Push/In-App/future Webhook) |
 
 ### Provider Abstraction
 
@@ -942,7 +942,7 @@ Owner module: `ai-core`
 | AI Task | The durable business intent for one unit of AI work, referencing its trigger via a `SourceContext`; immutable once Requested |
 | AI Job | One concrete execution attempt of an AI Task against one Provider/Model; a retry always creates a new Job, never mutates a prior one |
 | AI Result | Generic, provider-agnostic output envelope, child of AI Job; always advisory, never a business module's trusted fact |
-| AI Configuration | Tenant/environment defaults — provider preferences, budget ceilings, feature flags; Global by default with an Organization-specific override by reference |
+| AI Configuration | Organization/environment defaults — provider preferences, budget ceilings, feature flags; Global by default with an Organization-specific override by reference |
 | Prompt Template | Versioned, reusable, named prompt definition; Global by default with an Organization-specific override by reference |
 | Prompt Version | Child of Prompt Template; one immutable, effective-dated snapshot of prompt content, pinned by every Job that used it |
 | Prompt Variable | Child of Prompt Version; one named, typed placeholder — a PII-flagged Variable is always redacted/tokenized before leaving the AI Platform boundary |
@@ -1002,7 +1002,7 @@ Owner module: `ai-governance`
 
 | Entity | Business responsibility |
 | --- | --- |
-| Model Routing Rule | Declarative (Capability, cost/latency/quality preference, tenant) -> ordered candidate Model list; resolved and pinned at Job dispatch |
+| Model Routing Rule | Declarative (Capability, cost/latency/quality preference, Organization) -> ordered candidate Model list; resolved and pinned at Job dispatch |
 | Provider Failover Policy | Ordered Provider/Model priority list plus a health-threshold switch rule |
 | Provider Health Check | Child of AI Provider, append-only; recorded health-probe signal feeding failover decisions |
 | Rate Limit Policy | Enforced ceilings (requests/min, tokens/day, cost/day) per Provider/Agent/Organization, checked pre-flight |
@@ -1113,7 +1113,15 @@ implemented.
 ### Consent
 
 - **Purpose:** legal and auditable evidence that a Customer permitted a
-  specific communication or data-processing purpose.
+  specific communication or data-processing purpose. Per
+  [ADR 0011](../adr/0011-platform-contracts-cross-cutting-architecture.md),
+  this Consent entity governs **Marketing Consent** only — explicit,
+  purpose-specific, provable permission for Marketing-category outreach.
+  **Operational Consent** (the implicit permission to service a Customer's
+  own request — a callback, a loan-status update) is a distinct concept
+  already satisfied today by the accepted Notification Preference/Category
+  logic (Transactional/OTP always deliver, ADR 0008) and is never gated by
+  this entity.
 - **Business Responsibility:** records what was consented to, the purpose,
   channel, capture source, timestamp, policy/version presented, and withdrawal
   history.
@@ -1127,10 +1135,17 @@ implemented.
 - **Lifecycle:** Requested -> Granted -> Withdrawn / Expired / Superseded.
 - **Business Rules:** consent must be purpose-specific, provable, and
   append-only in history; withdrawal stops future communication where legally
-  required but does not erase the evidence record.
-- **Future Expansion:** DNC/DND registry checks, consent-policy versioning,
-  jurisdiction-specific retention, and consent synchronization with external
-  communication providers.
+  required but does not erase the evidence record; it always references a
+  `policyVersion` by identity rather than embedding policy text, the same
+  "reference a Version, never embed" discipline already used for Prompt
+  Version and Commission Policy Version.
+- **Future Expansion:** DNC/DND registry checks, jurisdiction-specific
+  retention, and consent synchronization with external communication
+  providers, plus non-communication purposes (Bank data-sharing consent,
+  credit-bureau pull consent, AI-processing consent) added as new
+  `ConsentPurpose` discriminator values — the same discriminator-
+  generalization discipline already used for Metric Definition's `Domain` —
+  never as new parallel consent-like entities per purpose.
 
 ### Communication Preference — Realized as Notification Preference
 
@@ -1164,6 +1179,24 @@ Marketing-category delivery.
 - **Future Expansion:** automated retry policies, dead-letter queues, payload
   retention rules, signature-verification evidence, provider health analytics,
   and operational alerting.
+
+## Platform Contracts
+
+Enterprise-wide, cross-cutting contracts — Event Platform (envelope,
+naming, versioning, correlation/causation, idempotency, outbox, retry, dead
+letter queue, ordering, retention), RBAC Data Scope (Self / Team / Branch /
+Organization / System), Security & Identity (PAN/Aadhaar handling,
+encryption, hashing, secrets management, key rotation, MFA/SSO seams),
+Audit & Immutability (one canonical audit-record shape, tamper evidence,
+retention/archival, read-only administrative access), Organization
+terminology, Activity Timeline vs. Audit Log vs. Communication Log, Consent
+(Operational vs. Marketing), and cross-cutting naming conventions — are
+recorded in [ADR 0011](../adr/0011-platform-contracts-cross-cutting-architecture.md)
+and detailed in full in
+[`docs/platform/platform-contracts.md`](../platform/platform-contracts.md).
+These contracts apply identically to every bounded context in this document;
+they do not redefine any bounded context's ownership, aggregate boundaries,
+or lifecycle recorded above.
 
 ## Relationships
 
@@ -1623,3 +1656,41 @@ flowchart LR
     every Result during the run and a second human sign-off distinct from
     the Experiment Owner at promotion — the same four-eyes discipline
     already implied by Escalation Rule's tiered routing in `organization`.
+79. Every published domain event, from every module, uses one shared Event
+    Envelope (`eventId`, `eventType`, `eventVersion`, `occurredAt`, `source`,
+    `aggregateType`/`aggregateId`/`aggregateVersion`, `correlationId`,
+    `causationId`, `actorContext`, `organizationId`, `payload`) — a platform
+    contract with no owning module, defined in
+    [ADR 0011](../adr/0011-platform-contracts-cross-cutting-architecture.md).
+    Delivery is always at-least-once; every subscriber is responsible for
+    its own idempotency by `eventId`. Ordering is guaranteed only within one
+    aggregate, never across aggregates or modules.
+80. Every `RolePermission` grant (ADR 0002) carries a Data Scope value —
+    Self, Team, Branch, Organization, or System — resolved once, centrally,
+    by `rbac` against `organization`'s current Team/Branch membership; no
+    module re-implements its own scope filtering.
+81. PAN and Aadhaar are masked by default everywhere displayed, encrypted at
+    rest, and must never cross a module boundary unmasked — not in an event
+    payload, a log, an exported Analytics Dataset (rule 58), or an AI Prompt
+    Variable (rule 63) — extending rule 63's redaction discipline to every
+    boundary crossing, not only AI's.
+82. Every module-owned audit record (Audit Trail — rule 39's discipline;
+    Communication Log — rule 47; AI Audit Log — rule 66) follows one
+    canonical field shape and is structurally append-only with no
+    update/delete use case at the domain layer; each additionally carries
+    tamper-evidence (a hash chain or periodic signed checkpoint). Audit
+    retention is decoupled from Event retention (rule 79) and Document
+    Retention Policy (rule 39). Administrative Roles have read-only access
+    to audit data, and viewing an audit record is itself audited.
+83. "Organization" is the sole canonical term for company/company-unit scope
+    across this codebase; "tenant" is retired platform-wide (ADR 0011).
+84. Activity Timeline is a derived read projection, assembled from events
+    (rule 79) plus each module's own Audit Trail and Communication Log, for
+    one business record's chronological view. It is distinct from, and
+    never a substitute for, Audit Log or Communication Log (rule 8), nor
+    are they a substitute for it.
+85. Consent (future) governs Marketing Consent only; Operational Consent is
+    the implicit, already-governed permission to service a Customer's own
+    request (rule 44's Category logic). Future non-communication consent
+    purposes are added as new `ConsentPurpose` discriminator values, never
+    new parallel entities.

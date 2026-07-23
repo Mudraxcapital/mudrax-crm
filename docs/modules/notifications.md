@@ -46,8 +46,8 @@ for the full reasoning behind every decision below.
   Active -> Deprecated -> Archived. Every content edit creates a new,
   append-only `Template Version`; a live Notification always pins the exact
   Version it used.
-- `Notification Channel` - Aggregate Root; tenant-level configuration of one
-  medium, carrying a `ChannelType` discriminator (`Email` / `SMS` /
+- `Notification Channel` - Aggregate Root; Organization-level configuration of
+  one medium, carrying a `ChannelType` discriminator (`Email` / `SMS` /
   `WhatsApp` / `Push` / `InApp` / `Webhook`[future]) and rate-limit/quiet-
   hours defaults. Lifecycle: Configured -> Active -> Suspended -> Retired.
 
@@ -209,7 +209,7 @@ for the full reasoning behind every decision below.
 
 | Role | Capability |
 | --- | --- |
-| Admin | Full configuration of Notification Channel, Provider, Provider Failover Policy, Notification Template (Global), Event Trigger Subscription; can suspend any Channel/Provider tenant-wide; views Communication Log across the organization |
+| Admin | Full configuration of Notification Channel, Provider, Provider Failover Policy, Notification Template (Global), Event Trigger Subscription; can suspend any Channel/Provider Organization-wide; views Communication Log across the organization |
 | Manager | Views Communication Log and Notification Batch/Broadcast progress within their span; approves Organization-specific Template overrides for their scope |
 | Marketing | Authors and dispatches Broadcast and Notification Batch (marketing-category); manages Notification Subscription topics; cannot touch Transactional/OTP templates or Provider configuration |
 | Team Leader / Caller | Triggers ad hoc predefined WhatsApp/Email sends against their own assigned Leads (per BRD §13), which create a Notification through the standard intent -> delivery path; cannot configure Channels, Providers, or Templates |

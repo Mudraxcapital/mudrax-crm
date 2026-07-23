@@ -14,7 +14,7 @@ Short, numbered documents recording *why* a significant architecture decision wa
 | --- | --- | --- |
 | [0001](0001-modular-monolith-and-clean-architecture.md) | Modular Monolith with Clean Architecture | Accepted |
 | [0002](0002-users-and-enterprise-rbac.md) | Users and Enterprise RBAC | Accepted |
-| [0003](0003-organization-and-campaign-bounded-contexts.md) | Organization and Campaign Bounded Contexts | Accepted (amended by 0004) |
+| [0003](0003-organization-and-campaign-bounded-contexts.md) | Organization and Campaign Bounded Contexts | Accepted (amended by 0004; Campaign Analytics superseded by 0004, further generalized by 0009) |
 | [0004](0004-crm-core-customer-identity-and-lead-ownership.md) | CRM Core: Customer Identity, Lead Ownership, and Campaign/Reports Boundaries | Accepted |
 | [0005](0005-loan-management-aggregate-boundaries-and-lifecycle.md) | Loan Management: Aggregate Boundaries and Lifecycle | Accepted |
 | [0006](0006-telephony-call-center-aggregate-boundaries.md) | Telephony & Call Center: Aggregate Boundaries and Provider Abstraction | Accepted |
@@ -22,3 +22,4 @@ Short, numbered documents recording *why* a significant architecture decision wa
 | [0008](0008-notifications-communications-aggregate-boundaries-and-provider-abstraction.md) | Notifications & Communications: Aggregate Boundaries and Provider Abstraction | Accepted |
 | [0009](0009-reports-and-analytics-aggregate-boundaries-and-dataset-abstraction.md) | Reports & Analytics: Aggregate Boundaries and Dataset/BI Abstraction | Accepted |
 | [0010](0010-ai-platform-intelligence-governance-and-provider-abstraction.md) | AI Platform: Intelligence Layer, Governance, and Provider Abstraction | Accepted |
+| [0011](0011-platform-contracts-cross-cutting-architecture.md) | Platform Contracts: Cross-Cutting Architecture (Events, RBAC Data Scope, Security & Identity, Audit) | Accepted |

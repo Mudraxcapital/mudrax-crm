@@ -174,7 +174,7 @@ configuration instead of an API key; a future provider (Bedrock, Mistral,
 Cohere, an in-house fine-tuned model server) is one new `ProviderType`
 value plus one new adapter — zero change to AI Task, AI Job, Prompt
 Template, or Model Routing Rule. **Model Routing Rule** (declarative
-Capability/preference/tenant -> ordered candidate Model list) and **Rate
+Capability/preference/Organization -> ordered candidate Model list) and **Rate
 Limit Policy** (per Provider/Agent/Organization ceilings, checked
 pre-flight, before Model Routing resolves a Provider) are both resolved and
 pinned onto the AI Job at dispatch time and never re-resolved

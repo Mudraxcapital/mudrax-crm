@@ -62,7 +62,7 @@ for the full reasoning behind every decision below.
   output envelope. Lifecycle: Produced -> (optionally) Validated/Rejected
   via Human Approval -> Consumed -> Superseded. Always advisory; never a
   business module's trusted fact.
-- `AI Configuration` - Aggregate Root; tenant/environment defaults —
+- `AI Configuration` - Aggregate Root; Organization/environment defaults —
   provider preferences, budget ceilings, feature flags. Global by default
   with an Organization-specific override by reference.
 - `Prompt Template` - Aggregate Root; a versioned, reusable, named prompt
@@ -162,7 +162,7 @@ for the full reasoning behind every decision below.
 ### Platform Governance (`ai-governance`)
 
 - `Model Routing Rule` - Aggregate Root, versioned; declarative
-  (Capability, preference, tenant) -> ordered candidate Model list.
+  (Capability, preference, Organization) -> ordered candidate Model list.
   Resolved and pinned onto the AI Job at dispatch time, never re-resolved
   retroactively.
 - `Provider Failover Policy` - Aggregate Root/child of AI Configuration;
