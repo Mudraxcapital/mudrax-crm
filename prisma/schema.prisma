@@ -1,0 +1,17 @@
+// Main Prisma schema file — generator and datasource blocks ONLY.
+//
+// This project uses Prisma's multi-file schema support (GA since v6.7.0).
+// Domain models are intentionally NOT defined yet. Each business module will
+// get its own file under `prisma/models/` (e.g. `leads.prisma`,
+// `loan-applications.prisma`) once schema design is approved — see
+// `prisma/models/README.md`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// NOTE (Prisma ORM v7): the datasource `url` is configured in
+// `prisma.config.ts`, not here — schema-level `url` is no longer supported.
+datasource db {
+  provider = "postgresql"
+}
