@@ -789,6 +789,131 @@ document's established one-directional dependency discipline
 `notifications` — they are always translated first through the
 platform-level future Webhook Event Log below.
 
+## Reports & Analytics Bounded Context
+
+This bounded context records accepted decisions from
+[ADR 0009](../adr/0009-reports-and-analytics-aggregate-boundaries-and-dataset-abstraction.md).
+It covers everything required to turn the facts published by every other
+bounded context into curated metrics, KPIs, dashboards, and reports, through
+to scheduled delivery, export, and governed BI/Data-Warehouse/AI
+consumption. `reports` is a **derived, read-side** bounded context: it never
+becomes the source of truth for another module's business data. All entities
+below are owned by a single module, `reports`.
+
+| Entity | Business responsibility |
+| --- | --- |
+| Dashboard | A named, curated visual workspace composed of Dashboard Widgets, scoped to an audience (Executive, Branch, Team, Personal); stores only layout and bindings, never data |
+| Dashboard Widget | Child entity of Dashboard; one visual tile binding a visualization type to exactly one Metric Definition or KPI, with its own embedded Report Filter |
+| Metric Definition | The single reusable calculation source — source event stream or Analytics Dataset, aggregation, dimensions, freshness policy, and a `Domain` discriminator realizing every domain-scoped analytics need |
+| KPI | Independent Aggregate Root; a business-curated indicator elevating one Metric Definition to leadership visibility with a versioned target/threshold and a derived status |
+| Analytics Dataset | Independent Aggregate Root; a named, reusable, governed analytical data source — a curated extract from published domain events, never a database table or a live cross-module join |
+| Analytics Snapshot | An immutable, timestamped, pre-computed rollup of one or more Metric Definitions, computed under a Hybrid live/periodic freshness policy; the backbone for historical/trend/forecast reporting |
+| Report Template | Reusable, admin/system-defined report blueprint; Global by default with an Organization-specific override by reference; versioned |
+| Saved Report | A named, owned, reusable parameterization of a Report Template plus a Report Filter |
+| Scheduled Report | A recurring execution policy that runs a Saved Report on a cadence and routes output through Export Job |
+| Report Filter | Value Object embedded on Dashboard Widget, Saved Report, and Report Execution; supports absolute and relative/dynamic expressions |
+| Report Execution | Independent Aggregate Root; one concrete, immutable run of a Report Template Version plus a resolved Report Filter |
+| Export Job | Independent Aggregate Root; one render operation producing a deliverable artifact (PDF/Excel/CSV) or a governed BI/Data-Warehouse feed connection from a Dataset |
+
+`reports` also owns two concepts that are deliberately **not** modeled as
+separate persisted entities:
+
+- **Report** — business language only, fully realized by Report Template +
+  Saved Report + Report Execution.
+- **Drill Down** — a runtime navigation capability, not stored state.
+
+And it realizes **Audit Analytics, Organization Analytics, User Analytics,
+Lead Analytics, Loan Analytics, Telephony Analytics, and Document
+Analytics** entirely as `Domain` discriminator values on Metric Definition
+and Analytics Snapshot — never as seven independent entity families.
+
+### Reports Never Owns Business Data; It Owns Its Own Derived Data
+
+`reports` consumes domain events published by `leads`, `campaigns`,
+`loan-applications`, `loan-accounts`, `disbursements`, `banks`,
+`loan-products`, `telephony`, `documents`, and `notifications` — the
+identical one-directional dependency discipline already established for
+`campaigns -> leads` and `* -> notifications` — and never performs a live
+cross-module join or writes state back into any of them. It legitimately
+owns Analytics Dataset, Analytics Snapshot, Report Execution results, and
+Export Job output as its own derived work product, the same way
+Communication Log is `notifications`' own record despite summarizing six
+other modules' events. This extends rule 12 below to every module uniformly.
+
+### Dashboard Stores Only Configuration; KPI Is an Independent Aggregate Root
+
+Dashboard and Dashboard Widget store only layout, bindings, and visibility
+scope — never computed values, so Real-time KPIs remain structurally
+possible and multiple Dashboards can never drift out of sync on the same
+metric. KPI is promoted to an independent Aggregate Root — not a Value
+Object or a Dashboard/Widget child — applying the same independent-lifecycle
+test already used for Follow-up (this document, CRM Core section) and Agent
+Session (Telephony section): the same KPI is referenced by many Dashboards,
+and its versioned target/threshold history changes on its own cadence,
+independent of any one Dashboard's edit cycle. KPI wraps exactly one Metric
+Definition by reference, never duplicating its formula.
+
+### Metric Definition Is Domain-Discriminated Instead of Seven Parallel Analytics Entities
+
+Metric Definition carries a `Domain` discriminator (`Lead` / `Loan` /
+`Telephony` / `Document` / `User` / `Organization` / `Audit`) — the same
+discriminator pattern already accepted for `TrunkType`, `StorageProviderType`,
+and `ChannelType`/`ProviderType`. Audit Analytics, Organization Analytics,
+User Analytics, Lead Analytics, Loan Analytics, Telephony Analytics, and
+Document Analytics are each fully realized as a `Domain` value on Metric
+Definition and Analytics Snapshot — never as separate entities or entity
+families, and never as eight independently-evolving schemas for what is
+structurally the same computation-and-history shape.
+
+### Analytics Snapshot Is Hybrid and Structurally Append-Only
+
+Analytics Snapshot is structurally append-only (no update/delete use-case,
+the same guarantee as Audit Trail and Communication Log) and computed under
+a per-Metric-Definition freshness policy (`RealTime` / `NearRealTime` /
+`Periodic`) — Hybrid, not purely live or purely batch. Slow-changing,
+high-volume metrics run on a Periodic Snapshot cadence and back historical
+trend/forecast reporting; low-latency, operationally urgent metrics compute
+live/near-real-time directly from the event-driven read projection. Every
+Snapshot pins the Metric Definition Version it used, so a later formula
+change never rewrites history.
+
+### Report Is Not a Persisted Entity; Report Execution and Export Job Are Independent Aggregate Roots
+
+"Report" is business language only, realized by Report Template + Saved
+Report + Report Execution — the same test already applied to reject a
+wrapping "Call" aggregate (Telephony section) and an independent Campaign
+Analytics aggregate (rule 12). Report Execution is an independent Aggregate
+Root applying the identical intent/execution split already used for Loan
+Application/Loan Account, Call Attempt/"Call", and Notification/Notification
+Delivery — immutable once Completed, shared by both ad hoc and
+Scheduled-Report-triggered runs. Export Job is a further independent
+Aggregate Root, downstream of a completed Report Execution only, whose
+rendered output is registered as a `documents`-owned Attachment (storage
+mechanics only, never promoted to a compliance Document) and whose delivery
+is always handed off to `notifications`. Scheduled Report always references
+exactly one Saved Report and fires independently, with Pause kept distinct
+from Cancel, mirroring Notification Batch's discipline.
+
+### Analytics Dataset Is the Governed Semantic Layer for Metric Definition, Report Template, and Every External Consumer
+
+Analytics Dataset is an independent Aggregate Root — a named, versioned,
+reusable analytical data source assembled from published domain events,
+never a database table or a live cross-module join. Metric Definition and
+Report Template may each optionally reference a Dataset by identity instead
+of independently re-deriving the same extraction/join logic; KPI and
+Dashboard never reference a Dataset directly, reaching it only transitively
+through Metric Definition, to keep a single path to source data. External
+Power BI, Tableau, and any future Data Warehouse feed or AI/forecasting
+capability connect only to a **published** Analytics Dataset through the
+Export Job seam — never directly to internal Metric Definition calculation
+logic, the Analytics Snapshot store, or raw domain events — so RBAC scoping
+is enforced once, centrally, rather than re-implemented inside an external
+tool. Analytics Dataset is deliberately not promoted to a generic,
+platform-wide data-access layer: it remains governed by `reports`' own
+RBAC-scoping, freshness, and versioning discipline, the same
+owned-by-the-module-that-needs-it treatment already given to Trunk
+(Telephony) and Storage Location (Documents).
+
 ## Future Platform Entities
 
 The following entities are approved for the future domain model but are not
@@ -867,6 +992,8 @@ flowchart LR
   Campaigns -.-> Reports[Reports and Analytics]
   Leads -.-> Reports
   Telephony -.-> Reports
+  Users -.-> Reports
+  Organization -.-> Reports
   Consent[Consent - future] --> Customers
   Users --> Notifications[Notifications]
   Customers --> Notifications
@@ -891,6 +1018,7 @@ flowchart LR
   LoanApplications -- references originating account --> LoanAccounts
   LoanApplications -.-> Reports
   LoanAccounts -.-> Reports
+  Disbursements -.-> Reports
   Documents[Documents]
   Customers -- OwnerContext: KYC anchor --> Documents
   Leads -- OwnerContext --> Documents
@@ -1101,3 +1229,84 @@ flowchart LR
     event-publish pattern). Inbound provider webhooks are never parsed
     directly by `notifications`; they are always translated first through
     the platform-level future Webhook Event Log (rule 8).
+49. `reports` never owns another module's business data. It consumes domain
+    events published by `leads`, `campaigns`, `loan-applications`,
+    `loan-accounts`, `disbursements`, `banks`, `loan-products`, `telephony`,
+    `documents`, and `notifications` — the same one-directional dependency
+    discipline already established for `campaigns -> leads` (rule 11) and
+    `* -> notifications` (rule 48) — and never performs a live cross-module
+    join or writes state back into any of them. It owns only its own derived
+    data: Analytics Dataset, Analytics Snapshot, Report Execution results,
+    and Export Job output, extending rule 12's Campaign Analytics discipline
+    to every module uniformly.
+50. "Report" is never modeled as a persisted Aggregate Root. It is fully
+    realized by Report Template (definition), Saved Report
+    (parameterization), and Report Execution (one run) — the same test
+    already applied to reject a wrapping "Call" aggregate (rule 25).
+51. KPI (owned by `reports`) is an independent Aggregate Root, never a Value
+    Object or a child of Dashboard/Dashboard Widget/Metric Definition. It
+    references exactly one Metric Definition by identity and owns an
+    append-only KPI Target Version history; its On-Track/At-Risk/Off-Track
+    status is always derived at evaluation time, never hand-set.
+52. Dashboard and Dashboard Widget (owned by `reports`) store only layout,
+    widget bindings, and visibility scope — never computed business data. A
+    Widget's rendered value is always resolved at render time from its bound
+    Metric Definition/KPI per that definition's freshness policy, never
+    persisted on the Dashboard/Widget record itself.
+53. Metric Definition (owned by `reports`) carries a `Domain` discriminator
+    (`Lead` / `Loan` / `Telephony` / `Document` / `User` / `Organization` /
+    `Audit`) — the same discriminator pattern already established for
+    `TrunkType` (rule 27) and `StorageProviderType` (rule 38). Audit
+    Analytics, Organization Analytics, User Analytics, Lead Analytics, Loan
+    Analytics, Telephony Analytics, and Document Analytics are realized
+    entirely as `Domain` values on Metric Definition and Analytics Snapshot
+    and must never become seven separate entity families.
+54. Analytics Snapshot (owned by `reports`) is structurally append-only — no
+    update/delete use-case at the domain layer, the same guarantee already
+    established for Audit Trail (rule 8) and Communication Log (rule 47) —
+    and is computed under a Hybrid freshness policy (`RealTime` /
+    `NearRealTime` / `Periodic`) declared per Metric Definition. Every
+    Snapshot pins the Metric Definition Version it used; a later formula
+    change never rewrites a historical Snapshot's meaning.
+55. Report Execution (owned by `reports`) is an independent Aggregate Root,
+    immutable once Completed — the same intent/execution split already
+    established for Loan Application/Loan Account (rule 15), Call
+    Attempt/"Call" (rule 25), and Notification/Notification Delivery (rule
+    41). Ad hoc and Scheduled-Report-triggered executions share one state
+    machine. Scheduled Report always references exactly one Saved Report and
+    fires independently of prior fires' outcomes; its Pause/Resume is a
+    distinct, non-terminal state pair, never collapsed with Cancel, mirroring
+    Notification Batch (rule 46).
+56. Export Job (owned by `reports`) is an independent Aggregate Root,
+    downstream of an already-Completed Report Execution only. A retry always
+    creates a new, linked Export Job — never mutating the failed one,
+    mirroring Notification Retry (rule 42) and Dialer Retry (rule 25's
+    discipline). Its rendered output is registered as a `documents`-owned
+    Attachment (rule 33) for storage mechanics only — never promoted to a
+    compliance-classified Document — and its delivery is always handed off
+    to `notifications`, never re-implemented in `reports`. `Export Format`
+    is a discriminator value on Export Job, never a separate entity.
+57. Report Filter (owned by `reports`) is a Value Object embedded on
+    Dashboard Widget, Saved Report, and Report Execution — it has no
+    independent identity or lifecycle. It can only narrow, never widen, the
+    requester's RBAC-scoped data boundary, and a Report Execution's Filter
+    is immutable history even if its Saved Report's default Filter is later
+    edited. Drill Down (owned by `reports`) is never a persisted entity — a
+    runtime navigation capability, the same treatment already given to
+    Click-to-Call (rule 25's Telephony section) — that re-checks RBAC scope
+    at every hop and never copies record-level detail from the owning
+    module into `reports`' own store.
+58. Analytics Dataset (owned by `reports`) is an independent Aggregate Root
+    representing a named, versioned, reusable analytical data source — never
+    a database table and never a live cross-module join. Metric Definition
+    and Report Template may each optionally reference a Dataset by identity;
+    KPI and Dashboard never reference a Dataset directly, reaching it only
+    transitively through Metric Definition. External Power BI, Tableau, any
+    future Data Warehouse feed, and future AI/forecasting analytics connect
+    only to a published Analytics Dataset through the Export Job seam —
+    never directly to internal Metric Definition logic, the Analytics
+    Snapshot store, or raw domain events. Analytics Dataset is never
+    promoted to a generic, platform-wide data-access layer; it remains
+    governed by `reports`' own RBAC-scoping, freshness, and versioning
+    discipline, the same owned-by-the-module-that-needs-it treatment already
+    given to Trunk (rule 27) and Storage Location (rule 38).
