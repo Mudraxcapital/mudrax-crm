@@ -10,9 +10,9 @@ Each module is internally layered `domain -> application -> infrastructure -> pr
 | `users` | Stable employee identity and profile, independent of job function |
 | `rbac` | Roles, permissions, user-role assignments, and access policy evaluation |
 | `organization` | Teams, Branches, Regions, Departments, calendars, working hours, and escalation policies |
-| `customers` | Permanent customer record and multi-year history |
-| `leads` | Inbound sales inquiries prior to a Loan Application |
-| `campaigns` | Campaign lifecycle, membership, assignment, and campaign analytics |
+| `customers` | Permanent customer record and multi-year history, identity resolved via weighted PAN/Aadhaar/phone/email matching |
+| `leads` | Inbound sales inquiries prior to a Loan Application; owns Lead identity and Lead Assignment |
+| `campaigns` | Campaign lifecycle, membership, and allocation decisions (initiates assignment through `leads`; does not own Campaign Analytics) |
 | `loan-applications` | Central loan request lifecycle |
 | `loan-products` | Catalog of loan products per bank |
 | `banks` | Lending partner / NBFC master data |
@@ -53,8 +53,25 @@ the architecture only; no database schema or Prisma models exist yet. See
 - `organization` owns Teams, Branches, Regions, Departments, Holiday
   Calendars, Working Hours, and Escalation Rules. It references Users and Roles
   but never duplicates identity or authorization.
-- `campaigns` owns Campaign, Campaign Membership, Campaign Assignment, and
-  Campaign Analytics. `leads` continues to own Lead identity and lifecycle;
-  `telephony` continues to own call execution and Dialer Campaigns.
+- `campaigns` owns Campaign, Campaign Membership, and allocation decisions.
+  It never writes Lead state directly — it initiates assignment through
+  `leads`' public API. `leads` owns Lead identity, lifecycle, and Lead
+  Assignment (current assignee and history); `telephony` continues to own
+  call execution and Dialer Campaigns; `reports` owns Campaign Analytics.
+
+## Customer Identity Boundary
+
+- `customers` is the sole owner of Customer identity, resolved from a
+  weighted set of identifiers — PAN and Aadhaar (masked/hashed) as strong
+  anchors when available, multiple phone numbers and email addresses
+  (including historical values) as supporting, non-exclusive signals. Phone
+  number is explicitly not the identity anchor.
+- Every Lead belongs to exactly one Customer from the moment it is created;
+  `leads` requests identity resolution from `customers` and never writes
+  Customer fields directly.
+- See `docs/domain/domain-model.md` and
+  `docs/adr/0004-crm-core-customer-identity-and-lead-ownership.md` for the
+  full identity-resolution waterfall, Identity Confidence tiers, Duplicate
+  Candidate handling, and Customer Merge rules.
 
 **Never put here**: framework/route code (belongs in `src/app`), generic reusable code with no business meaning (belongs in `src/shared`), or app-wide infrastructure singletons (belongs in `src/infra`).

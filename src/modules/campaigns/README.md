@@ -28,36 +28,46 @@ Users remain identities owned by `users`; calling eligibility is authorized by
 
 ### Campaign Assignment
 
-Represents an allocation operation that distributes Campaign Leads among active
-members.
+Represents an allocation *decision* that distributes Campaign Leads among
+active members. This module decides the strategy and effective split; it
+never writes Lead state itself.
 
-- Records the assignment strategy, effective allocation, assigning User, and
-  resulting Lead allocations.
+- Records the assignment strategy, effective allocation, and assigning User.
 - Supports equal, percentage-based, and future rule-based strategies.
-- Reassignment must preserve prior allocation history for audit and reporting.
-- Individual Leads remain owned by `leads`; this module owns the campaign-level
-  allocation decision and history.
+- Execution happens by initiating an assignment command against `leads`'
+  public API — `leads` is the sole writer of the resulting Lead Assignment
+  (current assignee and its history). This keeps the dependency strictly
+  one-directional (`campaigns` -> `leads`) and avoids a circular dependency
+  between the two modules.
+- Individual Leads and Lead Assignment remain owned by `leads`; this module
+  owns only the campaign-level allocation *decision*.
 
-### Campaign Analytics
+### Campaign Analytics — owned by `reports`, not this module
 
-A derived, read-only business view of Campaign performance, including
-assignment distribution, calling progress, connectivity, Lead outcomes,
-conversion, and future acquisition cost/ROI.
+Campaign performance — assignment distribution, calling progress,
+connectivity, Lead outcomes, conversion, and future acquisition cost/ROI —
+is a derived, read-only business view owned by `reports`, computed from the
+authoritative facts this module, `leads`, and `telephony` publish.
 
-- Analytics never mutates Campaigns, Leads, Calls, or Users.
-- Metric definitions must be consistent with the source modules.
-- Historical analytics must respect the organizational scope authorized by
-  `rbac`.
+- This module supplies Campaign, Membership, and Assignment-decision facts;
+  it does not itself compute or store an analytics entity.
+- Centralizing analytics in `reports` avoids two modules independently
+  computing, and potentially disagreeing on, the same performance numbers.
+- See `docs/adr/0004-crm-core-customer-identity-and-lead-ownership.md`.
 
 ## Relationships
 
-- `leads` owns Lead identity, qualification, stage, and conversion.
+- `leads` owns Lead identity, qualification, stage, conversion, and Lead
+  Assignment. This module initiates assignment operations through `leads`'
+  public API; it never writes Lead state directly.
 - `users` supplies stable User identities for membership and assignment.
 - `rbac` authorizes campaign creation, membership management, and assignment.
 - `organization` supplies Team, Branch, Region, and Department scope.
 - `telephony` may execute a Campaign through a separate Dialer Campaign; CRM
   Campaign and telephony execution remain distinct concepts.
-- `reports` and `analytics` consume Campaign Analytics as read-only data.
+- `reports` owns Campaign Analytics, computed from facts this module,
+  `leads`, and `telephony` publish; this module does not own an analytics
+  entity itself.
 - `activity-timeline` records significant Campaign membership and assignment
   events.
 
@@ -68,8 +78,8 @@ conversion, and future acquisition cost/ROI.
 - Assignment is allowed only to active Campaign members who have the required
   Roles/Permissions.
 - Campaign closure stops new assignments but preserves history.
-- Campaign Analytics is derived from authoritative source entities; it is not
-  manually editable.
+- This module never mutates Lead state directly; it always goes through
+  `leads`' public API to initiate an assignment.
 
 ## Future Expansion
 

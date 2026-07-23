@@ -54,3 +54,13 @@ Their detailed responsibilities are documented in
 
 This decision does not authorize database tables, Prisma models, APIs, UI,
 authentication, or business-logic implementation.
+
+## Amendment Note
+
+[ADR 0004](0004-crm-core-customer-identity-and-lead-ownership.md) refines two
+points of this decision without altering the Organization/Campaign split
+established above: Campaign Assignment is an allocation *decision* executed
+through `leads`' public API rather than a direct Lead-state write, and
+Campaign Analytics is owned by `reports`, not by `campaigns`. This note is
+additive only; the Context, Decision, and Consequences above are preserved
+as originally accepted.
