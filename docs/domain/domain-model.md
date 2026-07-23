@@ -340,6 +340,146 @@ and per-installment-payment-event, respectively. They must never be
 collapsed into one concept, the same discipline ADR 0004 established for
 Lead Stage vs. Call Feedback Status.
 
+## Telephony & Call Center Bounded Context
+
+This bounded context records accepted decisions from
+[ADR 0006](../adr/0006-telephony-call-center-aggregate-boundaries.md). It
+covers call execution and everything needed to route, place, receive,
+monitor, record, and staff calls — starting from a Lead's Click-to-Call and
+ending at the Call Feedback Status handoff back to CRM Core. All entities
+below are owned by a single module, `telephony`.
+
+### Connectivity & Carrier Layer
+
+| Entity | Business responsibility |
+| --- | --- |
+| Trunk | Aggregate Root unifying PRI, GSM Gateway, and SIP behind one `TrunkType` discriminator, so adding or replacing a provider never requires redesigning call execution |
+| Telephony Line | One addressable channel/circuit/registration within a Trunk; bound to at most one live Call Attempt at a time |
+| SIM Inventory | Physical/eSIM asset master record (carrier, MSISDN, plan, activation state), referenced by identity from a GSM Gateway-backed Telephony Line, never embedded |
+| DID Numbers | Registry of owned/leased inbound numbers; resolves to exactly one routing target (IVR, Call Queue, or Extension) at a time |
+| Caller ID | Outbound-presented-number policy attached to a Trunk, Telephony Line, or Dialer Campaign; supports rotation without editing historical Call Attempts |
+| Extension | Aggregate Root for an Agent's dial-able endpoint; references a User by identity; modeled device/location-agnostic to support Remote Agents without redesign |
+
+### Call Execution
+
+| Entity | Business responsibility |
+| --- | --- |
+| Call Attempt | **Aggregate Root.** The atomic unit of telephony execution — one dial-out or inbound ring, from initiation to termination, hosting every live feature (recording, transfer, conference, monitoring) that occurs within it |
+| Call Status | Value Object on Call Attempt: Queued / Ringing / Answered / OnHold / Transferring / Conferencing / Completed / Missed / Failed / Abandoned |
+| Call Direction | Value Object on Call Attempt: Inbound / Outbound / Internal |
+| Call Disposition | Value Object on Call Attempt: a small, fixed, system-detected technical outcome (Answered / No-Answer / Busy / Failed / Voicemail / Congestion) — permanently distinct from `leads`' Call Feedback Status |
+| Click-to-Call | Not a persisted entity — the command/use-case that creates a new Call Attempt from a Lead |
+
+**Call is not modeled as a stored aggregate.** It exists only as business
+language for "a phone conversation"; where a grouping view across multiple
+Call Attempts is needed (e.g. "how many attempts to reach this Lead"), it is
+served by a derived read projection, never a persisted parent aggregate. See
+ADR 0006 for the full reasoning.
+
+### Live Call Features
+
+| Entity | Business responsibility |
+| --- | --- |
+| Call Recording | Child entity of Call Attempt for metadata and an access-audit trail; the audio payload is always an external reference, never inlined |
+| Call Monitoring Session | Child entity of Call Attempt with a `Mode` of Listen / Whisper / Barge; every mode transition is a mandatory, individually logged event |
+| Call Transfer | Child entity of Call Attempt recording one Blind or Warm transfer event; multiple per Call Attempt are append-only, never overwritten |
+| Call Conference | Child entity of Call Attempt recording added-participant join/leave events; Barge is realized as a supervisor joining this same mechanism |
+| IVR | Aggregate Root for a configured voice-menu flow, versioned (IVR Flow Version) so a completed Call Attempt always references the exact flow that routed it |
+
+### Queueing & Agent Workforce
+
+| Entity | Business responsibility |
+| --- | --- |
+| Call Queue | Aggregate Root for a live-call holding pool; owned by `telephony`, not `users`/`organization` |
+| Queue Strategy | Value Object embedded on Call Queue: ring-all / round-robin / skill-based / longest-idle-agent, plus overflow/timeout rules |
+| Queue Membership | Historical, append-only child entity of Call Queue recording Agent eligibility over time (`effectiveFrom`/`effectiveTo`); never a single mutable "current members" field |
+| Agent Session | **Aggregate Root, independent of Call Attempt.** One Agent's continuous work session (Login to Logout): assigned Extension, availability state (Available/Break/Idle/Busy/After Call Work), Queue Participation, Remote Agent context |
+| Queue Participation | Child entity of Agent Session recording the live, session-scoped fact that an already-eligible Agent joined/left a Queue's active pool; distinct from Queue Membership's eligibility roster |
+
+### Outbound Dialing
+
+| Entity | Business responsibility |
+| --- | --- |
+| Dialer Campaign | Aggregate Root; independent execution configuration (pacing, Trunk/Line pool, Caller ID policy, retry defaults) that optionally references a CRM Campaign by identity — never a replacement for it |
+| Dialer Queue | Aggregate Root; the outbound *work* queue of numbers still to be dialed — deliberately distinct from Call Queue, the live-call *holding* pool |
+| Dialer Retry | Child entity of a Dialer Queue Entry owning only the retry counter/backoff/next-eligible-time policy; never holds telephony facts itself, and never mutates a prior Call Attempt |
+
+### Call Attempt as the Aggregate Root
+
+`telephony` owns Call Attempt as the Aggregate Root for all call execution,
+not "Call." Every real dial-out or inbound ring is exactly one telephony
+session with one provider call identifier, one timeline, one recording, and
+one disposition — that is Call Attempt. A wrapping "Call" aggregate would be
+redundant in the common single-attempt case and would carry no invariant of
+its own in the multi-attempt case, the same test already applied to reject
+EMI Schedule and Campaign Analytics as independent aggregates. Outbound
+retries always create a new Call Attempt, linked to its predecessor by an
+additive `retryOfCallAttemptId` reference — never a mutation of a completed
+one.
+
+### Trunk Abstraction
+
+Trunk is the single Aggregate Root through which `telephony` reaches PRI,
+GSM Gateway, and SIP connectivity, distinguished only by a `TrunkType`
+discriminator and a type-specific configuration value — the same pattern
+already used for Loan Application's Top-up/Balance-Transfer Application Type
+(ADR 0005). Domain logic depends only on the `ITelephonyProvider` port;
+vendor/protocol-specific code lives in `src/integrations/telephony/*`. This
+is what lets Multi-PRI, Multiple GSM Gateways, additional SIP Providers, and
+Failover/High Availability be added later as new Trunk records and adapters,
+never as a redesign of Call Attempt, Call Queue, or Dialer logic.
+
+### Agent Session is Independent of Call Attempt
+
+Agent Session exists as its own Aggregate Root because it has a different
+lifespan (a whole shift vs. one call), a one-to-many relationship to Call
+Attempt that includes zero (Login with no call, Break, Idle time), and
+invariants (one Active Session per Extension, the availability state
+machine) with no relationship to a Call Attempt's own invariants — the same
+independent-lifecycle test already applied to Follow-up vs. Lead (ADR 0004).
+Call Queue routing and Dialer Campaign pacing both require Agent
+availability to be queryable *before* any call exists, which is impossible if
+availability were a property of Call Attempt itself. `OnCall` and `After Call
+Work` are system-derived from the bound Call Attempt's lifecycle; Agent
+Session never sets them manually.
+
+### Queue Ownership and Queue Membership History
+
+Call Queue, Queue Strategy, and Queue Membership are owned by `telephony`,
+not `users`/`organization`: a Queue is a live-call routing construct with no
+meaning outside a telephony session, and ownership by an identity/org-
+structure module would invert this codebase's established one-directional
+dependency discipline (`campaigns -> leads`, never the reverse). Queue
+Membership is historical and append-only, the same discipline already used
+for Lead Assignment history and Commission Policy Version, because staffing,
+SLA post-mortems, and utilization reporting all require reconstructing who
+was eligible on a Queue at a past point in time. Queue Participation (owned
+by Agent Session, not Call Queue) is the separate, live, session-scoped fact
+of an eligible Agent actually working a Queue during one session — the two
+must never be collapsed.
+
+### Dialer Campaign References, Never Replaces, CRM Campaign
+
+`telephony` owns Dialer Campaign as independent execution configuration that
+optionally references a CRM Campaign (owned by `campaigns`) by identity. This
+formalizes, at the entity level, the decision already recorded in
+`docs/modules/campaigns.md`: CRM Campaign answers *which Leads and which
+Callers*; Dialer Campaign answers *how the phone system dials through them*.
+Dialer Queue (the outbound work queue) is deliberately named and modeled
+distinctly from Call Queue (the live-call holding pool) despite the shared
+word "Queue."
+
+### Call Disposition vs. Call Feedback Status
+
+Call Disposition (owned by `telephony`) is a small, fixed, system-detected
+technical outcome of a Call Attempt, set automatically at termination. It is
+permanently distinct from `leads`' Call Feedback Status (admin-configurable,
+human-entered business outcome) — the same discipline already established
+for Lead Stage vs. Call Feedback Status (ADR 0004). On completion,
+`telephony` publishes a domain event; `leads` remains the sole writer of the
+resulting Call Feedback Status record, mirroring the one-directional
+`campaigns -> leads` dependency already established for Lead Assignment.
+
 ## Future Platform Entities
 
 The following entities are approved for the future domain model but are not
@@ -415,6 +555,8 @@ flowchart LR
   Campaigns -- initiates assignment via Leads API --> Leads
   Leads --> FollowUp[Follow-up]
   Leads --> Telephony[Telephony]
+  Users --> Telephony
+  Campaigns -- supplies Dialer Campaign context --> Telephony
   Campaigns -.-> Reports[Reports and Analytics]
   Leads -.-> Reports
   Telephony -.-> Reports
@@ -508,3 +650,34 @@ flowchart LR
     `loan-applications`), and EMI Installment pay-status (owned by
     `loan-accounts`) are three permanently separate catalogs and must never
     be collapsed into one concept.
+25. Call Attempt (owned by `telephony`) is the Aggregate Root for all call
+    execution; "Call" is never modeled as a separate stored aggregate. An
+    outbound retry always creates a new Call Attempt, linked to its
+    predecessor by an additive reference — never a mutation of a completed
+    one.
+26. Call Recording is a child entity of Call Attempt for metadata and an
+    access-audit trail, owned by `telephony`; the audio payload is always an
+    external reference, never inlined into the aggregate.
+27. Trunk (owned by `telephony`) is the single Aggregate Root abstracting
+    PRI, GSM Gateway, and SIP behind a `TrunkType` discriminator. Domain
+    logic depends only on the `ITelephonyProvider` port; vendor/protocol code
+    lives in `src/integrations/telephony/*`, never in the domain layer.
+28. Listen, Whisper, and Barge are modes of one Call Monitoring Session
+    child entity of Call Attempt, owned by `telephony`, never three separate
+    entities. `rbac` owns who may start a session against a given Queue/Team
+    scope.
+29. Call Queue, Queue Strategy, and Queue Membership are owned by
+    `telephony`, not `users`/`organization`. Queue Membership is historical
+    and append-only, never a single mutable "current members" field.
+30. Agent Session (owned by `telephony`) is an Aggregate Root independent of
+    Call Attempt, modeling one Agent's Login-to-Logout work session and
+    availability state. Queue Participation is a child entity of Agent
+    Session, distinct from and never collapsed into Queue Membership.
+31. Dialer Campaign, Dialer Queue, and Dialer Retry (owned by `telephony`)
+    are independent of CRM Campaign (owned by `campaigns`); Dialer Campaign
+    may reference a CRM Campaign by identity but never replaces or duplicates
+    it. Dialer Queue (outbound work queue) is never conflated with Call
+    Queue (live-call holding pool).
+32. Call Disposition (owned by `telephony`, system-detected) and Call
+    Feedback Status (owned by `leads`, human-entered) are permanently
+    separate catalogs and must never be collapsed into one concept.
