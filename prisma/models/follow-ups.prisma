@@ -1,0 +1,94 @@
+// ============================================================================
+// follow_ups — src/modules/follow-ups
+//
+// Source: docs/modules/follow-ups.md, ADR 0004, docs/domain/domain-model.md
+// ("Follow-up as an Independent Aggregate").
+//
+// Follow-up is its own Aggregate Root, deliberately not a child entity of
+// the Lead aggregate — its dominant queries are portfolio-wide, not
+// Lead-centric. `leads`.Lead keeps only a denormalized "next action"
+// projection maintained exclusively by this module's domain events.
+// ============================================================================
+
+/// A scheduled callback/reminder task referencing a Lead by identity.
+model FollowUp {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  // Cross-schema reference to leads.Lead.id — no Prisma relation declared,
+  // mirroring the one-directional module dependency already recorded for
+  // `campaigns -> leads` (ADR 0004).
+  leadId String @db.Uuid
+
+  triggerType FollowUpTriggerType
+  status      FollowUpStatus      @default(SCHEDULED)
+
+  /// Every Follow-up requires a mandatory next date and time.
+  scheduledFor DateTime
+
+  currentAssigneeUserId String @db.Uuid
+  createdByUserId       String @db.Uuid
+
+  completedAt       DateTime?
+  completedByUserId String?   @db.Uuid
+  outcomeNotes      String?   @db.Text
+
+  missedAt          DateTime?
+  escalatedAt       DateTime?
+  escalatedToUserId String?   @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reassignments FollowUpReassignment[]
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@index([currentAssigneeUserId])
+  @@index([status, scheduledFor])
+  @@map("follow_ups")
+  @@schema("follow_ups")
+}
+
+/// Follow-up and Call Later are distinct trigger types with the same
+/// structural shape but different escalation timing (BRD §11): Follow-up
+/// escalates to the Team Leader the next day if not actioned; Call Later
+/// escalates to the Team Leader and Manager on a missed schedule.
+enum FollowUpTriggerType {
+  FOLLOW_UP
+  CALL_LATER
+
+  @@map("follow_up_trigger_type")
+  @@schema("follow_ups")
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  DUE
+  COMPLETED
+  MISSED
+  ESCALATED
+  CANCELLED
+
+  @@map("follow_up_status")
+  @@schema("follow_ups")
+}
+
+/// Auditable, append-only reassignment history. Only a Team Leader or
+/// Manager may reassign a Follow-up to another Caller; reassignment never
+/// changes the underlying Lead's other state.
+model FollowUpReassignment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  followUpId         String   @db.Uuid
+  fromUserId         String?  @db.Uuid
+  toUserId           String   @db.Uuid
+  reassignedByUserId String   @db.Uuid
+  reason             String?  @db.Text
+  reassignedAt       DateTime @default(now())
+
+  followUp FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+
+  @@index([followUpId])
+  @@map("follow_up_reassignments")
+  @@schema("follow_ups")
+}

@@ -1,0 +1,280 @@
+// ============================================================================
+// loan_applications — src/modules/loan-applications
+//
+// Source: ADR 0005, docs/modules/loan-applications.md.
+//
+// `loan-applications` is the single write path for a Loan Application and
+// everything upstream of it (Eligibility Snapshot, Loan Offer, Co-applicant)
+// before conversion into a Loan Account (owned by `loan_accounts`).
+// ============================================================================
+
+/// Admin-configurable catalog answering "where is this Loan Application in
+/// the decisioning pipeline right now." Permanently distinct from Loan
+/// Status (`loan_accounts`) and EMI Installment pay-status.
+model ApplicationStatus {
+  id             String                  @id @default(uuid()) @db.Uuid
+  organizationId String                  @db.Uuid
+  name           String                  @db.VarChar(100)
+  bucket         ApplicationStatusBucket
+  isTerminal     Boolean                 @default(false)
+  sortOrder      Int                     @default(0)
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  loanApplications LoanApplication[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("application_statuses")
+  @@schema("loan_applications")
+}
+
+enum ApplicationStatusBucket {
+  DRAFT
+  SUBMITTED
+  UNDER_BANK_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  DISBURSEMENT_PENDING
+  CONVERTED
+
+  @@map("application_status_bucket")
+  @@schema("loan_applications")
+}
+
+/// The central transactional record of one loan request. No orphan Loan
+/// Application: every one belongs to exactly one Customer and traces to
+/// exactly one Lead.
+model LoanApplication {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  // Cross-schema references (customers.Customer, leads.Lead,
+  // loan_products.LoanProduct, banks.BankBranch, loan_accounts.LoanAccount)
+  // — no Prisma relation declared for any of these to preserve the
+  // module-boundary discipline (ADR 0001); referential integrity is added
+  // manually, see the FK note at the bottom of this file.
+  customerId          String  @db.Uuid
+  leadId              String  @db.Uuid
+  loanProductId       String  @db.Uuid
+  bankBranchId        String? @db.Uuid
+  applicationStatusId String  @db.Uuid
+  loanOfferId         String? @unique @db.Uuid
+
+  applicationType ApplicationType @default(STANDARD)
+
+  /// Set only when `applicationType = TOP_UP` or
+  /// `BALANCE_TRANSFER_IN` and the referenced loan is already known to
+  /// Mudrax (cross-schema reference to loan_accounts.LoanAccount.id).
+  originatingLoanAccountId String? @db.Uuid
+
+  /// Set only for a Balance Transfer-In whose prior loan was never
+  /// previously known to Mudrax — Bank name, masked account number,
+  /// outstanding amount, as-of date. Deliberately NOT a `banks` catalog
+  /// entry.
+  externalLoanReference Json? @db.JsonB
+
+  requestedAmount       Decimal @db.Decimal(18, 2)
+  requestedTenureMonths Int
+
+  submittedAt     DateTime?
+  decisionAt      DateTime?
+  decidedByUserId String?   @db.Uuid
+  rejectionReason String?   @db.Text
+  withdrawnAt     DateTime?
+
+  createdByUserId String   @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applicationStatus ApplicationStatus @relation(fields: [applicationStatusId], references: [id], onDelete: Restrict)
+  loanOffer         LoanOffer?        @relation(fields: [loanOfferId], references: [id], onDelete: SetNull)
+
+  coApplicants         CoApplicant[]
+  eligibilitySnapshots EligibilitySnapshot[]
+
+  // MANUAL SQL FOLLOW-UP:
+  //   ALTER TABLE loan_applications.loan_applications
+  //     ADD CONSTRAINT loan_applications_customer_id_fkey
+  //       FOREIGN KEY (customer_id) REFERENCES customers.customers(id),
+  //     ADD CONSTRAINT loan_applications_lead_id_fkey
+  //       FOREIGN KEY (lead_id) REFERENCES leads.leads(id),
+  //     ADD CONSTRAINT loan_applications_loan_product_id_fkey
+  //       FOREIGN KEY (loan_product_id) REFERENCES loan_products.loan_products(id),
+  //     ADD CONSTRAINT loan_applications_bank_branch_id_fkey
+  //       FOREIGN KEY (bank_branch_id) REFERENCES banks.bank_branches(id),
+  //     ADD CONSTRAINT loan_applications_originating_loan_account_id_fkey
+  //       FOREIGN KEY (originating_loan_account_id) REFERENCES loan_accounts.loan_accounts(id);
+  // A Loan Application converts into exactly one Loan Account (never more
+  // than one) — enforced from the `loan_accounts` side via a UNIQUE
+  // constraint on `loan_accounts.loan_accounts.originating_application_id`.
+  //
+  // MANUAL SQL FOLLOW-UP: `applicationType`-conditional fields (ADR 0005) —
+  // STANDARD carries neither reference; TOP_UP requires
+  // `originatingLoanAccountId`; BALANCE_TRANSFER_IN requires exactly one of
+  // `originatingLoanAccountId` (known-to-Mudrax loan) or
+  // `externalLoanReference` (never both, never neither):
+  //   ALTER TABLE loan_applications.loan_applications
+  //     ADD CONSTRAINT loan_applications_type_conditional_fields_check
+  //     CHECK (
+  //       (application_type = 'STANDARD'
+  //         AND originating_loan_account_id IS NULL
+  //         AND external_loan_reference IS NULL)
+  //       OR (application_type = 'TOP_UP'
+  //         AND originating_loan_account_id IS NOT NULL
+  //         AND external_loan_reference IS NULL)
+  //       OR (application_type = 'BALANCE_TRANSFER_IN'
+  //         AND num_nonnulls(originating_loan_account_id, external_loan_reference) = 1)
+  //     );
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([leadId])
+  @@index([loanProductId])
+  @@index([applicationStatusId])
+  @@index([originatingLoanAccountId])
+  @@map("loan_applications")
+  @@schema("loan_applications")
+}
+
+enum ApplicationType {
+  STANDARD
+  TOP_UP
+  BALANCE_TRANSFER_IN
+
+  @@map("application_type")
+  @@schema("loan_applications")
+}
+
+/// An immutable, timestamped value object recording the inputs used, the
+/// decision, computed ceilings, and a method discriminator. Never edited in
+/// place; a changed input always produces a new snapshot.
+model EligibilitySnapshot {
+  id                String              @id @default(uuid()) @db.Uuid
+  loanApplicationId String?             @db.Uuid
+  // Cross-schema reference to customers.Customer.id — an Eligibility
+  // Snapshot may be computed ahead of a Loan Application existing (e.g. for
+  // a candidate Loan Offer).
+  customerId        String              @db.Uuid
+  method            EligibilityMethod
+  inputsSnapshot    Json                @db.JsonB
+  decision          EligibilityDecision
+  computedCeilings  Json                @db.JsonB
+  computedByUserId  String?             @db.Uuid
+  computedAt        DateTime            @default(now())
+
+  loanApplication LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  loanOffers      LoanOffer[]
+
+  @@index([loanApplicationId])
+  @@index([customerId])
+  @@map("eligibility_snapshots")
+  @@schema("loan_applications")
+}
+
+enum EligibilityMethod {
+  MANUAL
+  RULE_BASED
+  AUTOMATED_SCORING
+
+  @@map("eligibility_method")
+  @@schema("loan_applications")
+}
+
+enum EligibilityDecision {
+  ELIGIBLE
+  INELIGIBLE
+  CONDITIONAL
+
+  @@map("eligibility_decision")
+  @@schema("loan_applications")
+}
+
+/// A child entity of Loan Application recording application-scoped facts
+/// about a second/third person jointly responsible for the loan. The
+/// person identity always resolves through `customers`.
+model CoApplicant {
+  id                  String             @id @default(uuid()) @db.Uuid
+  loanApplicationId   String             @db.Uuid
+  // Cross-schema reference to customers.Customer.id.
+  customerId          String             @db.Uuid
+  relationshipType    String             @db.VarChar(100)
+  declaredIncome      Decimal?           @db.Decimal(18, 2)
+  declaredObligations Decimal?           @db.Decimal(18, 2)
+  consentStatus       CoApplicantConsent @default(PENDING)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@unique([loanApplicationId, customerId])
+  @@index([loanApplicationId])
+  @@index([customerId])
+  @@map("co_applicants")
+  @@schema("loan_applications")
+}
+
+enum CoApplicantConsent {
+  PENDING
+  GRANTED
+  DECLINED
+
+  @@map("co_applicant_consent")
+  @@schema("loan_applications")
+}
+
+/// A small, dedicated Aggregate Root (sibling to Loan Application, not a
+/// child of it) representing one concrete, presentable loan proposal
+/// derived from an Eligibility Snapshot. One per candidate Bank/Loan
+/// Product, enabling multi-bank comparison.
+model LoanOffer {
+  id                    String @id @default(uuid()) @db.Uuid
+  organizationId        String @db.Uuid
+  // Cross-schema reference to leads.Lead.id.
+  leadId                String @db.Uuid
+  eligibilitySnapshotId String @db.Uuid
+  // Cross-schema references to banks.Bank.id / loan_products.LoanProduct.id.
+  bankId                String @db.Uuid
+  loanProductId         String @db.Uuid
+
+  offeredAmount       Decimal         @db.Decimal(18, 2)
+  offeredInterestRate Decimal         @db.Decimal(6, 3)
+  offeredTenureMonths Int
+  status              LoanOfferStatus @default(GENERATED)
+
+  generatedAt DateTime  @default(now())
+  presentedAt DateTime?
+  decidedAt   DateTime?
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  eligibilitySnapshot EligibilitySnapshot @relation(fields: [eligibilitySnapshotId], references: [id], onDelete: Restrict)
+  loanApplication     LoanApplication?
+
+  // MANUAL SQL FOLLOW-UP: "at most one Selected Loan Offer per Lead"
+  // (loan-applications.md) is a partial unique index:
+  //   CREATE UNIQUE INDEX loan_offers_one_selected_per_lead
+  //     ON loan_applications.loan_offers (lead_id)
+  //     WHERE status = 'SELECTED';
+  @@index([organizationId])
+  @@index([leadId])
+  @@index([bankId])
+  @@index([loanProductId])
+  @@map("loan_offers")
+  @@schema("loan_applications")
+}
+
+enum LoanOfferStatus {
+  GENERATED
+  PRESENTED
+  SELECTED
+  DECLINED
+  EXPIRED
+  SUPERSEDED
+
+  @@map("loan_offer_status")
+  @@schema("loan_applications")
+}

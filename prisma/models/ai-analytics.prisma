@@ -1,0 +1,123 @@
+// ============================================================================
+// ai_analytics — src/modules/ai-platform (ai-analytics)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("Analytics Intelligence").
+//
+// Every model here references `reports.AnalyticsDataset`, `ai_core.AiResult`,
+// and `ai_governance.HumanApproval` by plain UUID column only — no Prisma
+// relation crosses these module boundaries (ADR 0001).
+// ============================================================================
+
+enum AiAnalyticsArtifactStatus {
+  GENERATED
+  SUPERSEDED
+
+  @@map("ai_analytics_artifact_status")
+  @@schema("ai_analytics")
+}
+
+/// Aggregate Root; a generated forward-looking projection over an
+/// Analytics Dataset.
+model Forecast {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  organizationId     String?                   @db.Uuid
+  analyticsDatasetId String                    @db.Uuid
+  metricRef          String?                   @db.VarChar(200)
+  horizon            Json?                     @db.JsonB
+  projectionData     Json                      @db.JsonB
+  status             AiAnalyticsArtifactStatus @default(GENERATED)
+  sourceAiResultId   String?                   @db.Uuid
+  generatedAt        DateTime                  @default(now())
+
+  @@index([organizationId])
+  @@index([analyticsDatasetId])
+  @@map("forecasts")
+  @@schema("ai_analytics")
+}
+
+enum PredictionStatus {
+  PREDICTED
+  REALIZED
+  SUPERSEDED
+
+  @@map("prediction_status")
+  @@schema("ai_analytics")
+}
+
+/// Aggregate Root; a point-in-time predicted outcome for a specific
+/// business entity (polymorphic target — type/ID pair, no enforced FK).
+model Prediction {
+  id               String           @id @default(uuid()) @db.Uuid
+  organizationId   String?          @db.Uuid
+  targetEntityType String           @db.VarChar(100)
+  targetEntityId   String           @db.Uuid
+  predictedOutcome Json             @db.JsonB
+  status           PredictionStatus @default(PREDICTED)
+  sourceAiResultId String?          @db.Uuid
+  predictedAt      DateTime         @default(now())
+
+  // MANUAL SQL FOLLOW-UP: polymorphic target (`targetEntityType` +
+  // `targetEntityId`) cannot carry a Postgres FK — enforce the allowed
+  // `targetEntityType` value set with a CHECK constraint and validate
+  // existence at the application/service layer.
+  @@index([organizationId])
+  @@index([targetEntityType, targetEntityId])
+  @@map("predictions")
+  @@schema("ai_analytics")
+}
+
+enum TrendAnalysisStatus {
+  IDENTIFIED
+  REVIEWED
+  ARCHIVED
+
+  @@map("trend_analysis_status")
+  @@schema("ai_analytics")
+}
+
+/// Aggregate Root; an identified pattern/trend within an Analytics Dataset.
+model TrendAnalysis {
+  id                 String              @id @default(uuid()) @db.Uuid
+  organizationId     String?             @db.Uuid
+  analyticsDatasetId String              @db.Uuid
+  patternDescription Json                @db.JsonB
+  status             TrendAnalysisStatus @default(IDENTIFIED)
+  sourceAiResultId   String?             @db.Uuid
+  identifiedAt       DateTime            @default(now())
+
+  @@index([organizationId])
+  @@index([analyticsDatasetId])
+  @@map("trend_analyses")
+  @@schema("ai_analytics")
+}
+
+enum AnomalyDetectionStatus {
+  FLAGGED
+  TRIAGED
+  RESOLVED
+  FALSE_POSITIVE
+
+  @@map("anomaly_detection_status")
+  @@schema("ai_analytics")
+}
+
+/// Aggregate Root; a flagged statistical outlier within an Analytics
+/// Dataset. High-severity anomalies route through
+/// `ai_governance.HumanApproval` before being surfaced.
+model AnomalyDetection {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  organizationId        String?                @db.Uuid
+  analyticsDatasetId    String                 @db.Uuid
+  anomalyDetails        Json                   @db.JsonB
+  severity              String?                @db.VarChar(20)
+  requiresHumanApproval Boolean                @default(false)
+  humanApprovalId       String?                @db.Uuid
+  status                AnomalyDetectionStatus @default(FLAGGED)
+  sourceAiResultId      String?                @db.Uuid
+  flaggedAt             DateTime               @default(now())
+
+  @@index([organizationId])
+  @@index([analyticsDatasetId])
+  @@map("anomaly_detections")
+  @@schema("ai_analytics")
+}

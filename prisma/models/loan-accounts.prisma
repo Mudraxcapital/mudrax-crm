@@ -1,0 +1,220 @@
+// ============================================================================
+// loan_accounts — src/modules/loan-accounts
+//
+// Source: ADR 0005, docs/modules/loan-accounts.md.
+//
+// Created from exactly one originating Loan Application (immutable
+// back-reference, 1:1) the first time `disbursements` records a
+// Disbursement against that Application. Single write path for everything
+// that happens to a Loan Account after it opens.
+// ============================================================================
+
+/// Admin-configurable catalog answering "what state is this Loan Account in
+/// right now." Permanently distinct from Application Status
+/// (`loan_applications`) and EMI Installment pay-status.
+model LoanStatus {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  isTerminal     Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loanAccounts LoanAccount[]
+
+  @@unique([organizationId, name])
+  @@map("loan_statuses")
+  @@schema("loan_accounts")
+}
+
+/// The post-disbursement financial obligation a Customer holds with a Bank.
+/// Created exactly once per Loan Application — `disbursements`' first
+/// Disbursement event triggers creation.
+model LoanAccount {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  /// Immutable, 1:1 back-reference to loan_applications.LoanApplication.id.
+  originatingApplicationId String @unique @db.Uuid
+
+  // Further cross-schema references (customers.Customer,
+  // banks.Bank/BankBranch, loan_products.LoanProduct) — no Prisma relation
+  // declared; see the manual FK note below.
+  customerId    String  @db.Uuid
+  bankId        String  @db.Uuid
+  bankBranchId  String? @db.Uuid
+  loanProductId String  @db.Uuid
+
+  loanStatusId String @db.Uuid
+
+  /// Snapshot of Loan Product terms at Loan Account creation — never a live
+  /// join back to a Loan Product that may since have changed.
+  sanctionedAmount     Decimal @db.Decimal(18, 2)
+  interestRateSnapshot Decimal @db.Decimal(6, 3)
+  tenureMonthsSnapshot Int
+
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+
+  /// Set when this account is the originating account of a Top-up
+  /// (`Superseded-by-Topup`) or Balance Transfer (`Transferred-Out`).
+  /// Cross-schema reference to the successor loan_applications.LoanApplication.id.
+  supersededByLoanApplicationId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanStatus   LoanStatus    @relation(fields: [loanStatusId], references: [id], onDelete: Restrict)
+  emiSchedules EmiSchedule[]
+  foreclosures Foreclosure[]
+
+  // MANUAL SQL FOLLOW-UP:
+  //   ALTER TABLE loan_accounts.loan_accounts
+  //     ADD CONSTRAINT loan_accounts_originating_application_id_fkey
+  //       FOREIGN KEY (originating_application_id)
+  //       REFERENCES loan_applications.loan_applications(id),
+  //     ADD CONSTRAINT loan_accounts_customer_id_fkey
+  //       FOREIGN KEY (customer_id) REFERENCES customers.customers(id),
+  //     ADD CONSTRAINT loan_accounts_bank_id_fkey
+  //       FOREIGN KEY (bank_id) REFERENCES banks.banks(id),
+  //     ADD CONSTRAINT loan_accounts_bank_branch_id_fkey
+  //       FOREIGN KEY (bank_branch_id) REFERENCES banks.bank_branches(id),
+  //     ADD CONSTRAINT loan_accounts_loan_product_id_fkey
+  //       FOREIGN KEY (loan_product_id) REFERENCES loan_products.loan_products(id);
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([bankId])
+  @@index([loanStatusId])
+  @@map("loan_accounts")
+  @@schema("loan_accounts")
+}
+
+/// The full installment-by-installment repayment plan for a Loan Account.
+/// Child collection inside the Loan Account aggregate's consistency
+/// boundary — deliberately not an independent Aggregate Root. Regeneration
+/// supersedes; it never deletes history.
+model EmiSchedule {
+  id            String            @id @default(uuid()) @db.Uuid
+  loanAccountId String            @db.Uuid
+  versionNumber Int
+  status        EmiScheduleStatus @default(GENERATED)
+  reason        EmiScheduleReason @default(INITIAL)
+  generatedAt   DateTime          @default(now())
+
+  loanAccount  LoanAccount      @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  installments EmiInstallment[]
+
+  // MANUAL SQL FOLLOW-UP: "at most one ACTIVE schedule per Loan Account" —
+  // a partial unique index:
+  //   CREATE UNIQUE INDEX emi_schedules_one_active_per_account
+  //     ON loan_accounts.emi_schedules (loan_account_id)
+  //     WHERE status = 'ACTIVE';
+  @@unique([loanAccountId, versionNumber])
+  @@index([loanAccountId])
+  @@map("emi_schedules")
+  @@schema("loan_accounts")
+}
+
+enum EmiScheduleStatus {
+  GENERATED
+  ACTIVE
+  SUPERSEDED
+  CLOSED
+
+  @@map("emi_schedule_status")
+  @@schema("loan_accounts")
+}
+
+enum EmiScheduleReason {
+  INITIAL
+  RESTRUCTURE
+  PART_PREPAYMENT
+  FORECLOSURE
+
+  @@map("emi_schedule_reason")
+  @@schema("loan_accounts")
+}
+
+/// Admin-configurable catalog for per-installment payment state. A third
+/// catalog, permanently distinct from Application Status and Loan Status.
+model EmiPayStatus {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  installments EmiInstallment[]
+
+  @@unique([organizationId, name])
+  @@map("emi_pay_statuses")
+  @@schema("loan_accounts")
+}
+
+/// One due repayment line, child of EMI Schedule. The due-amount definition
+/// is immutable once generated; only pay-status and paid-date mutate.
+model EmiInstallment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  emiScheduleId      String   @db.Uuid
+  installmentNumber  Int
+  dueDate            DateTime @db.Date
+  principalComponent Decimal  @db.Decimal(18, 2)
+  interestComponent  Decimal  @db.Decimal(18, 2)
+  dueAmount          Decimal  @db.Decimal(18, 2)
+
+  payStatusId String    @db.Uuid
+  paidAmount  Decimal?  @db.Decimal(18, 2)
+  paidDate    DateTime? @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  emiSchedule EmiSchedule  @relation(fields: [emiScheduleId], references: [id], onDelete: Cascade)
+  payStatus   EmiPayStatus @relation(fields: [payStatusId], references: [id], onDelete: Restrict)
+
+  @@unique([emiScheduleId, installmentNumber])
+  @@index([emiScheduleId])
+  @@index([payStatusId])
+  @@index([dueDate])
+  @@map("emi_installments")
+  @@schema("loan_accounts")
+}
+
+/// A child entity of Loan Account recording a decision to pay off the
+/// entire outstanding balance ahead of schedule. A Confirmed Foreclosure is
+/// immutable and terminal for that Loan Account.
+model Foreclosure {
+  id            String            @id @default(uuid()) @db.Uuid
+  loanAccountId String            @db.Uuid
+  status        ForeclosureStatus @default(REQUESTED)
+
+  requestedAt       DateTime  @default(now())
+  quoteAmount       Decimal?  @db.Decimal(18, 2)
+  quoteGeneratedAt  DateTime?
+  foreclosureCharge Decimal?  @db.Decimal(18, 2)
+  paidAmount        Decimal?  @db.Decimal(18, 2)
+  paidAt            DateTime?
+  confirmedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanAccount LoanAccount @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+
+  @@index([loanAccountId])
+  @@map("foreclosures")
+  @@schema("loan_accounts")
+}
+
+enum ForeclosureStatus {
+  REQUESTED
+  QUOTE_GENERATED
+  PAID
+  CONFIRMED
+
+  @@map("foreclosure_status")
+  @@schema("loan_accounts")
+}

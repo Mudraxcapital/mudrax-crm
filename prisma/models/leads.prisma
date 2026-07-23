@@ -1,0 +1,471 @@
+// ============================================================================
+// leads — src/modules/leads
+//
+// Source: ADR 0004, docs/modules/leads.md, docs/domain/domain-model.md
+// ("Leads Bounded Context").
+//
+// `leads` is the single write path for everything that happens to a Lead,
+// including the sole ownership of Lead Assignment. Follow-up is owned by the
+// sibling `follow_ups` schema (docs/modules/follow-ups.md), not here.
+// ============================================================================
+
+/// Inbound sales inquiry. Belongs to exactly one Customer from the moment it
+/// is created — there is no orphan Lead (ADR 0004).
+model Lead {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  // Cross-schema reference to customers.Customer.id. No Prisma relation
+  // declared (see manual FK note) to avoid `leads` depending on the
+  // `customers` Prisma model, matching the module-boundary discipline
+  // already enforced at the TypeScript layer (ADR 0001).
+  customerId String @db.Uuid
+
+  leadSourceId   String  @db.Uuid
+  currentStageId String  @db.Uuid
+  lostReasonId   String? @db.Uuid
+  campaignId     String? @db.Uuid
+
+  // Current assignee is part of the Lead aggregate's consistency boundary
+  // (leads.md); full history lives in LeadAssignment, append-only.
+  currentAssigneeUserId String? @db.Uuid
+
+  fullNameSnapshot String  @db.VarChar(200)
+  phoneSnapshot    String? @db.VarChar(20)
+  emailSnapshot    String? @db.VarChar(320)
+
+  // Denormalized "next action" projection, updated exclusively by a
+  // Follow-up domain-event listener (leads.md Business Rules) — no other
+  // code path may write these two columns.
+  nextActionAt   DateTime?
+  nextActionType String?   @db.VarChar(50)
+
+  importRowId String? @unique @db.Uuid
+
+  wonAt  DateTime?
+  lostAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leadSource   LeadSource  @relation(fields: [leadSourceId], references: [id], onDelete: Restrict)
+  currentStage LeadStage   @relation(fields: [currentStageId], references: [id], onDelete: Restrict)
+  lostReason   LostReason? @relation(fields: [lostReasonId], references: [id], onDelete: Restrict)
+  importRow    ImportRow?  @relation(fields: [importRowId], references: [id], onDelete: SetNull)
+
+  assignments              LeadAssignment[]
+  callFeedback             LeadCallFeedback[]
+  notes                    LeadNote[]
+  tags                     LeadTag[]
+  customFieldValues        LeadCustomFieldValue[]
+  duplicateMatchExistingOf DuplicateMatchExistingLead[]
+
+  // MANUAL SQL FOLLOW-UP: "A Lead cannot transition into a Closed-Lost
+  // stage without a Lost Reason" (leads.md) is a cross-column business rule
+  // Prisma cannot express as a static CHECK constraint (LeadStage's bucket
+  // lives in another row). Enforce with a trigger:
+  //   CREATE OR REPLACE FUNCTION leads.enforce_lost_reason_on_closed_lost()
+  //     RETURNS trigger AS $$ ... $$ LANGUAGE plpgsql;
+  //   CREATE TRIGGER leads_lost_reason_required
+  //     BEFORE INSERT OR UPDATE ON leads.leads
+  //     FOR EACH ROW EXECUTE FUNCTION leads.enforce_lost_reason_on_closed_lost();
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([currentAssigneeUserId])
+  @@index([currentStageId])
+  @@index([campaignId])
+  @@map("leads")
+  @@schema("leads")
+}
+
+/// Admin-configurable pipeline position (Fresh, Ringing, Interested,
+/// Follow-up, Won, Lost, ...). Never a hardcoded enum.
+model LeadStage {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  name           String        @db.VarChar(100)
+  bucket         StageBucket
+  closeOutcome   CloseOutcome?
+  sortOrder      Int           @default(0)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  leads Lead[]
+
+  // MANUAL SQL FOLLOW-UP: `closeOutcome` must be non-null iff
+  // `bucket = 'CLOSED'` — a cross-column CHECK constraint:
+  //   ALTER TABLE leads.lead_stages
+  //     ADD CONSTRAINT lead_stages_close_outcome_check
+  //     CHECK ((bucket = 'CLOSED') = (close_outcome IS NOT NULL));
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("lead_stages")
+  @@schema("leads")
+}
+
+enum StageBucket {
+  INITIAL
+  ACTIVE
+  CLOSED
+
+  @@map("stage_bucket")
+  @@schema("leads")
+}
+
+enum CloseOutcome {
+  WON
+  LOST
+
+  @@map("close_outcome")
+  @@schema("leads")
+}
+
+/// Admin-configurable sub-classification of why a Lead was marked Lost.
+/// Required whenever Lead Stage moves into the Closed-Lost bucket.
+model LostReason {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leads Lead[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("lost_reasons")
+  @@schema("leads")
+}
+
+/// Structured, reportable channel a Lead originated from. Reference/catalog
+/// entity; never free text.
+model LeadSource {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leads         Lead[]
+  importBatches ImportBatch[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("lead_sources")
+  @@schema("leads")
+}
+
+/// Admin-configurable outcome of one specific call attempt (Connected, No
+/// Answer, Switched Off, Number Busy, ...). Permanently distinct from Lead
+/// Stage.
+model CallFeedbackStatus {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  /// BRD default rule: "Connected when duration > 0s" — this flag lets that
+  /// rule be evaluated against a catalog row instead of a hardcoded string.
+  isConnected    Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leadCallFeedback LeadCallFeedback[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("call_feedback_statuses")
+  @@schema("leads")
+}
+
+/// One recorded outcome of a specific call attempt against a Lead. A Lead
+/// accumulates many of these without its Stage changing.
+model LeadCallFeedback {
+  id                   String   @id @default(uuid()) @db.Uuid
+  leadId               String   @db.Uuid
+  callFeedbackStatusId String   @db.Uuid
+  // Cross-schema reference to telephony.CallAttempt.id, nullable because a
+  // feedback entry can in principle be logged manually without a telephony
+  // Call Attempt (e.g. a field visit call).
+  callAttemptId        String?  @db.Uuid
+  recordedByUserId     String   @db.Uuid
+  durationSeconds      Int?
+  notes                String?  @db.Text
+  occurredAt           DateTime @default(now())
+
+  lead               Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  callFeedbackStatus CallFeedbackStatus @relation(fields: [callFeedbackStatusId], references: [id], onDelete: Restrict)
+
+  @@index([leadId])
+  @@index([callFeedbackStatusId])
+  @@index([callAttemptId])
+  @@map("lead_call_feedback")
+  @@schema("leads")
+}
+
+/// The current assignee and the auditable, append-only history of how Lead
+/// ownership changed. `leads` is the sole owner and sole writer.
+model LeadAssignment {
+  id                   String         @id @default(uuid()) @db.Uuid
+  leadId               String         @db.Uuid
+  assignedToUserId     String         @db.Uuid
+  assignedByUserId     String?        @db.Uuid
+  assignmentType       AssignmentType
+  // Set when `campaigns` initiated this assignment via the leads public API
+  // (never a direct write) — additive traceability only.
+  campaignAssignmentId String?        @db.Uuid
+  assignedAt           DateTime       @default(now())
+  unassignedAt         DateTime?
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP: "at most one open (unassignedAt IS NULL)
+  // assignment per Lead at a time" is a partial unique index:
+  //   CREATE UNIQUE INDEX lead_assignments_one_open_per_lead
+  //     ON leads.lead_assignments (lead_id)
+  //     WHERE unassigned_at IS NULL;
+  @@index([leadId])
+  @@index([assignedToUserId])
+  @@map("lead_assignments")
+  @@schema("leads")
+}
+
+enum AssignmentType {
+  INITIAL
+  CAMPAIGN_ALLOCATION
+  MANUAL_REASSIGNMENT
+
+  @@map("assignment_type")
+  @@schema("leads")
+}
+
+/// A Caller's optional, append-only free-text note on a Lead.
+model LeadNote {
+  id           String   @id @default(uuid()) @db.Uuid
+  leadId       String   @db.Uuid
+  authorUserId String   @db.Uuid
+  body         String   @db.Text
+  createdAt    DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@map("lead_notes")
+  @@schema("leads")
+}
+
+/// Lightweight, admin-configurable Tag catalog, deliberately scoped to Lead
+/// only today.
+model Tag {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  createdAt      DateTime @default(now())
+
+  leadTags LeadTag[]
+
+  @@unique([organizationId, name])
+  @@map("tags")
+  @@schema("leads")
+}
+
+/// Lead <-> Tag many-to-many join. Composite primary key.
+model LeadTag {
+  leadId   String   @db.Uuid
+  tagId    String   @db.Uuid
+  taggedAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([leadId, tagId])
+  @@index([tagId])
+  @@map("lead_tags")
+  @@schema("leads")
+}
+
+/// Admin-configurable extension field, scoped to Lead only. Must declare a
+/// bounded data type — no schema-less/free-form fields.
+model CustomFieldDefinition {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  name           String          @db.VarChar(100)
+  dataType       CustomFieldType
+  /// Populated only when `dataType = SINGLE_SELECT`.
+  selectOptions  Json?           @db.JsonB
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  values LeadCustomFieldValue[]
+
+  @@unique([organizationId, name])
+  @@map("custom_field_definitions")
+  @@schema("leads")
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  SINGLE_SELECT
+
+  @@map("custom_field_type")
+  @@schema("leads")
+}
+
+model LeadCustomFieldValue {
+  id                      String    @id @default(uuid()) @db.Uuid
+  leadId                  String    @db.Uuid
+  customFieldDefinitionId String    @db.Uuid
+  valueText               String?   @db.Text
+  valueNumber             Decimal?  @db.Decimal(18, 4)
+  valueDate               DateTime? @db.Date
+  valueSelectOption       String?   @db.VarChar(150)
+  updatedAt               DateTime  @updatedAt
+
+  lead                  Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customFieldDefinition CustomFieldDefinition @relation(fields: [customFieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, customFieldDefinitionId])
+  @@index([customFieldDefinitionId])
+  @@map("lead_custom_field_values")
+  @@schema("leads")
+}
+
+/// A User's saved filter/query preset over the Lead list.
+model SavedView {
+  id           String   @id @default(uuid()) @db.Uuid
+  ownerUserId  String   @db.Uuid
+  name         String   @db.VarChar(150)
+  filterConfig Json     @db.JsonB
+  isShared     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([ownerUserId])
+  @@map("saved_views")
+  @@schema("leads")
+}
+
+/// The auditable unit of one bulk lead-intake operation (an Excel upload).
+/// Immutable audit record once committed.
+model ImportBatch {
+  id                 String            @id @default(uuid()) @db.Uuid
+  organizationId     String            @db.Uuid
+  uploadedByUserId   String            @db.Uuid
+  leadSourceId       String            @db.Uuid
+  campaignId         String?           @db.Uuid
+  sourceFileName     String            @db.VarChar(255)
+  // Cross-schema reference to documents.Attachment.id for the raw uploaded
+  // file — storage mechanics only, never itself promoted to a Document.
+  sourceAttachmentId String?           @db.Uuid
+  status             ImportBatchStatus @default(UPLOADED)
+  totalRowCount      Int               @default(0)
+  createdRowCount    Int               @default(0)
+  duplicateRowCount  Int               @default(0)
+  createdAt          DateTime          @default(now())
+  parsedAt           DateTime?
+  resolvedAt         DateTime?
+  committedAt        DateTime?
+  completedAt        DateTime?
+
+  leadSource LeadSource  @relation(fields: [leadSourceId], references: [id], onDelete: Restrict)
+  rows       ImportRow[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("import_batches")
+  @@schema("leads")
+}
+
+enum ImportBatchStatus {
+  UPLOADED
+  PARSED
+  AWAITING_RESOLUTION
+  RESOLVED
+  COMMITTED
+  COMPLETED
+
+  @@map("import_batch_status")
+  @@schema("leads")
+}
+
+/// One raw intake record within an Import Batch. Immutable once parsed.
+model ImportRow {
+  id                 String         @id @default(uuid()) @db.Uuid
+  importBatchId      String         @db.Uuid
+  rowNumber          Int
+  rawData            Json           @db.JsonB
+  parseStatus        RowParseStatus @default(PENDING)
+  parseErrors        Json?          @db.JsonB
+  resolvedCustomerId String?        @db.Uuid
+  createdAt          DateTime       @default(now())
+
+  importBatch    ImportBatch     @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  duplicateMatch DuplicateMatch?
+  resultingLead  Lead?
+
+  @@unique([importBatchId, rowNumber])
+  @@index([importBatchId])
+  @@map("import_rows")
+  @@schema("leads")
+}
+
+enum RowParseStatus {
+  PENDING
+  PARSED
+  INVALID
+
+  @@map("row_parse_status")
+  @@schema("leads")
+}
+
+/// Records an Import Row's match against an existing Customer's Lead
+/// history and the human resolution decision made about it. A resolution is
+/// never silently overwritten.
+model DuplicateMatch {
+  id                String                    @id @default(uuid()) @db.Uuid
+  importRowId       String                    @unique @db.Uuid
+  matchedCustomerId String                    @db.Uuid
+  resolution        DuplicateMatchResolution?
+  resolvedByUserId  String?                   @db.Uuid
+  resolvedAt        DateTime?
+  createdAt         DateTime                  @default(now())
+
+  importRow    ImportRow                    @relation(fields: [importRowId], references: [id], onDelete: Cascade)
+  matchedLeads DuplicateMatchExistingLead[]
+
+  @@index([matchedCustomerId])
+  @@map("duplicate_matches")
+  @@schema("leads")
+}
+
+enum DuplicateMatchResolution {
+  SELECTIVE_DELETE
+  DELETE_ALL
+  IGNORE
+  RELOAD_AS_FRESH
+
+  @@map("duplicate_match_resolution")
+  @@schema("leads")
+}
+
+/// The set of an existing Customer's prior Leads presented alongside one
+/// Duplicate Match for human review. Composite primary key.
+model DuplicateMatchExistingLead {
+  duplicateMatchId String @db.Uuid
+  existingLeadId   String @db.Uuid
+
+  duplicateMatch DuplicateMatch @relation(fields: [duplicateMatchId], references: [id], onDelete: Cascade)
+  existingLead   Lead           @relation(fields: [existingLeadId], references: [id], onDelete: Cascade)
+
+  @@id([duplicateMatchId, existingLeadId])
+  @@index([existingLeadId])
+  @@map("duplicate_match_existing_leads")
+  @@schema("leads")
+}

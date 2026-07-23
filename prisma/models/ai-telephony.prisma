@@ -1,0 +1,138 @@
+// ============================================================================
+// ai_telephony — src/modules/ai-platform (ai-telephony)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("Telephony Intelligence").
+//
+// Every model here references `telephony.*` and `ai_core.AiResult` by plain
+// UUID column only — no Prisma relation is declared across these module
+// boundaries (ADR 0001). Manual SQL foreign keys may be added separately.
+// ============================================================================
+
+enum AiTelephonyJobStatus {
+  REQUESTED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("ai_telephony_job_status")
+  @@schema("ai_telephony")
+}
+
+/// Aggregate Root; one request to transcribe a Call Recording.
+/// References `telephony.CallAttempt.id` / `telephony.CallRecording.id`
+/// cross-schema.
+model TranscriptionJob {
+  id               String               @id @default(uuid()) @db.Uuid
+  organizationId   String?              @db.Uuid
+  callAttemptId    String               @db.Uuid
+  callRecordingId  String               @db.Uuid
+  sourceAiResultId String?              @db.Uuid
+  status           AiTelephonyJobStatus @default(REQUESTED)
+  requestedAt      DateTime             @default(now())
+  completedAt      DateTime?
+  failureReason    String?              @db.Text
+
+  transcripts CallTranscript[]
+
+  @@index([organizationId])
+  @@index([callAttemptId])
+  @@map("transcription_jobs")
+  @@schema("ai_telephony")
+}
+
+enum CallTranscriptStatus {
+  PRODUCED
+  SUPERSEDED
+
+  @@map("call_transcript_status")
+  @@schema("ai_telephony")
+}
+
+/// Child of Transcription Job; a re-transcription supersedes rather than
+/// mutates the prior row. Large text payloads are stored via
+/// `storageReference` (object storage), not inline.
+model CallTranscript {
+  id                 String               @id @default(uuid()) @db.Uuid
+  transcriptionJobId String               @db.Uuid
+  storageReference   String               @db.VarChar(500)
+  diarization        Json?                @db.JsonB
+  status             CallTranscriptStatus @default(PRODUCED)
+  createdAt          DateTime             @default(now())
+
+  transcriptionJob TranscriptionJob @relation(fields: [transcriptionJobId], references: [id], onDelete: Cascade)
+  summaries        CallSummary[]
+
+  @@index([transcriptionJobId])
+  @@map("call_transcripts")
+  @@schema("ai_telephony")
+}
+
+enum AiTelephonyInsightStatus {
+  GENERATED
+  REVIEWED
+  ACCEPTED
+  SUPERSEDED
+
+  @@map("ai_telephony_insight_status")
+  @@schema("ai_telephony")
+}
+
+/// Aggregate Root; a generated abstractive summary of one call.
+model CallSummary {
+  id               String                   @id @default(uuid()) @db.Uuid
+  organizationId   String?                  @db.Uuid
+  callAttemptId    String                   @db.Uuid
+  callTranscriptId String?                  @db.Uuid
+  summaryText      String                   @db.Text
+  status           AiTelephonyInsightStatus @default(GENERATED)
+  sourceAiResultId String?                  @db.Uuid
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  callTranscript CallTranscript? @relation(fields: [callTranscriptId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([callAttemptId])
+  @@map("call_summaries")
+  @@schema("ai_telephony")
+}
+
+/// Aggregate Root; computed sentiment/tone/escalation-risk signal for a
+/// call or call segment.
+model SentimentAnalysis {
+  id               String                   @id @default(uuid()) @db.Uuid
+  organizationId   String?                  @db.Uuid
+  callAttemptId    String                   @db.Uuid
+  segment          String?                  @db.VarChar(100)
+  sentiment        String                   @db.VarChar(50)
+  toneScore        Decimal?                 @db.Decimal(5, 4)
+  escalationRisk   Decimal?                 @db.Decimal(5, 4)
+  status           AiTelephonyInsightStatus @default(GENERATED)
+  sourceAiResultId String?                  @db.Uuid
+  createdAt        DateTime                 @default(now())
+
+  @@index([organizationId])
+  @@index([callAttemptId])
+  @@map("sentiment_analyses")
+  @@schema("ai_telephony")
+}
+
+/// Aggregate Root; a computed QA score for a call, disputable by a human
+/// reviewer.
+model QualityScore {
+  id               String                   @id @default(uuid()) @db.Uuid
+  organizationId   String?                  @db.Uuid
+  callAttemptId    String                   @db.Uuid
+  score            Decimal                  @db.Decimal(5, 2)
+  criteria         Json?                    @db.JsonB
+  status           AiTelephonyInsightStatus @default(GENERATED)
+  sourceAiResultId String?                  @db.Uuid
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([organizationId])
+  @@index([callAttemptId])
+  @@map("quality_scores")
+  @@schema("ai_telephony")
+}

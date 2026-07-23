@@ -1,0 +1,330 @@
+// ============================================================================
+// ai_governance — src/modules/ai-platform (ai-governance)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("Platform Governance").
+//
+// `ai_governance` is the control-plane for every other ai-platform module:
+// routing, rate limiting, safety, human-in-the-loop approval, experiment
+// management, and feedback capture. It references `ai_core.*` (AiProvider,
+// AiModel, AiAgent, PromptVersion, AiResult) by plain UUID column only — no
+// Prisma relation crosses the schema boundary (ADR 0001).
+// ============================================================================
+
+enum GovernanceRuleStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+  RETIRED
+
+  @@map("governance_rule_status")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; the ordered candidate-model policy for one AI
+/// Capability. `capability` mirrors `ai_core.AiCapabilityType` by value
+/// (no cross-schema enum sharing in Postgres — kept identical by
+/// convention, not by shared type).
+model ModelRoutingRule {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String?              @db.Uuid
+  capability        String               @db.VarChar(50)
+  /// Ordered array of `ai_core.AiModel.id` candidates plus the
+  /// cost/latency/quality preference used to rank them.
+  candidateModelIds Json                 @db.JsonB
+  preferenceConfig  Json                 @db.JsonB
+  versionNumber     Int                  @default(1)
+  status            GovernanceRuleStatus @default(DRAFT)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([organizationId, capability, versionNumber])
+  @@map("model_routing_rules")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root (governance-owned); child of `ai_core.AiConfiguration`
+/// by reference. Distinct from `notifications.ProviderFailoverPolicy`,
+/// which governs notification delivery, not AI providers.
+model AiProviderFailoverPolicy {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String?              @db.Uuid
+  aiConfigurationId String?              @db.Uuid
+  priorityOrder     Json                 @db.JsonB
+  healthThreshold   Decimal?             @db.Decimal(5, 4)
+  versionNumber     Int                  @default(1)
+  status            GovernanceRuleStatus @default(DRAFT)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([organizationId, versionNumber])
+  @@map("ai_provider_failover_policies")
+  @@schema("ai_governance")
+}
+
+/// Append-only; child of `ai_core.AiProvider` by cross-schema reference,
+/// owned here per the module's documented governance boundary. Feeds
+/// `AiProviderFailoverPolicy` decisions.
+model AiProviderHealthCheck {
+  id           String   @id @default(uuid()) @db.Uuid
+  aiProviderId String   @db.Uuid
+  isHealthy    Boolean
+  latencyMs    Int?
+  details      Json?    @db.JsonB
+  checkedAt    DateTime @default(now())
+
+  // MANUAL SQL FOLLOW-UP: cross-schema FK —
+  //   ALTER TABLE ai_governance.provider_health_checks
+  //     ADD CONSTRAINT provider_health_checks_ai_provider_id_fkey
+  //     FOREIGN KEY (ai_provider_id) REFERENCES ai_core.ai_providers(id);
+  @@index([aiProviderId])
+  @@map("provider_health_checks")
+  @@schema("ai_governance")
+}
+
+enum RateLimitScope {
+  PROVIDER
+  AGENT
+  ORGANIZATION
+
+  @@map("rate_limit_scope")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; a throttle applied at Provider, Agent, or Organization
+/// scope. `scopeId` is a polymorphic reference resolved by `scopeType`
+/// (nullable when `scopeType = ORGANIZATION` and `organizationId` alone is
+/// sufficient).
+model RateLimitPolicy {
+  id                String         @id @default(uuid()) @db.Uuid
+  organizationId    String?        @db.Uuid
+  scopeType         RateLimitScope
+  scopeId           String?        @db.Uuid
+  requestsPerMinute Int?
+  tokensPerDay      Int?
+  costPerDayLimit   Decimal?       @db.Decimal(14, 4)
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // MANUAL SQL FOLLOW-UP: `scopeId` is polymorphic by `scopeType` — enforce
+  // presence/absence rules with a CHECK constraint, e.g.:
+  //   ALTER TABLE ai_governance.rate_limit_policies
+  //     ADD CONSTRAINT rate_limit_policies_scope_id_required_check
+  //     CHECK (scope_type = 'ORGANIZATION' OR scope_id IS NOT NULL);
+  @@index([organizationId])
+  @@index([scopeType, scopeId])
+  @@map("rate_limit_policies")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; a named safety/guardrail policy. Versions are
+/// immutable once published — a change always creates a new
+/// SafetyPolicyVersion.
+model SafetyPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  name           String   @db.VarChar(200)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  versions SafetyPolicyVersion[]
+
+  @@unique([organizationId, name])
+  @@map("safety_policies")
+  @@schema("ai_governance")
+}
+
+enum SafetyPolicyVersionStatus {
+  DRAFT
+  EFFECTIVE
+  SUPERSEDED
+
+  @@map("safety_policy_version_status")
+  @@schema("ai_governance")
+}
+
+/// Child of Safety Policy; immutable once Effective. Referenced by
+/// `ai_core.AiAgent.safetyPolicyId` pointing at the owning
+/// SafetyPolicy (agents bind to the policy, resolving its current
+/// Effective version at runtime).
+model SafetyPolicyVersion {
+  id             String                    @id @default(uuid()) @db.Uuid
+  safetyPolicyId String                    @db.Uuid
+  versionNumber  Int
+  rules          Json                      @db.JsonB
+  status         SafetyPolicyVersionStatus @default(DRAFT)
+  effectiveFrom  DateTime?
+  createdAt      DateTime                  @default(now())
+
+  safetyPolicy SafetyPolicy @relation(fields: [safetyPolicyId], references: [id], onDelete: Cascade)
+
+  @@unique([safetyPolicyId, versionNumber])
+  @@map("safety_policy_versions")
+  @@schema("ai_governance")
+}
+
+enum AutomationTier {
+  TIER_1
+  TIER_2
+  TIER_3
+
+  @@map("automation_tier")
+  @@schema("ai_governance")
+}
+
+enum HumanApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ESCALATED
+  EXPIRED
+
+  @@map("human_approval_status")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; the human-in-the-loop gate for an `ai_core.AiResult`
+/// whose `AutomationTier` requires review before being acted upon.
+model HumanApproval {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizationId  String?             @db.Uuid
+  aiResultId      String              @db.Uuid
+  aiTaskId        String?             @db.Uuid
+  automationTier  AutomationTier
+  status          HumanApprovalStatus @default(PENDING)
+  decidedByUserId String?             @db.Uuid
+  decidedAt       DateTime?
+  escalatedAt     DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@index([organizationId])
+  @@index([aiResultId])
+  @@index([status])
+  @@map("human_approvals")
+  @@schema("ai_governance")
+}
+
+enum FeedbackType {
+  ACCEPT
+  DISMISS
+  CORRECTION
+
+  @@map("feedback_type")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; human feedback on an `ai_core.AiResult`, closing the
+/// loop back into Prompt/Agent/Experiment iteration.
+model Feedback {
+  id                    String       @id @default(uuid()) @db.Uuid
+  organizationId        String?      @db.Uuid
+  aiResultId            String       @db.Uuid
+  promptVersionId       String?      @db.Uuid
+  aiAgentId             String?      @db.Uuid
+  aiExperimentId        String?      @db.Uuid
+  aiExperimentVariantId String?      @db.Uuid
+  feedbackType          FeedbackType
+  notes                 String?      @db.Text
+  submittedByUserId     String       @db.Uuid
+  submittedAt           DateTime     @default(now())
+
+  experiment AiExperiment?        @relation(fields: [aiExperimentId], references: [id], onDelete: SetNull)
+  variant    AiExperimentVariant? @relation(fields: [aiExperimentVariantId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([aiResultId])
+  @@map("feedback")
+  @@schema("ai_governance")
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  CONCLUDED
+  PROMOTED
+  REJECTED
+
+  @@map("experiment_status")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; an A/B(/n) test over Prompt Versions, Models, or
+/// routing strategies, evaluated against a declared success metric.
+model AiExperiment {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String?          @db.Uuid
+  name            String           @db.VarChar(200)
+  successMetric   Json             @db.JsonB
+  status          ExperimentStatus @default(DRAFT)
+  startedAt       DateTime?
+  concludedAt     DateTime?
+  promotedAt      DateTime?
+  createdByUserId String           @db.Uuid
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  variants  AiExperimentVariant[]
+  feedbacks Feedback[]
+
+  @@unique([organizationId, name])
+  @@map("ai_experiments")
+  @@schema("ai_governance")
+}
+
+/// Child of AI Experiment; one traffic-allocated arm — a specific
+/// Prompt Version, Model, Provider, or sampling/routing configuration.
+model AiExperimentVariant {
+  id                          String   @id @default(uuid()) @db.Uuid
+  aiExperimentId              String   @db.Uuid
+  promptVersionId             String?  @db.Uuid
+  aiModelId                   String?  @db.Uuid
+  aiProviderId                String?  @db.Uuid
+  samplingParams              Json?    @db.JsonB
+  routingStrategyRef          String?  @db.VarChar(200)
+  trafficAllocationPercentage Decimal  @db.Decimal(5, 2)
+  createdAt                   DateTime @default(now())
+
+  experiment AiExperiment @relation(fields: [aiExperimentId], references: [id], onDelete: Cascade)
+  feedbacks  Feedback[]
+
+  // MANUAL SQL FOLLOW-UP: allocations across variants of one experiment
+  // must sum to <= 100 — enforce via a deferred trigger/constraint
+  // (cannot be expressed as a plain column CHECK across sibling rows):
+  //   CREATE CONSTRAINT TRIGGER ai_experiment_variants_allocation_sum_check ...
+  @@index([aiExperimentId])
+  @@map("ai_experiment_variants")
+  @@schema("ai_governance")
+}
+
+enum AiTriggerSubscriptionStatus {
+  CONFIGURED
+  ACTIVE
+  DISABLED
+  ARCHIVED
+
+  @@map("ai_trigger_subscription_status")
+  @@schema("ai_governance")
+}
+
+/// Aggregate Root; declarative binding from a published domain event type
+/// to the `ai_core.AiAgent` or `ai_core.AiWorkflow` that should react to it.
+model AiTriggerSubscription {
+  id              String                      @id @default(uuid()) @db.Uuid
+  organizationId  String?                     @db.Uuid
+  domainEventType String                      @db.VarChar(150)
+  aiAgentId       String?                     @db.Uuid
+  aiWorkflowId    String?                     @db.Uuid
+  status          AiTriggerSubscriptionStatus @default(CONFIGURED)
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  // MANUAL SQL FOLLOW-UP: "binds to exactly one Agent or Workflow" —
+  //   ALTER TABLE ai_governance.ai_trigger_subscriptions
+  //     ADD CONSTRAINT ai_trigger_subscriptions_exactly_one_target_check
+  //     CHECK (num_nonnulls(ai_agent_id, ai_workflow_id) = 1);
+  @@unique([organizationId, domainEventType, aiAgentId, aiWorkflowId])
+  @@index([domainEventType])
+  @@map("ai_trigger_subscriptions")
+  @@schema("ai_governance")
+}

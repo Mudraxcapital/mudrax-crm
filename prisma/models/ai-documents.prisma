@@ -1,0 +1,123 @@
+// ============================================================================
+// ai_documents — src/modules/ai-platform (ai-documents)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("Document Intelligence").
+//
+// Every model here references `documents.*` and `ai_core.AiResult` by plain
+// UUID column only — no Prisma relation is declared across these module
+// boundaries, preserving one-directional dependency discipline (ADR 0001).
+// A manual SQL foreign key may be added for referential integrity without
+// introducing a Prisma-level cross-module coupling.
+// ============================================================================
+
+enum AiDocumentJobStatus {
+  REQUESTED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("ai_document_job_status")
+  @@schema("ai_documents")
+}
+
+/// Aggregate Root; one request to OCR a specific Document Version.
+/// References `documents.DocumentVersion.id` and, once complete,
+/// `ai_core.AiResult.id` — both cross-schema, FK enforced manually.
+model OcrRequest {
+  id                String              @id @default(uuid()) @db.Uuid
+  organizationId    String?             @db.Uuid
+  documentVersionId String              @db.Uuid
+  sourceAiResultId  String?             @db.Uuid
+  status            AiDocumentJobStatus @default(REQUESTED)
+  requestedAt       DateTime            @default(now())
+  completedAt       DateTime?
+  failureReason     String?             @db.Text
+
+  result OcrResult?
+
+  // MANUAL SQL FOLLOW-UP: cross-schema FKs (require documents/ai_core
+  // extensions in the same database):
+  //   ALTER TABLE ai_documents.ocr_requests
+  //     ADD CONSTRAINT ocr_requests_document_version_id_fkey
+  //     FOREIGN KEY (document_version_id) REFERENCES documents.document_versions(id);
+  @@index([organizationId])
+  @@index([documentVersionId])
+  @@map("ocr_requests")
+  @@schema("ai_documents")
+}
+
+/// Child of OCR Request; the raw extraction envelope.
+model OcrResult {
+  id               String   @id @default(uuid()) @db.Uuid
+  ocrRequestId     String   @unique @db.Uuid
+  fullText         String?  @db.Text
+  structuredLayout Json?    @db.JsonB
+  confidence       Decimal? @db.Decimal(5, 4)
+  createdAt        DateTime @default(now())
+
+  ocrRequest OcrRequest        @relation(fields: [ocrRequestId], references: [id], onDelete: Cascade)
+  entities   ExtractedEntity[]
+
+  @@map("ocr_results")
+  @@schema("ai_documents")
+}
+
+enum ExtractedEntityStatus {
+  EXTRACTED
+  CONFIRMED
+  REJECTED
+
+  @@map("extracted_entity_status")
+  @@schema("ai_documents")
+}
+
+/// Child of OCR Result; one named field/entity lifted from an OCR pass.
+/// Consumed by `documents.ExtractedField` as an advisory input, never
+/// promoted directly.
+model ExtractedEntity {
+  id          String                @id @default(uuid()) @db.Uuid
+  ocrResultId String                @db.Uuid
+  entityType  String                @db.VarChar(100)
+  value       String                @db.Text
+  location    Json?                 @db.JsonB
+  confidence  Decimal               @db.Decimal(5, 4)
+  status      ExtractedEntityStatus @default(EXTRACTED)
+  createdAt   DateTime              @default(now())
+
+  ocrResult OcrResult @relation(fields: [ocrResultId], references: [id], onDelete: Cascade)
+
+  @@index([ocrResultId])
+  @@map("extracted_entities")
+  @@schema("ai_documents")
+}
+
+enum DocumentClassificationStatus {
+  PREDICTED
+  ACCEPTED
+  OVERRIDDEN
+
+  @@map("document_classification_status")
+  @@schema("ai_documents")
+}
+
+/// Aggregate Root; a predicted `documents.DocumentType` (and optionally
+/// `DocumentCategory`) for a Document Version, advisory until Accepted by a
+/// human or a trusted automated rule.
+model DocumentClassification {
+  id                            String                       @id @default(uuid()) @db.Uuid
+  organizationId                String?                      @db.Uuid
+  documentVersionId             String                       @db.Uuid
+  predictedDocumentTypeCode     String                       @db.VarChar(100)
+  predictedDocumentCategoryCode String?                      @db.VarChar(100)
+  confidence                    Decimal                      @db.Decimal(5, 4)
+  status                        DocumentClassificationStatus @default(PREDICTED)
+  sourceAiResultId              String?                      @db.Uuid
+  createdAt                     DateTime                     @default(now())
+  updatedAt                     DateTime                     @updatedAt
+
+  @@index([organizationId])
+  @@index([documentVersionId])
+  @@map("document_classifications")
+  @@schema("ai_documents")
+}

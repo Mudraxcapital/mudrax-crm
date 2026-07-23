@@ -1,0 +1,146 @@
+// ============================================================================
+// users — src/modules/users
+//
+// Source: ADR 0002 (Users and Enterprise RBAC), docs/domain/domain-model.md,
+// docs/platform/platform-contracts.md (§3 Security & Identity).
+//
+// `users` is the sole employee identity module. Job titles (Caller, Manager,
+// Team Leader, Admin, ...) are Roles assigned via `rbac`, never separate
+// entities or separate modules (ADR 0002).
+// ============================================================================
+
+/// The identity. Job responsibilities are Roles held via `rbac`.UserRole,
+/// never encoded on User itself.
+model User {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @db.Uuid
+  employeeCode   String     @db.VarChar(50)
+  fullName       String     @db.VarChar(200)
+  email          String     @unique @db.VarChar(320)
+  phone          String?    @db.VarChar(20)
+  passwordHash   String     @db.VarChar(255)
+  status         UserStatus @default(ACTIVE)
+
+  // Current organizational membership, denormalized for cheap RBAC Data
+  // Scope resolution (platform-contracts.md §2: "reads organization's
+  // current Team/Branch membership at check time"). The authoritative,
+  // auditable history lives in `organization`.UserAssignmentHistory;
+  // these three pointers are kept in sync by that module's domain events,
+  // never written directly by any other module.
+  currentTeamId       String? @db.Uuid
+  currentBranchId     String? @db.Uuid
+  currentDepartmentId String? @db.Uuid
+
+  // MFA seam reserved per platform-contracts.md §3 ("not mandated day one
+  // ... reserves the seam so it can be turned on per-Role later as pure
+  // configuration").
+  mfaEnabled Boolean    @default(false)
+  mfaMethod  MfaMethod?
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  loginAttempts LoginAttempt[]
+  apiKeys       ApiKey[]
+
+  // Cross-schema FKs to `organization` are intentionally left as plain
+  // columns above (no Prisma relation) to avoid a circular module
+  // dependency at the Prisma-schema level mirroring the codebase's
+  // one-directional module dependency discipline (ADR 0001); referential
+  // integrity is enforced with manually-added foreign keys:
+  //   ALTER TABLE users.users
+  //     ADD CONSTRAINT users_current_team_id_fkey
+  //       FOREIGN KEY (current_team_id) REFERENCES organization.teams(id),
+  //     ADD CONSTRAINT users_current_branch_id_fkey
+  //       FOREIGN KEY (current_branch_id) REFERENCES organization.branches(id),
+  //     ADD CONSTRAINT users_current_department_id_fkey
+  //       FOREIGN KEY (current_department_id) REFERENCES organization.departments(id);
+
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId])
+  @@index([currentTeamId])
+  @@index([currentBranchId])
+  @@map("users")
+  @@schema("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+
+  @@map("user_status")
+  @@schema("users")
+}
+
+enum MfaMethod {
+  TOTP
+  SMS_OTP
+  EMAIL_OTP
+
+  @@map("mfa_method")
+  @@schema("users")
+}
+
+/// Every login attempt, success or failure, is Audit-logged
+/// (platform-contracts.md §3). Structurally append-only: no update/delete
+/// use-case is ever exposed at the domain layer.
+model LoginAttempt {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String?  @db.Uuid
+  emailTried    String   @db.VarChar(320)
+  succeeded     Boolean
+  ipAddress     String?  @db.VarChar(64)
+  userAgent     String?  @db.Text
+  failureReason String?  @db.VarChar(200)
+  occurredAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([emailTried])
+  @@index([occurredAt])
+  @@map("login_attempts")
+  @@schema("users")
+}
+
+/// Scoped, attributable, individually revocable inbound-integration
+/// credential (platform-contracts.md §3 "API Keys") — never a blanket key
+/// shared across integrations.
+model ApiKey {
+  id             String        @id @default(uuid()) @db.Uuid
+  ownerUserId    String        @db.Uuid
+  name           String        @db.VarChar(150)
+  keyHash        String        @unique @db.VarChar(255)
+  keyPrefix      String        @db.VarChar(12)
+  dataScope      UserDataScope
+  integrationRef String?       @db.VarChar(150)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime      @default(now())
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+
+  @@index([ownerUserId])
+  @@map("api_keys")
+  @@schema("users")
+}
+
+/// Enterprise-wide RBAC Data Scope vocabulary (platform-contracts.md §2),
+/// duplicated as a schema-local enum (Postgres has no cross-schema enum
+/// sharing, and Prisma additionally requires globally-unique names across
+/// every `@@schema`-tagged type in one multi-schema project) — kept
+/// byte-for-byte identical in value set to `rbac.DataScope` by convention,
+/// never diverged.
+enum UserDataScope {
+  SELF
+  TEAM
+  BRANCH
+  ORGANIZATION
+  SYSTEM
+
+  @@map("data_scope")
+  @@schema("users")
+}

@@ -1,0 +1,743 @@
+// ============================================================================
+// telephony — src/modules/telephony
+//
+// Source: ADR 0006, docs/modules/telephony.md.
+//
+// Single write path for all call execution, live call-center features, and
+// outbound dialing. Never writes Lead, Customer, or Campaign state directly.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Connectivity & Carrier Layer
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root abstracting PRI, GSM Gateway, and SIP behind one
+/// discriminator and a type-specific configuration value.
+model Trunk {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  name           String      @db.VarChar(150)
+  trunkType      TrunkType
+  configuration  Json        @db.JsonB
+  status         TrunkStatus @default(PROVISIONED)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  lines                TelephonyLine[]
+  callerIds            CallerId[]
+  callAttempts         CallAttempt[]
+  dialerCampaignTrunks DialerCampaignTrunk[]
+
+  @@index([organizationId])
+  @@map("trunks")
+  @@schema("telephony")
+}
+
+enum TrunkType {
+  PRI
+  GSM_GATEWAY
+  SIP
+
+  @@map("trunk_type")
+  @@schema("telephony")
+}
+
+enum TrunkStatus {
+  PROVISIONED
+  ACTIVE
+  DEGRADED
+  SUSPENDED
+  DECOMMISSIONED
+
+  @@map("trunk_status")
+  @@schema("telephony")
+}
+
+/// One addressable channel/circuit/registration within a Trunk. Bound to at
+/// most one live Call Attempt at a time.
+model TelephonyLine {
+  id             String   @id @default(uuid()) @db.Uuid
+  trunkId        String   @db.Uuid
+  lineIdentifier String   @db.VarChar(100)
+  simInventoryId String?  @db.Uuid
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  trunk        Trunk         @relation(fields: [trunkId], references: [id], onDelete: Cascade)
+  simInventory SimInventory? @relation(fields: [simInventoryId], references: [id], onDelete: SetNull)
+  callAttempts CallAttempt[]
+  callerIds    CallerId[]
+
+  // MANUAL SQL FOLLOW-UP: "bound to at most one live Call Attempt at a
+  // time" is enforced by ensuring at most one non-terminal Call Attempt per
+  // line — a partial unique index on the Call Attempt side:
+  //   CREATE UNIQUE INDEX call_attempts_one_live_per_line
+  //     ON telephony.call_attempts (telephony_line_id)
+  //     WHERE status NOT IN ('COMPLETED', 'NO_ANSWER', 'BUSY', 'FAILED');
+  @@unique([trunkId, lineIdentifier])
+  @@index([simInventoryId])
+  @@map("telephony_lines")
+  @@schema("telephony")
+}
+
+/// Physical/eSIM asset master record, referenced by identity from a
+/// GSM Gateway-backed Telephony Line, never embedded.
+model SimInventory {
+  id              String             @id @default(uuid()) @db.Uuid
+  organizationId  String             @db.Uuid
+  carrier         String             @db.VarChar(100)
+  msisdn          String             @unique @db.VarChar(20)
+  plan            String?            @db.VarChar(100)
+  activationState SimActivationState @default(PROCURED)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  lines TelephonyLine[]
+
+  @@index([organizationId])
+  @@map("sim_inventory")
+  @@schema("telephony")
+}
+
+enum SimActivationState {
+  PROCURED
+  ACTIVATED
+  IN_SERVICE
+  SUSPENDED
+  BLACKLISTED
+  RETIRED
+
+  @@map("sim_activation_state")
+  @@schema("telephony")
+}
+
+/// Registry of owned/leased inbound numbers. Resolves to exactly one
+/// routing target (IVR, Call Queue, or Extension) at a time.
+model DidNumber {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizationId    String            @db.Uuid
+  number            String            @unique @db.VarChar(20)
+  routingTargetType RoutingTargetType
+  routingTargetId   String            @db.Uuid
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // `routingTargetId` is a polymorphic reference (Ivr / CallQueue /
+  // Extension, all in this same schema) — Prisma cannot express a
+  // conditional foreign key. Referential integrity for the polymorphic
+  // pointer is enforced at the application layer, or with a manual
+  // trigger-based CHECK if strict DB-level enforcement is required.
+  @@index([organizationId])
+  @@map("did_numbers")
+  @@schema("telephony")
+}
+
+enum RoutingTargetType {
+  IVR
+  CALL_QUEUE
+  EXTENSION
+
+  @@map("routing_target_type")
+  @@schema("telephony")
+}
+
+/// Outbound-presented-number policy attached to a Trunk, Telephony Line, or
+/// Dialer Campaign; supports rotation without editing historical Call
+/// Attempts.
+model CallerId {
+  id               String   @id @default(uuid()) @db.Uuid
+  presentedNumber  String   @db.VarChar(20)
+  trunkId          String?  @db.Uuid
+  telephonyLineId  String?  @db.Uuid
+  dialerCampaignId String?  @db.Uuid
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  trunk          Trunk?          @relation(fields: [trunkId], references: [id], onDelete: Cascade)
+  telephonyLine  TelephonyLine?  @relation(fields: [telephonyLineId], references: [id], onDelete: Cascade)
+  dialerCampaign DialerCampaign? @relation(fields: [dialerCampaignId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP: exactly one of trunkId / telephonyLineId /
+  // dialerCampaignId should be set — a CHECK constraint:
+  //   ALTER TABLE telephony.caller_ids
+  //     ADD CONSTRAINT caller_ids_exactly_one_scope_check
+  //     CHECK (num_nonnulls(trunk_id, telephony_line_id, dialer_campaign_id) = 1);
+  @@index([trunkId])
+  @@index([telephonyLineId])
+  @@index([dialerCampaignId])
+  @@map("caller_ids")
+  @@schema("telephony")
+}
+
+/// Aggregate Root for an Agent's dial-able endpoint. Modeled
+/// device/location-agnostic to support Remote Agents without redesign.
+model Extension {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  // Cross-schema reference to users.User.id.
+  userId          String   @db.Uuid
+  extensionNumber String   @db.VarChar(20)
+  isRemote        Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  callAttempts      CallAttempt[]
+  agentSessions     AgentSession[]
+  callTransfersFrom CallTransfer[] @relation("CallTransferFrom")
+  callTransfersTo   CallTransfer[] @relation("CallTransferTo")
+
+  @@unique([organizationId, extensionNumber])
+  @@index([userId])
+  @@map("extensions")
+  @@schema("telephony")
+}
+
+// ---------------------------------------------------------------------------
+// Call Execution
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root. The atomic unit of telephony execution. Immutable once
+/// Completed.
+model CallAttempt {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  // Cross-schema references to leads.Lead / customers.Customer — nullable
+  // because internal calls (Extension-to-Extension) reference neither.
+  leadId     String? @db.Uuid
+  customerId String? @db.Uuid
+
+  extensionId      String? @db.Uuid
+  trunkId          String? @db.Uuid
+  telephonyLineId  String? @db.Uuid
+  ivrFlowVersionId String? @db.Uuid
+
+  direction   CallDirection
+  status      CallStatus       @default(INITIATING)
+  disposition CallDisposition?
+
+  /// Outbound retries always create a new Call Attempt, linked to the
+  /// predecessor additively — never a mutation/reopening of a completed one.
+  retryOfCallAttemptId String? @db.Uuid
+
+  callerIdUsed   String? @db.VarChar(20)
+  providerCallId String? @db.VarChar(150)
+
+  initiatedAt     DateTime  @default(now())
+  answeredAt      DateTime?
+  endedAt         DateTime?
+  durationSeconds Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  extension      Extension?      @relation(fields: [extensionId], references: [id], onDelete: SetNull)
+  trunk          Trunk?          @relation(fields: [trunkId], references: [id], onDelete: SetNull)
+  telephonyLine  TelephonyLine?  @relation(fields: [telephonyLineId], references: [id], onDelete: SetNull)
+  ivrFlowVersion IvrFlowVersion? @relation(fields: [ivrFlowVersionId], references: [id], onDelete: SetNull)
+
+  retryOfCallAttempt CallAttempt?  @relation("CallAttemptRetry", fields: [retryOfCallAttemptId], references: [id], onDelete: SetNull)
+  retryAttempts      CallAttempt[] @relation("CallAttemptRetry")
+
+  recordings         CallRecording[]
+  monitoringSessions CallMonitoringSession[]
+  transfers          CallTransfer[]
+  conferenceEntries  CallConference[]
+
+  // MANUAL SQL FOLLOW-UP: Call Attempt is the highest-volume table in this
+  // schema and a strong candidate for native PostgreSQL range partitioning
+  // by `initiated_at` (monthly), matching Audit Trail/Communication Log's
+  // append-heavy access pattern:
+  //   CREATE TABLE telephony.call_attempts (...) PARTITION BY RANGE (initiated_at);
+  @@index([organizationId])
+  @@index([leadId])
+  @@index([customerId])
+  @@index([extensionId])
+  @@index([status])
+  @@index([initiatedAt])
+  @@map("call_attempts")
+  @@schema("telephony")
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+
+  @@map("call_direction")
+  @@schema("telephony")
+}
+
+enum CallStatus {
+  INITIATING
+  RINGING
+  ANSWERED
+  ON_HOLD
+  TRANSFERRING
+  CONFERENCING
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+  ABANDONED
+
+  @@map("call_status")
+  @@schema("telephony")
+}
+
+/// Small, fixed, system-detected technical outcome. Permanently distinct
+/// from `leads`' Call Feedback Status.
+enum CallDisposition {
+  ANSWERED
+  NO_ANSWER
+  BUSY
+  FAILED
+  VOICEMAIL
+  CONGESTION
+
+  @@map("call_disposition")
+  @@schema("telephony")
+}
+
+// ---------------------------------------------------------------------------
+// Live Call Features
+// ---------------------------------------------------------------------------
+
+/// Child entity of Call Attempt for metadata and an access-audit trail; the
+/// audio payload is always an external reference, never inlined.
+model CallRecording {
+  id               String    @id @default(uuid()) @db.Uuid
+  callAttemptId    String    @db.Uuid
+  storageReference String    @db.Text
+  durationSeconds  Int?
+  /// Additive, optional annotation seam reserved for future AI capabilities
+  /// (`ai_telephony`'s Transcription Job / Call Summary / Quality Score).
+  transcriptRef    String?   @db.VarChar(255)
+  summaryRef       String?   @db.VarChar(255)
+  qualityScoreRef  String?   @db.VarChar(255)
+  startedAt        DateTime
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+
+  callAttempt CallAttempt              @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+  accessLog   CallRecordingAccessLog[]
+
+  @@index([callAttemptId])
+  @@map("call_recordings")
+  @@schema("telephony")
+}
+
+/// Recording access is always logged, never anonymous (telephony.md
+/// Business Rules). Append-only.
+model CallRecordingAccessLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  callRecordingId  String   @db.Uuid
+  accessedByUserId String   @db.Uuid
+  accessedAt       DateTime @default(now())
+
+  callRecording CallRecording @relation(fields: [callRecordingId], references: [id], onDelete: Cascade)
+
+  @@index([callRecordingId])
+  @@map("call_recording_access_log")
+  @@schema("telephony")
+}
+
+/// Listen, Whisper, and Barge are modes of one Call Monitoring Session;
+/// every mode transition is individually logged.
+model CallMonitoringSession {
+  id               String         @id @default(uuid()) @db.Uuid
+  callAttemptId    String         @db.Uuid
+  supervisorUserId String         @db.Uuid
+  mode             MonitoringMode
+  startedAt        DateTime       @default(now())
+  endedAt          DateTime?
+
+  callAttempt     CallAttempt                @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+  modeTransitions CallMonitoringTransition[]
+
+  @@index([callAttemptId])
+  @@map("call_monitoring_sessions")
+  @@schema("telephony")
+}
+
+enum MonitoringMode {
+  LISTEN
+  WHISPER
+  BARGE
+
+  @@map("monitoring_mode")
+  @@schema("telephony")
+}
+
+model CallMonitoringTransition {
+  id                      String         @id @default(uuid()) @db.Uuid
+  callMonitoringSessionId String         @db.Uuid
+  toMode                  MonitoringMode
+  transitionedAt          DateTime       @default(now())
+
+  callMonitoringSession CallMonitoringSession @relation(fields: [callMonitoringSessionId], references: [id], onDelete: Cascade)
+
+  @@index([callMonitoringSessionId])
+  @@map("call_monitoring_transitions")
+  @@schema("telephony")
+}
+
+/// One Blind or Warm transfer event, append-only.
+model CallTransfer {
+  id              String       @id @default(uuid()) @db.Uuid
+  callAttemptId   String       @db.Uuid
+  transferType    TransferType
+  fromExtensionId String?      @db.Uuid
+  toExtensionId   String       @db.Uuid
+  transferredAt   DateTime     @default(now())
+
+  callAttempt   CallAttempt @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+  fromExtension Extension?  @relation("CallTransferFrom", fields: [fromExtensionId], references: [id], onDelete: SetNull)
+  toExtension   Extension   @relation("CallTransferTo", fields: [toExtensionId], references: [id], onDelete: Restrict)
+
+  @@index([callAttemptId])
+  @@map("call_transfers")
+  @@schema("telephony")
+}
+
+enum TransferType {
+  BLIND
+  WARM
+
+  @@map("transfer_type")
+  @@schema("telephony")
+}
+
+/// Added-participant join/leave events. Barge is realized as a supervisor
+/// joining this same mechanism.
+model CallConference {
+  id                String    @id @default(uuid()) @db.Uuid
+  callAttemptId     String    @db.Uuid
+  participantUserId String    @db.Uuid
+  joinedAt          DateTime  @default(now())
+  leftAt            DateTime?
+
+  callAttempt CallAttempt @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([callAttemptId])
+  @@map("call_conferences")
+  @@schema("telephony")
+}
+
+/// Aggregate Root for a configured voice-menu flow, versioned so a
+/// completed Call Attempt always references the exact flow that routed it.
+model Ivr {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  versions IvrFlowVersion[]
+
+  @@index([organizationId])
+  @@map("ivrs")
+  @@schema("telephony")
+}
+
+model IvrFlowVersion {
+  id             String           @id @default(uuid()) @db.Uuid
+  ivrId          String           @db.Uuid
+  versionNumber  Int
+  flowDefinition Json             @db.JsonB
+  status         IvrVersionStatus @default(DRAFT)
+  publishedAt    DateTime?
+  createdAt      DateTime         @default(now())
+
+  ivr          Ivr           @relation(fields: [ivrId], references: [id], onDelete: Cascade)
+  callAttempts CallAttempt[]
+
+  @@unique([ivrId, versionNumber])
+  @@index([ivrId])
+  @@map("ivr_flow_versions")
+  @@schema("telephony")
+}
+
+enum IvrVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+
+  @@map("ivr_version_status")
+  @@schema("telephony")
+}
+
+// ---------------------------------------------------------------------------
+// Queueing & Agent Workforce
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; a live-call holding pool with an embedded Queue
+/// Strategy.
+model CallQueue {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  name           String            @db.VarChar(150)
+  strategyType   QueueStrategyType
+  overflowConfig Json?             @db.JsonB
+  timeoutSeconds Int?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  memberships    QueueMembership[]
+  participations QueueParticipation[]
+
+  @@index([organizationId])
+  @@map("call_queues")
+  @@schema("telephony")
+}
+
+enum QueueStrategyType {
+  RING_ALL
+  ROUND_ROBIN
+  SKILL_BASED
+  LONGEST_IDLE
+
+  @@map("queue_strategy_type")
+  @@schema("telephony")
+}
+
+/// Historical, append-only child entity recording Agent eligibility over
+/// time — never a single mutable "current members" field.
+model QueueMembership {
+  id            String    @id @default(uuid()) @db.Uuid
+  callQueueId   String    @db.Uuid
+  userId        String    @db.Uuid
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+
+  callQueue CallQueue @relation(fields: [callQueueId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP: overlapping eligibility windows for the same
+  // (callQueueId, userId) should be prevented with a range EXCLUDE
+  // constraint (requires the `btree_gist` extension), which Prisma cannot
+  // express:
+  //   CREATE EXTENSION IF NOT EXISTS btree_gist;
+  //   ALTER TABLE telephony.queue_memberships
+  //     ADD CONSTRAINT queue_memberships_no_overlap
+  //     EXCLUDE USING gist (
+  //       call_queue_id WITH =, user_id WITH =,
+  //       tstzrange(effective_from, COALESCE(effective_to, 'infinity')) WITH &&
+  //     );
+  @@index([callQueueId])
+  @@index([userId])
+  @@map("queue_memberships")
+  @@schema("telephony")
+}
+
+/// Aggregate Root, independent of Call Attempt. One Agent's continuous work
+/// session. Exactly one Active session is permitted per Extension.
+model AgentSession {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String             @db.Uuid
+  // Cross-schema reference to users.User.id.
+  userId             String             @db.Uuid
+  extensionId        String             @db.Uuid
+  status             AgentSessionStatus @default(LOGGED_IN)
+  remoteAgentContext Json?              @db.JsonB
+  loginAt            DateTime           @default(now())
+  logoutAt           DateTime?
+
+  extension           Extension            @relation(fields: [extensionId], references: [id], onDelete: Restrict)
+  queueParticipations QueueParticipation[]
+  statusHistory       AgentStatusHistory[]
+
+  // MANUAL SQL FOLLOW-UP: "exactly one Active Agent Session per Extension"
+  // is a partial unique index:
+  //   CREATE UNIQUE INDEX agent_sessions_one_active_per_extension
+  //     ON telephony.agent_sessions (extension_id)
+  //     WHERE status != 'LOGGED_OUT';
+  @@index([organizationId])
+  @@index([userId])
+  @@index([extensionId])
+  @@map("agent_sessions")
+  @@schema("telephony")
+}
+
+/// Historical, append-only child entity of Agent Session; every
+/// availability transition (ADR 0006) is appended here rather than
+/// overwriting `AgentSession.status`, giving a complete, queryable
+/// timeline of an Agent's availability instead of only the current value.
+model AgentStatusHistory {
+  id             String             @id @default(uuid()) @db.Uuid
+  agentSessionId String             @db.Uuid
+  status         AgentSessionStatus
+  changedAt      DateTime           @default(now())
+
+  agentSession AgentSession @relation(fields: [agentSessionId], references: [id], onDelete: Cascade)
+
+  @@index([agentSessionId])
+  @@index([changedAt])
+  @@map("agent_status_histories")
+  @@schema("telephony")
+}
+
+enum AgentSessionStatus {
+  LOGGED_IN
+  AVAILABLE
+  ON_CALL
+  AFTER_CALL_WORK
+  IDLE
+  BREAK
+  BUSY
+  LOGGED_OUT
+
+  @@map("agent_session_status")
+  @@schema("telephony")
+}
+
+/// Child entity of Agent Session recording the live, session-scoped fact
+/// that an already-eligible Agent joined/left a Queue's active pool.
+/// Distinct from Queue Membership's eligibility roster.
+model QueueParticipation {
+  id             String    @id @default(uuid()) @db.Uuid
+  agentSessionId String    @db.Uuid
+  callQueueId    String    @db.Uuid
+  joinedAt       DateTime  @default(now())
+  leftAt         DateTime?
+
+  agentSession AgentSession @relation(fields: [agentSessionId], references: [id], onDelete: Cascade)
+  callQueue    CallQueue    @relation(fields: [callQueueId], references: [id], onDelete: Cascade)
+
+  @@index([agentSessionId])
+  @@index([callQueueId])
+  @@map("queue_participations")
+  @@schema("telephony")
+}
+
+// ---------------------------------------------------------------------------
+// Outbound Dialing
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; independent execution configuration that optionally
+/// references a CRM Campaign by identity — never a replacement for it.
+model DialerCampaign {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  // Cross-schema, optional reference to campaigns.Campaign.id.
+  crmCampaignId  String?              @db.Uuid
+  name           String               @db.VarChar(150)
+  pacingConfig   Json                 @db.JsonB
+  retryDefaults  Json?                @db.JsonB
+  status         DialerCampaignStatus @default(DRAFT)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  callerIds    CallerId[]
+  trunkPool    DialerCampaignTrunk[]
+  dialerQueues DialerQueue[]
+
+  @@index([organizationId])
+  @@index([crmCampaignId])
+  @@map("dialer_campaigns")
+  @@schema("telephony")
+}
+
+enum DialerCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+
+  @@map("dialer_campaign_status")
+  @@schema("telephony")
+}
+
+/// Trunk/Line pool assigned to a Dialer Campaign. Composite primary key.
+model DialerCampaignTrunk {
+  dialerCampaignId String @db.Uuid
+  trunkId          String @db.Uuid
+
+  dialerCampaign DialerCampaign @relation(fields: [dialerCampaignId], references: [id], onDelete: Cascade)
+  trunk          Trunk          @relation(fields: [trunkId], references: [id], onDelete: Cascade)
+
+  @@id([dialerCampaignId, trunkId])
+  @@map("dialer_campaign_trunks")
+  @@schema("telephony")
+}
+
+/// Aggregate Root; the outbound *work* queue of numbers still to be dialed
+/// — deliberately distinct from Call Queue, the live-call *holding* pool.
+model DialerQueue {
+  id               String            @id @default(uuid()) @db.Uuid
+  dialerCampaignId String            @db.Uuid
+  name             String            @db.VarChar(150)
+  status           DialerQueueStatus @default(ACTIVE)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  dialerCampaign DialerCampaign     @relation(fields: [dialerCampaignId], references: [id], onDelete: Cascade)
+  entries        DialerQueueEntry[]
+
+  @@index([dialerCampaignId])
+  @@map("dialer_queues")
+  @@schema("telephony")
+}
+
+enum DialerQueueStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+
+  @@map("dialer_queue_status")
+  @@schema("telephony")
+}
+
+model DialerQueueEntry {
+  id            String                 @id @default(uuid()) @db.Uuid
+  dialerQueueId String                 @db.Uuid
+  // Cross-schema reference to leads.Lead.id.
+  leadId        String                 @db.Uuid
+  phoneNumber   String                 @db.VarChar(20)
+  status        DialerQueueEntryStatus @default(PENDING)
+  priority      Int                    @default(0)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  dialerQueue DialerQueue   @relation(fields: [dialerQueueId], references: [id], onDelete: Cascade)
+  retries     DialerRetry[]
+
+  @@index([dialerQueueId])
+  @@index([leadId])
+  @@map("dialer_queue_entries")
+  @@schema("telephony")
+}
+
+enum DialerQueueEntryStatus {
+  PENDING
+  DIALING
+  COMPLETED
+  EXHAUSTED
+  CANCELLED
+
+  @@map("dialer_queue_entry_status")
+  @@schema("telephony")
+}
+
+/// Child entity of a Dialer Queue Entry owning only the retry
+/// counter/backoff/next-eligible-time policy; never holds telephony facts.
+model DialerRetry {
+  id                 String   @id @default(uuid()) @db.Uuid
+  dialerQueueEntryId String   @db.Uuid
+  attemptNumber      Int
+  backoffSeconds     Int
+  nextEligibleAt     DateTime
+  createdAt          DateTime @default(now())
+
+  dialerQueueEntry DialerQueueEntry @relation(fields: [dialerQueueEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([dialerQueueEntryId, attemptNumber])
+  @@map("dialer_retries")
+  @@schema("telephony")
+}

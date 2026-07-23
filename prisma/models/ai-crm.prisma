@@ -1,0 +1,126 @@
+// ============================================================================
+// ai_crm — src/modules/ai-platform (ai-crm)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("CRM Intelligence").
+//
+// Every model here references `leads.*`, `customers.*`, `ai_core.*`, and
+// `ai_telephony.*` by plain UUID column only — no Prisma relation crosses
+// these module boundaries (ADR 0001).
+// ============================================================================
+
+enum AiCrmInsightStatus {
+  COMPUTED
+  RECOMPUTED
+  SUPERSEDED
+
+  @@map("ai_crm_insight_status")
+  @@schema("ai_crm")
+}
+
+/// Aggregate Root; a computed propensity/priority score for a Lead.
+/// References `leads.Lead.id` cross-schema.
+model LeadScore {
+  id               String             @id @default(uuid()) @db.Uuid
+  organizationId   String?            @db.Uuid
+  leadId           String             @db.Uuid
+  scoreType        String             @db.VarChar(50)
+  scoreValue       Decimal            @db.Decimal(7, 4)
+  status           AiCrmInsightStatus @default(COMPUTED)
+  sourceAiResultId String?            @db.Uuid
+  computedAt       DateTime           @default(now())
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@map("lead_scores")
+  @@schema("ai_crm")
+}
+
+enum RecommendationStatus {
+  GENERATED
+  PRESENTED
+  ACCEPTED
+  DISMISSED
+
+  @@map("recommendation_status")
+  @@schema("ai_crm")
+}
+
+/// Aggregate Root; a generated suggestion (e.g. best offer, best contact
+/// window) surfaced against a Lead.
+model LeadRecommendation {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String?              @db.Uuid
+  leadId             String               @db.Uuid
+  recommendationType String               @db.VarChar(100)
+  content            Json                 @db.JsonB
+  status             RecommendationStatus @default(GENERATED)
+  sourceAiResultId   String?              @db.Uuid
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@map("lead_recommendations")
+  @@schema("ai_crm")
+}
+
+enum NextBestActionStatus {
+  SUGGESTED
+  ACTED_UPON
+  IGNORED
+
+  @@map("next_best_action_status")
+  @@schema("ai_crm")
+}
+
+/// Aggregate Root; the single synthesized "what to do next" for a Lead,
+/// composed from LeadScore, LeadRecommendation, and (cross-schema)
+/// `ai_telephony.SentimentAnalysis` signals. Every synthesis input is a
+/// plain, optional UUID column — no Prisma relation, since two of the
+/// three sources live in sibling AI-platform schemas.
+model NextBestAction {
+  id                              String               @id @default(uuid()) @db.Uuid
+  organizationId                  String?              @db.Uuid
+  leadId                          String               @db.Uuid
+  synthesizedFromLeadScoreId      String?              @db.Uuid
+  synthesizedFromRecommendationId String?              @db.Uuid
+  synthesizedFromSentimentId      String?              @db.Uuid
+  content                         Json                 @db.JsonB
+  status                          NextBestActionStatus @default(SUGGESTED)
+  createdAt                       DateTime             @default(now())
+  updatedAt                       DateTime             @updatedAt
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@map("next_best_actions")
+  @@schema("ai_crm")
+}
+
+enum DuplicateDetectionStatus {
+  SIGNALED
+  CONSUMED
+  IGNORED
+
+  @@map("duplicate_detection_status")
+  @@schema("ai_crm")
+}
+
+/// Aggregate Root; an AI-signaled potential duplicate pairing, advisory to
+/// `customers.CustomerDuplicateCandidate` — never itself the source of
+/// truth for merge decisions.
+model DuplicateDetection {
+  id                String                   @id @default(uuid()) @db.Uuid
+  organizationId    String?                  @db.Uuid
+  customerId        String                   @db.Uuid
+  matchedCustomerId String                   @db.Uuid
+  matchType         String                   @db.VarChar(50)
+  matchScore        Decimal                  @db.Decimal(5, 4)
+  status            DuplicateDetectionStatus @default(SIGNALED)
+  sourceAiResultId  String?                  @db.Uuid
+  createdAt         DateTime                 @default(now())
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@map("duplicate_detections")
+  @@schema("ai_crm")
+}

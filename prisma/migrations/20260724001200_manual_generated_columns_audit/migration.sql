@@ -1,0 +1,56 @@
+-- ============================================================================
+-- Migration 0012 — manual: generated columns audit (no DDL)
+-- ============================================================================
+-- Every other "PostgreSQL feature Prisma cannot express" category handled
+-- by this initial migration layer (cross-schema FKs, partial unique
+-- indexes, exclusion constraints, CHECK constraints, deferred constraints,
+-- trigger-based validation, append-only protections, hash-chain triggers,
+-- partitioned tables) traces back to an explicit `MANUAL SQL FOLLOW-UP`
+-- comment already present in prisma/models/*.prisma or docs/. A full text
+-- search of every model file and every docs/modules/*.md and
+-- docs/domain/domain-model.md file for "generated column" / "computed
+-- column" / "GENERATED ALWAYS" turns up no such comment anywhere in this
+-- accepted schema — i.e. unlike the other nine categories, this one has no
+-- outstanding, named requirement to fulfil.
+--
+-- One column was evaluated as a plausible candidate and deliberately
+-- rejected, to leave a record of why this migration is empty rather than
+-- silently skipping the category:
+--
+--   loan_accounts.emi_installments.dueAmount is, in every normal case,
+--   principalComponent + interestComponent, and so LOOKS like a candidate
+--   for `GENERATED ALWAYS AS ("principalComponent" + "interestComponent")
+--   STORED`. It is deliberately left as a plain, application-written
+--   column instead, for two reasons specific to this schema:
+--
+--     1. Postgres forbids INSERT/UPDATE from ever targeting a STORED
+--        generated column directly — every write must omit it and let
+--        Postgres compute it. Prisma Client has no first-class way to
+--        express "this field exists and is readable, but must never
+--        appear in a `create`/`update` payload" other than
+--        `@default(dbgenerated(...)) @map(...)` plus manual application
+--        discipline; making that change now is a Prisma **schema** edit
+--        (a new field attribute) with a real, non-obvious application
+--        write-contract implication, not a physical-layer-only addition
+--        like the partitioning changes in migration 0004 — squarely the
+--        "do NOT redesign the Prisma schema" this task rules out.
+--     2. The 1:1 arithmetic identity is not guaranteed to hold for every
+--        EmiInstallment for the lifetime of this schema: rounding
+--        adjustments, part-payments, and foreclosure recomputation
+--        (loan-accounts.md) are exactly the kind of edge cases where a
+--        schedule row's stored `dueAmount` and the simple sum of its two
+--        components could legitimately need to diverge by a paisa of
+--        rounding correction applied at generation time — a hard DB-level
+--        `GENERATED ALWAYS` identity would make that correction
+--        impossible to persist at all, silently foreclosing a
+--        not-yet-ruled-out future business rule.
+--
+-- No other column in this schema was found to be a closer fit than this
+-- one already-rejected candidate. If a genuine need for a generated/
+-- computed column is identified later (e.g. a `tsvector` full-text search
+-- column, which — unlike `dueAmount` — never needs to accept application
+-- writes and so avoids objection #1 above), it should ship as its own
+-- additive (EXPAND) migration plus, if Prisma Client needs to read the
+-- column, a corresponding additive Prisma model field — not retrofitted
+-- into this initial layer.
+-- ============================================================================

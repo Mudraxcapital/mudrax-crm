@@ -1,0 +1,114 @@
+// ============================================================================
+// campaigns — src/modules/campaigns
+//
+// Source: ADR 0003, ADR 0004, docs/modules/campaigns.md.
+//
+// `campaigns` owns Campaign, Campaign Membership, and Campaign Assignment
+// (the allocation *decision*). It never writes Lead state directly — it
+// initiates assignment by calling `leads`' public API; the resulting
+// per-Lead record lives in `leads`.LeadAssignment (see
+// `campaignAssignmentId` there). Campaign Analytics is owned by `reports`,
+// never here.
+// ============================================================================
+
+model Campaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String         @db.Uuid
+  name            String         @db.VarChar(200)
+  description     String?        @db.Text
+  status          CampaignStatus @default(DRAFT)
+  startDate       DateTime?      @db.Date
+  endDate         DateTime?      @db.Date
+  createdByUserId String         @db.Uuid
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  memberships CampaignMembership[]
+  assignments CampaignAssignment[]
+
+  @@index([organizationId])
+  @@map("campaigns")
+  @@schema("campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+
+  @@map("campaign_status")
+  @@schema("campaigns")
+}
+
+/// Which Users may work the Campaign and their allocation configuration.
+/// Composite primary key — a User belongs to a given Campaign at most once.
+model CampaignMembership {
+  campaignId       String    @db.Uuid
+  userId           String    @db.Uuid
+  allocationWeight Decimal   @default(1) @db.Decimal(7, 4)
+  isActive         Boolean   @default(true)
+  joinedAt         DateTime  @default(now())
+  leftAt           DateTime?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, userId])
+  @@map("campaign_memberships")
+  @@schema("campaigns")
+}
+
+/// Auditable allocation *decision* distributing Campaign Leads. Executed by
+/// initiating an assignment command against `leads` — never a direct write
+/// of Lead state.
+model CampaignAssignment {
+  id                String                   @id @default(uuid()) @db.Uuid
+  campaignId        String                   @db.Uuid
+  initiatedByUserId String                   @db.Uuid
+  allocationMethod  AllocationMethod
+  targetLeadCount   Int
+  status            CampaignAssignmentStatus @default(PENDING)
+  executedAt        DateTime?
+  createdAt         DateTime                 @default(now())
+
+  campaign    Campaign                       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  allocations CampaignAssignmentAllocation[]
+
+  @@index([campaignId])
+  @@map("campaign_assignments")
+  @@schema("campaigns")
+}
+
+enum AllocationMethod {
+  EQUAL
+  PERCENTAGE
+
+  @@map("allocation_method")
+  @@schema("campaigns")
+}
+
+enum CampaignAssignmentStatus {
+  PENDING
+  EXECUTING
+  COMPLETED
+  FAILED
+
+  @@map("campaign_assignment_status")
+  @@schema("campaigns")
+}
+
+/// One member's decided share of a Campaign Assignment's allocation.
+model CampaignAssignmentAllocation {
+  id                   String   @id @default(uuid()) @db.Uuid
+  campaignAssignmentId String   @db.Uuid
+  userId               String   @db.Uuid
+  allocatedPercentage  Decimal? @db.Decimal(5, 2)
+  allocatedCount       Int?
+
+  campaignAssignment CampaignAssignment @relation(fields: [campaignAssignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignAssignmentId, userId])
+  @@map("campaign_assignment_allocations")
+  @@schema("campaigns")
+}

@@ -1,0 +1,309 @@
+// ============================================================================
+// organization — src/modules/organization
+//
+// Source: docs/modules/organization.md, docs/domain/domain-model.md
+// ("Organization Bounded Context"), docs/platform/platform-contracts.md
+// (§2 RBAC Data Scope, §5 Organization Terminology).
+//
+// Owns: Organization, Team, Branch, Region, Department, Holiday Calendar,
+// Working Hours, Escalation Rule. Never owns User identity (`users`) or
+// Role/Permission (`rbac`) — those are referenced by id only.
+// ============================================================================
+
+/// The single canonical company/company-unit scope referenced by every other
+/// bounded context's `organizationId` (platform-contracts.md §5). Modeled
+/// explicitly (never a hard-coded singleton) so a future second legal
+/// entity/franchise is a new row, never a redesign (Known Risk #9).
+model Organization {
+  id     String             @id @default(uuid()) @db.Uuid
+  name   String             @db.VarChar(200)
+  code   String             @unique @db.VarChar(50)
+  status OrganizationStatus @default(ACTIVE)
+
+  timezone String @default("Asia/Kolkata") @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  regions          Region[]
+  branches         Branch[]
+  teams            Team[]
+  departments      Department[]
+  holidayCalendars HolidayCalendar[]
+  workingHours     WorkingHoursPolicy[]
+  escalationRules  EscalationRule[]
+
+  @@map("organizations")
+  @@schema("organization")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@map("organization_status")
+  @@schema("organization")
+}
+
+/// Geographic/managerial grouping of Branches.
+model Region {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  code           String   @db.VarChar(50)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branches     Branch[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("regions")
+  @@schema("organization")
+}
+
+/// Physical/operational office and future data/reporting scope.
+model Branch {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  regionId       String?  @db.Uuid
+  name           String   @db.VarChar(150)
+  code           String   @db.VarChar(50)
+  address        String?  @db.Text
+  timezone       String   @default("Asia/Kolkata") @db.VarChar(64)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  region            Region?                 @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  teams             Team[]
+  holidayCalendars  HolidayCalendar[]
+  workingHours      WorkingHoursPolicy[]
+  escalationRules   EscalationRule[]
+  assignmentHistory UserAssignmentHistory[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([regionId])
+  @@map("branches")
+  @@schema("organization")
+}
+
+/// Functional grouping such as Sales, Operations, Recovery, or HR.
+/// Admin-configurable catalog — never a hardcoded enum.
+model Department {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  code           String   @db.VarChar(50)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assignmentHistory UserAssignmentHistory[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("departments")
+  @@schema("organization")
+}
+
+/// Operational grouping of Users for supervision, allocation, and reporting.
+model Team {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  branchId       String?  @db.Uuid
+  name           String   @db.VarChar(150)
+  code           String   @db.VarChar(50)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branch            Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  assignmentHistory UserAssignmentHistory[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("teams")
+  @@schema("organization")
+}
+
+/// Append-only history of a User's Team/Branch/Department membership.
+/// `users`.User keeps only the *current* pointers (teamId/branchId/
+/// departmentId) for cheap scope resolution; this table is the auditable
+/// "organizational transfers preserve User identity and historical
+/// ownership" record (organization.md Business Rules).
+///
+/// MANUAL SQL FOLLOW-UP: RBAC Data Scope resolution (platform-contracts.md
+/// §2) must always read the row with `effectiveTo IS NULL` (the current
+/// assignment) per User. Enforcing "at most one open-ended row per User" is
+/// a partial unique index Prisma cannot express:
+///   CREATE UNIQUE INDEX user_assignment_history_one_current_per_user
+///     ON organization.user_assignment_history (user_id)
+///     WHERE effective_to IS NULL;
+model UserAssignmentHistory {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @db.Uuid
+  teamId          String?   @db.Uuid
+  branchId        String?   @db.Uuid
+  departmentId    String?   @db.Uuid
+  effectiveFrom   DateTime  @default(now())
+  effectiveTo     DateTime?
+  changedByUserId String?   @db.Uuid
+  reason          String?   @db.Text
+  createdAt       DateTime  @default(now())
+
+  team       Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  branch     Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([branchId])
+  @@index([departmentId])
+  @@map("user_assignment_history")
+  @@schema("organization")
+}
+
+/// Defines non-working dates for scheduling and SLA calculations.
+/// Organization-wide by default (`branchId = null`) or Branch-scoped.
+model HolidayCalendar {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  branchId       String?  @db.Uuid
+  name           String   @db.VarChar(150)
+  year           Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branch       Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  holidays     HolidayCalendarEntry[]
+
+  @@unique([organizationId, branchId, year])
+  @@index([organizationId])
+  @@map("holiday_calendars")
+  @@schema("organization")
+}
+
+model HolidayCalendarEntry {
+  id                String   @id @default(uuid()) @db.Uuid
+  holidayCalendarId String   @db.Uuid
+  date              DateTime @db.Date
+  name              String   @db.VarChar(150)
+  createdAt         DateTime @default(now())
+
+  holidayCalendar HolidayCalendar @relation(fields: [holidayCalendarId], references: [id], onDelete: Cascade)
+
+  @@unique([holidayCalendarId, date])
+  @@map("holiday_calendar_entries")
+  @@schema("organization")
+}
+
+/// Defines valid operating windows for follow-ups, telephony, and SLAs.
+/// Organization-wide by default (`branchId = null`) or Branch-scoped.
+model WorkingHoursPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  branchId       String?  @db.Uuid
+  name           String   @db.VarChar(150)
+  timezone       String   @default("Asia/Kolkata") @db.VarChar(64)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branch       Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  slots        WorkingHoursSlot[]
+
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("working_hours_policies")
+  @@schema("organization")
+}
+
+model WorkingHoursSlot {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workingHoursPolicyId String   @db.Uuid
+  dayOfWeek            Int      @db.SmallInt
+  startTime            DateTime @db.Time
+  endTime              DateTime @db.Time
+  createdAt            DateTime @default(now())
+
+  workingHoursPolicy WorkingHoursPolicy @relation(fields: [workingHoursPolicyId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP: `dayOfWeek` should be constrained to 0-6 and
+  // `startTime < endTime` via a CHECK constraint — Prisma has no CHECK
+  // constraint primitive:
+  //   ALTER TABLE organization.working_hours_slots
+  //     ADD CONSTRAINT working_hours_slots_day_of_week_check
+  //     CHECK (day_of_week BETWEEN 0 AND 6),
+  //     ADD CONSTRAINT working_hours_slots_time_range_check
+  //     CHECK (start_time < end_time);
+
+  @@index([workingHoursPolicyId])
+  @@map("working_hours_slots")
+  @@schema("organization")
+}
+
+/// Defines trigger timing and Role/scope recipients for overdue
+/// obligations. Always targets a Role within an organizational scope, never
+/// a hard-coded named User (organization.md Business Rules).
+model EscalationRule {
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @db.Uuid
+  name             String            @db.VarChar(150)
+  triggerType      EscalationTrigger
+  thresholdMinutes Int
+  scope            EscalationScope
+  branchId         String?           @db.Uuid
+  // References rbac.Role.id — cross-schema, no Prisma relation declared
+  // because `rbac` does not expose the inverse side here (Role has no need
+  // to know every EscalationRule that targets it); enforced as a plain
+  // foreign-key-shaped column with an application-level lookup, or add a
+  // manual, non-Prisma-managed FK constraint if strict referential
+  // integrity across schemas is required:
+  //   ALTER TABLE organization.escalation_rules
+  //     ADD CONSTRAINT escalation_rules_escalate_to_role_id_fkey
+  //     FOREIGN KEY (escalate_to_role_id) REFERENCES rbac.roles(id);
+  escalateToRoleId String            @db.Uuid
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("escalation_rules")
+  @@schema("organization")
+}
+
+/// What kind of overdue obligation triggers this rule. Kept open-ended by
+/// design — new trigger types are added by other modules over time
+/// (Follow-up, Call Later, Document Verification SLA, Human Approval SLA).
+enum EscalationTrigger {
+  FOLLOW_UP_OVERDUE
+  CALL_LATER_MISSED
+  DOCUMENT_VERIFICATION_OVERDUE
+  HUMAN_APPROVAL_SLA_BREACH
+
+  @@map("escalation_trigger")
+  @@schema("organization")
+}
+
+enum EscalationScope {
+  TEAM
+  BRANCH
+  ORGANIZATION
+
+  @@map("escalation_scope")
+  @@schema("organization")
+}

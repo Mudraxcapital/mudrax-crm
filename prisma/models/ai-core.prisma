@@ -1,0 +1,546 @@
+// ============================================================================
+// ai_core — src/modules/ai-platform (ai-core)
+//
+// Source: ADR 0010, docs/modules/ai-platform.md ("Core AI").
+//
+// `ai-platform` never owns Customer, Lead, Loan, Telephony, Document, or
+// Notification business data — it only consumes published events and
+// publishes its own AI-derived events.
+// ============================================================================
+
+enum AiProviderType {
+  OPEN_AI
+  ANTHROPIC
+  GEMINI
+  AZURE_OPENAI
+  LOCAL
+  OLLAMA
+
+  @@map("ai_provider_type")
+  @@schema("ai_core")
+}
+
+enum UsageUnit {
+  TOKENS
+  GPU_SECONDS
+  AUDIO_SECONDS
+  IMAGES
+
+  @@map("usage_unit")
+  @@schema("ai_core")
+}
+
+/// Discrete AI function type. Referenced many-to-many by Model and Agent;
+/// referenced (optionally) singly by Task.
+enum AiCapabilityType {
+  TEXT_GENERATION
+  EMBEDDING
+  VISION_OCR
+  SPEECH_TO_TEXT
+  CLASSIFICATION
+  SCORING
+  SUMMARIZATION
+  FUNCTION_CALLING
+  REASONING
+
+  @@map("ai_capability_type")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; one vendor/runtime integration behind a single
+/// `IAIProviderAdapter` port.
+model AiProvider {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String?          @db.Uuid
+  providerType   AiProviderType
+  configuration  Json             @db.JsonB
+  status         AiProviderStatus @default(REGISTERED)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  models AiModel[]
+  jobs   AiJob[]
+
+  // Note: "Provider Health Check" is documented as a child of AI Provider
+  // but explicitly owned by the `ai-governance` module (ai-platform.md,
+  // "Platform Governance" section) — see
+  // `ai_governance.ProviderHealthCheck`, which references this table's
+  // `id` via a plain, cross-schema `aiProviderId` column (no Prisma
+  // relation declared, consistent with this schema's module-boundary
+  // discipline).
+  @@index([organizationId])
+  @@map("ai_providers")
+  @@schema("ai_core")
+}
+
+enum AiProviderStatus {
+  REGISTERED
+  ACTIVE
+  DEGRADED
+  SUSPENDED
+  RETIRED
+
+  @@map("ai_provider_status")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; one invokable model version offered by an AI Provider.
+model AiModel {
+  id           String        @id @default(uuid()) @db.Uuid
+  aiProviderId String        @db.Uuid
+  name         String        @db.VarChar(200)
+  status       AiModelStatus @default(REGISTERED)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  provider        AiProvider              @relation(fields: [aiProviderId], references: [id], onDelete: Restrict)
+  capabilities    AiModelCapability[]
+  pricingVersions AiModelPricingVersion[]
+  jobs            AiJob[]
+
+  @@unique([aiProviderId, name])
+  @@map("ai_models")
+  @@schema("ai_core")
+}
+
+enum AiModelStatus {
+  REGISTERED
+  AVAILABLE
+  DEPRECATED
+  RETIRED
+
+  @@map("ai_model_status")
+  @@schema("ai_core")
+}
+
+/// Many-to-many: which Capabilities an AI Model declares. Composite
+/// primary key.
+model AiModelCapability {
+  aiModelId  String           @db.Uuid
+  capability AiCapabilityType
+
+  model AiModel @relation(fields: [aiModelId], references: [id], onDelete: Cascade)
+
+  @@id([aiModelId, capability])
+  @@map("ai_model_capabilities")
+  @@schema("ai_core")
+}
+
+/// Versioned, effective-dated pricing snapshot for an AI Model, valued
+/// against `AiCost` at Job time.
+model AiModelPricingVersion {
+  id            String    @id @default(uuid()) @db.Uuid
+  aiModelId     String    @db.Uuid
+  versionNumber Int
+  usageUnit     UsageUnit
+  pricePerUnit  Decimal   @db.Decimal(14, 8)
+  currency      String    @default("INR") @db.VarChar(3)
+  effectiveFrom DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  model AiModel @relation(fields: [aiModelId], references: [id], onDelete: Cascade)
+
+  @@unique([aiModelId, versionNumber])
+  @@map("ai_model_pricing_versions")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; a named, role-scoped AI actor. Never has direct write
+/// access to any business module.
+model AiAgent {
+  id                String      @id @default(uuid()) @db.Uuid
+  organizationId    String?     @db.Uuid
+  name              String      @db.VarChar(200)
+  // Cross-schema, optional reference to ai_governance.SafetyPolicy.id.
+  safetyPolicyId    String?     @db.Uuid
+  routingPreference Json?       @db.JsonB
+  status            AgentStatus @default(DRAFT)
+  versionNumber     Int         @default(1)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  capabilities    AiAgentCapability[]
+  promptTemplates AiAgentPromptTemplate[]
+  tasks           AiTask[]
+
+  @@unique([organizationId, name])
+  @@map("ai_agents")
+  @@schema("ai_core")
+}
+
+enum AgentStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  RETIRED
+
+  @@map("agent_status")
+  @@schema("ai_core")
+}
+
+model AiAgentCapability {
+  aiAgentId  String           @db.Uuid
+  capability AiCapabilityType
+
+  agent AiAgent @relation(fields: [aiAgentId], references: [id], onDelete: Cascade)
+
+  @@id([aiAgentId, capability])
+  @@map("ai_agent_capabilities")
+  @@schema("ai_core")
+}
+
+/// Many-to-many: an Agent may bundle more than one Prompt Template.
+model AiAgentPromptTemplate {
+  aiAgentId        String @db.Uuid
+  promptTemplateId String @db.Uuid
+
+  agent          AiAgent        @relation(fields: [aiAgentId], references: [id], onDelete: Cascade)
+  promptTemplate PromptTemplate @relation(fields: [promptTemplateId], references: [id], onDelete: Cascade)
+
+  @@id([aiAgentId, promptTemplateId])
+  @@map("ai_agent_prompt_templates")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; a versioned orchestration definition — a sequence/graph
+/// of AI Tasks. A running instance is a correlation over Task/Job records
+/// via `workflowRunId`, never its own persisted aggregate.
+model AiWorkflow {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String?        @db.Uuid
+  name           String         @db.VarChar(200)
+  definition     Json           @db.JsonB
+  versionNumber  Int            @default(1)
+  status         WorkflowStatus @default(DRAFT)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  tasks AiTask[]
+
+  @@unique([organizationId, name, versionNumber])
+  @@map("ai_workflows")
+  @@schema("ai_core")
+}
+
+enum WorkflowStatus {
+  DRAFT
+  PUBLISHED
+  DEPRECATED
+
+  @@map("workflow_status")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root (intent); one addressable, business-meaningful unit of AI
+/// work. Immutable in intent once Requested; a correction always creates a
+/// new Task.
+model AiTask {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String?           @db.Uuid
+  aiAgentId      String?           @db.Uuid
+  aiWorkflowId   String?           @db.Uuid
+  /// `workflowRunId` correlates all Tasks/Jobs belonging to one running
+  /// Workflow instance — a correlation value, never a persisted aggregate.
+  workflowRunId  String?           @db.Uuid
+  /// `SourceContext = {sourceType, sourceId}` — the trigger that raised
+  /// this Task (e.g. `LeadCreated` / a Lead id). Polymorphic across every
+  /// upstream business module; no Prisma relation is possible.
+  sourceType     String            @db.VarChar(100)
+  sourceId       String            @db.Uuid
+  capability     AiCapabilityType?
+  status         AiTaskStatus      @default(REQUESTED)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  agent    AiAgent?    @relation(fields: [aiAgentId], references: [id], onDelete: SetNull)
+  workflow AiWorkflow? @relation(fields: [aiWorkflowId], references: [id], onDelete: SetNull)
+  jobs     AiJob[]
+
+  @@index([organizationId])
+  @@index([sourceType, sourceId])
+  @@index([workflowRunId])
+  @@map("ai_tasks")
+  @@schema("ai_core")
+}
+
+enum AiTaskStatus {
+  REQUESTED
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+
+  @@map("ai_task_status")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root (execution); one concrete execution attempt of an AI Task
+/// against one Provider/Model. A retry never mutates a prior Job.
+model AiJob {
+  id              String      @id @default(uuid()) @db.Uuid
+  aiTaskId        String      @db.Uuid
+  aiProviderId    String      @db.Uuid
+  aiModelId       String      @db.Uuid
+  promptVersionId String?     @db.Uuid
+  status          AiJobStatus @default(QUEUED)
+  retryOfJobId    String?     @db.Uuid
+  // Cross-schema, additive, optional references to
+  // ai_governance.AiExperiment/AiExperimentVariant.
+  experimentId    String?     @db.Uuid
+  variantId       String?     @db.Uuid
+
+  // ADR 0010: "Model Routing Rule, Rate Limit Policy, and Safety Policy
+  // version are pinned onto the AI Job at dispatch" — cross-schema
+  // references to the exact `ai_governance` rows that governed this
+  // dispatch, plus an immutable inline snapshot of the values actually
+  // applied (the same ID-pin + inline-snapshot pattern used by
+  // `disbursements.Commission`). No Prisma relation is declared across
+  // the `ai_core` -> `ai_governance` boundary (ADR 0001).
+  modelRoutingRuleId    String? @db.Uuid
+  safetyPolicyVersionId String? @db.Uuid
+  rateLimitPolicyId     String? @db.Uuid
+  dispatchSnapshot      Json?   @db.JsonB
+
+  dispatchedAt  DateTime?
+  completedAt   DateTime?
+  failureReason String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  task          AiTask         @relation(fields: [aiTaskId], references: [id], onDelete: Cascade)
+  provider      AiProvider     @relation(fields: [aiProviderId], references: [id], onDelete: Restrict)
+  model         AiModel        @relation(fields: [aiModelId], references: [id], onDelete: Restrict)
+  promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+
+  retryOfJob AiJob?  @relation("AiJobRetry", fields: [retryOfJobId], references: [id], onDelete: SetNull)
+  retryJobs  AiJob[] @relation("AiJobRetry")
+
+  result      AiResult?
+  tokenUsages TokenUsage[]
+  cost        AiCost?
+
+  @@index([aiTaskId])
+  @@index([aiProviderId])
+  @@index([aiModelId])
+  @@map("ai_jobs")
+  @@schema("ai_core")
+}
+
+enum AiJobStatus {
+  QUEUED
+  DISPATCHED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  TIMEOUT
+  CANCELLED
+
+  @@map("ai_job_status")
+  @@schema("ai_core")
+}
+
+/// Child entity of AI Job; the generic, provider-agnostic output envelope.
+/// Always advisory; never a business module's trusted fact. Every
+/// domain-specific result entity references it via `sourceAiResultId`
+/// rather than duplicating it.
+model AiResult {
+  id            String         @id @default(uuid()) @db.Uuid
+  aiJobId       String         @unique @db.Uuid
+  status        AiResultStatus @default(PRODUCED)
+  outputPayload Json           @db.JsonB
+  confidence    Decimal?       @db.Decimal(5, 4)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  job AiJob @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+
+  @@map("ai_results")
+  @@schema("ai_core")
+}
+
+enum AiResultStatus {
+  PRODUCED
+  VALIDATED
+  REJECTED
+  CONSUMED
+  SUPERSEDED
+
+  @@map("ai_result_status")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; Organization/environment defaults. Global by default
+/// (`organizationId = null`) with an Organization-specific override by
+/// reference.
+model AiConfiguration {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String?  @unique @db.Uuid
+  providerPreferences Json?    @db.JsonB
+  budgetCeilings      Json?    @db.JsonB
+  featureFlags        Json?    @db.JsonB
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("ai_configurations")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root; a versioned, reusable, named prompt definition. Global
+/// by default with an Organization-specific override by reference.
+model PromptTemplate {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String?              @db.Uuid
+  name           String               @db.VarChar(200)
+  status         PromptTemplateStatus @default(DRAFT)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  versions PromptVersion[]
+  agents   AiAgentPromptTemplate[]
+
+  @@unique([organizationId, name])
+  @@map("prompt_templates")
+  @@schema("ai_core")
+}
+
+enum PromptTemplateStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+  RETIRED
+
+  @@map("prompt_template_status")
+  @@schema("ai_core")
+}
+
+/// Child of Prompt Template; one immutable, effective-dated snapshot of
+/// prompt content. Immutable once Published.
+model PromptVersion {
+  id               String              @id @default(uuid()) @db.Uuid
+  promptTemplateId String              @db.Uuid
+  versionNumber    Int
+  content          String              @db.Text
+  status           PromptVersionStatus @default(DRAFT)
+  effectiveFrom    DateTime?
+  publishedAt      DateTime?
+  createdAt        DateTime            @default(now())
+
+  promptTemplate PromptTemplate   @relation(fields: [promptTemplateId], references: [id], onDelete: Cascade)
+  variables      PromptVariable[]
+  jobs           AiJob[]
+
+  @@unique([promptTemplateId, versionNumber])
+  @@map("prompt_versions")
+  @@schema("ai_core")
+}
+
+enum PromptVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+
+  @@map("prompt_version_status")
+  @@schema("ai_core")
+}
+
+/// Child of Prompt Version; one named, typed placeholder. A PII-flagged
+/// Variable is always redacted/tokenized before leaving the AI Platform
+/// boundary.
+model PromptVariable {
+  id              String  @id @default(uuid()) @db.Uuid
+  promptVersionId String  @db.Uuid
+  name            String  @db.VarChar(150)
+  dataType        String  @db.VarChar(50)
+  isPiiFlagged    Boolean @default(false)
+  isRequired      Boolean @default(true)
+
+  promptVersion PromptVersion @relation(fields: [promptVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([promptVersionId, name])
+  @@map("prompt_variables")
+  @@schema("ai_core")
+}
+
+/// Append-only child of AI Job; the atomic metering fact.
+model TokenUsage {
+  id         String         @id @default(uuid()) @db.Uuid
+  aiJobId    String         @db.Uuid
+  usageUnit  UsageUnit
+  quantity   Decimal        @db.Decimal(18, 4)
+  direction  UsageDirection
+  recordedAt DateTime       @default(now())
+
+  job AiJob @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+
+  @@index([aiJobId])
+  @@map("token_usages")
+  @@schema("ai_core")
+}
+
+enum UsageDirection {
+  INPUT
+  OUTPUT
+
+  @@map("usage_direction")
+  @@schema("ai_core")
+}
+
+/// Computed, immutable valuation of Token Usage against the AI Model's
+/// effective-dated pricing snapshot at Job time. Rollups are always
+/// derived, never an independent counter.
+model AiCost {
+  id              String   @id @default(uuid()) @db.Uuid
+  aiJobId         String   @unique @db.Uuid
+  amount          Decimal  @db.Decimal(14, 6)
+  currency        String   @default("INR") @db.VarChar(3)
+  pricingSnapshot Json     @db.JsonB
+  computedAt      DateTime @default(now())
+
+  job AiJob @relation(fields: [aiJobId], references: [id], onDelete: Cascade)
+
+  @@map("ai_costs")
+  @@schema("ai_core")
+}
+
+/// Aggregate Root, platform-level, structurally append-only; immutable
+/// record of every significant AI Platform action.
+model AiAuditLog {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String?     @db.Uuid
+  occurredAt     DateTime    @default(now())
+  actorType      AiActorType
+  actorId        String?     @db.Uuid
+  action         String      @db.VarChar(200)
+  targetType     String      @db.VarChar(100)
+  targetId       String      @db.Uuid
+  correlationId  String?     @db.Uuid
+  details        Json?       @db.JsonB
+
+  /// Tamper-evidence hash chain (platform-contracts.md §4), the same
+  /// canonical shape as `documents.AuditTrail` and
+  /// `notifications.CommunicationLog`: each record hashes its own content
+  /// plus the previous record's hash. Computing/verifying the chain is
+  /// application/trigger logic, not a Prisma concern.
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level, same as documents.audit_trail:
+  //   REVOKE UPDATE, DELETE ON ai_core.ai_audit_log FROM application_role;
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("ai_audit_log")
+  @@schema("ai_core")
+}
+
+enum AiActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("ai_actor_type")
+  @@schema("ai_core")
+}

@@ -1,0 +1,698 @@
+// ============================================================================
+// notifications — src/modules/notifications
+//
+// Source: ADR 0008, docs/modules/notifications.md.
+//
+// Single write path for all notification-management state. Other modules
+// never duplicate notification/delivery metadata — they publish a domain
+// event (consumed via EventTriggerSubscription) or call this module's
+// public API.
+// ============================================================================
+
+enum ChannelType {
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+  IN_APP
+  WEBHOOK
+
+  @@map("channel_type")
+  @@schema("notifications")
+}
+
+enum RecipientType {
+  USER
+  CUSTOMER
+
+  @@map("recipient_type")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Templates & Channels
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; reusable content definition per event/purpose/Channel.
+/// Global by default (`organizationId = null`), with an additive
+/// Organization-specific override by reference (never embedded).
+model NotificationTemplate {
+  id             String                     @id @default(uuid()) @db.Uuid
+  organizationId String?                    @db.Uuid
+  code           String                     @db.VarChar(150)
+  channelType    ChannelType
+  status         NotificationTemplateStatus @default(DRAFT)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  versions             NotificationTemplateVersion[]
+  notifications        Notification[]
+  broadcasts           Broadcast[]
+  triggerSubscriptions EventTriggerSubscription[]
+
+  @@unique([organizationId, code])
+  @@map("notification_templates")
+  @@schema("notifications")
+}
+
+enum NotificationTemplateStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+  ARCHIVED
+
+  @@map("template_lifecycle_status")
+  @@schema("notifications")
+}
+
+/// Every content edit creates a new, append-only Version; a live
+/// Notification always pins the exact Version it used.
+model NotificationTemplateVersion {
+  id            String        @id @default(uuid()) @db.Uuid
+  templateId    String        @db.Uuid
+  versionNumber Int
+  subject       String?       @db.Text
+  body          String        @db.Text
+  variables     Json?         @db.JsonB
+  status        VersionStatus @default(DRAFT)
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  template      NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@unique([templateId, versionNumber])
+  @@map("notification_template_versions")
+  @@schema("notifications")
+}
+
+enum VersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+
+  @@map("version_status")
+  @@schema("notifications")
+}
+
+/// Aggregate Root; Organization-level configuration of one medium.
+model NotificationChannel {
+  id                 String        @id @default(uuid()) @db.Uuid
+  organizationId     String        @db.Uuid
+  channelType        ChannelType
+  rateLimitPerMinute Int?
+  quietHoursStart    DateTime?     @db.Time
+  quietHoursEnd      DateTime?     @db.Time
+  status             ChannelStatus @default(CONFIGURED)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  failoverPolicies ProviderFailoverPolicy[]
+  providers        Provider[]
+
+  @@unique([organizationId, channelType])
+  @@map("notification_channels")
+  @@schema("notifications")
+}
+
+enum ChannelStatus {
+  CONFIGURED
+  ACTIVE
+  SUSPENDED
+  RETIRED
+
+  @@map("channel_status")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Provider Abstraction
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; one vendor integration behind a single
+/// `INotificationProvider` port. Belongs to exactly one Channel Type.
+/// `Degraded`/`Suspended` are system-set from Health Check signals, never
+/// manually faked.
+model Provider {
+  id             String                   @id @default(uuid()) @db.Uuid
+  organizationId String                   @db.Uuid
+  channelId      String                   @db.Uuid
+  providerType   NotificationProviderType
+  configuration  Json                     @db.JsonB
+  status         ProviderStatus           @default(REGISTERED)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  channel      NotificationChannel    @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  healthChecks ProviderHealthCheck[]
+  deliveries   NotificationDelivery[]
+
+  @@index([organizationId])
+  @@index([channelId])
+  @@map("providers")
+  @@schema("notifications")
+}
+
+enum NotificationProviderType {
+  TWILIO
+  MSG91
+  GUPSHUP
+  META_WHATSAPP
+  AWS_SES
+  SENDGRID
+  FIREBASE
+
+  @@map("notification_provider_type")
+  @@schema("notifications")
+}
+
+enum ProviderStatus {
+  REGISTERED
+  ACTIVE
+  DEGRADED
+  SUSPENDED
+  RETIRED
+
+  @@map("provider_status")
+  @@schema("notifications")
+}
+
+/// Child entity of Notification Channel; ordered Provider priority list
+/// plus a health-threshold switch rule. Versioned, append-only on every
+/// edit.
+model ProviderFailoverPolicy {
+  id                    String   @id @default(uuid()) @db.Uuid
+  notificationChannelId String   @db.Uuid
+  versionNumber         Int
+  priorityOrder         Json     @db.JsonB
+  healthThreshold       Decimal? @db.Decimal(5, 4)
+  createdAt             DateTime @default(now())
+
+  channel NotificationChannel @relation(fields: [notificationChannelId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationChannelId, versionNumber])
+  @@map("provider_failover_policies")
+  @@schema("notifications")
+}
+
+/// Child entity of Provider, append-only; recorded health-probe/
+/// circuit-breaker signal. Never mutated or deleted; system-written only.
+model ProviderHealthCheck {
+  id         String   @id @default(uuid()) @db.Uuid
+  providerId String   @db.Uuid
+  isHealthy  Boolean
+  latencyMs  Int?
+  details    Json?    @db.JsonB
+  checkedAt  DateTime @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("provider_health_checks")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Preferences & Subscriptions
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; per-Recipient, per-EventCategory, optionally
+/// per-Channel. Can suppress/reorder Operational/Marketing sends only —
+/// never Transactional/OTP.
+model NotificationPreference {
+  id            String           @id @default(uuid()) @db.Uuid
+  recipientType RecipientType
+  recipientId   String           @db.Uuid
+  eventCategory String           @db.VarChar(150)
+  channelType   ChannelType?
+  isEnabled     Boolean          @default(true)
+  status        PreferenceStatus @default(CREATED)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([recipientType, recipientId, eventCategory, channelType])
+  @@index([recipientType, recipientId])
+  @@map("notification_preferences")
+  @@schema("notifications")
+}
+
+enum PreferenceStatus {
+  CREATED
+  UPDATED
+  INACTIVE
+
+  @@map("preference_status")
+  @@schema("notifications")
+}
+
+/// Aggregate Root; opt-in/opt-out to a specific Broadcast topic,
+/// independent of Preference's channel/quiet-hours mechanics.
+model NotificationSubscription {
+  id            String             @id @default(uuid()) @db.Uuid
+  recipientType RecipientType
+  recipientId   String             @db.Uuid
+  topic         String             @db.VarChar(150)
+  status        SubscriptionStatus @default(SUBSCRIBED)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([recipientType, recipientId, topic])
+  @@map("notification_subscriptions")
+  @@schema("notifications")
+}
+
+enum SubscriptionStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+  RESUBSCRIBED
+
+  @@map("subscription_status")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Core Intent & Execution
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; the business intent to communicate something to
+/// someone, independent of how many channels or attempts it takes to
+/// deliver it. Immutable once Queued.
+model Notification {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String               @db.Uuid
+  category          NotificationCategory
+  templateId        String               @db.Uuid
+  templateVersionId String               @db.Uuid
+  recipientType     RecipientType
+  recipientId       String               @db.Uuid
+  payload           Json                 @db.JsonB
+  status            NotificationStatus   @default(CREATED)
+  batchId           String?              @db.Uuid
+  broadcastId       String?              @db.Uuid
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  template        NotificationTemplate        @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateVersion NotificationTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  batch           NotificationBatch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  broadcast       Broadcast?                  @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
+  queueEntries            NotificationQueueEntry[]
+  deliveries              NotificationDelivery[]
+  communicationLogEntries CommunicationLog[]
+  batchItem               NotificationBatchItem?
+
+  @@index([organizationId])
+  @@index([recipientType, recipientId])
+  @@index([batchId])
+  @@index([broadcastId])
+  @@map("notifications")
+  @@schema("notifications")
+}
+
+enum NotificationCategory {
+  TRANSACTIONAL
+  OTP
+  OPERATIONAL
+  MARKETING
+
+  @@map("notification_category")
+  @@schema("notifications")
+}
+
+enum NotificationStatus {
+  CREATED
+  RESOLVED
+  QUEUED
+  IN_PROGRESS
+  DELIVERED
+  PARTIALLY_DELIVERED
+  FAILED
+  CLOSED
+  CANCELLED
+
+  @@map("notification_status")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Queueing & Scheduling
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; the standing outbound work queue per Channel/priority.
+model NotificationQueue {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  channelType    ChannelType
+  priority       Int         @default(0)
+  status         QueueStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  entries NotificationQueueEntry[]
+
+  @@unique([organizationId, channelType, priority])
+  @@map("notification_queues")
+  @@schema("notifications")
+}
+
+enum QueueStatus {
+  ACTIVE
+  PAUSED
+
+  @@map("queue_status")
+  @@schema("notifications")
+}
+
+/// Child entity; one resolved "send Notification N on Channel C to
+/// Recipient R" work item. This is the entire "Scheduled Notification"
+/// capability, not a separate entity.
+model NotificationQueueEntry {
+  id                  String           @id @default(uuid()) @db.Uuid
+  notificationQueueId String           @db.Uuid
+  notificationId      String           @db.Uuid
+  triggerType         TriggerType      @default(IMMEDIATE)
+  scheduledFor        DateTime?
+  status              QueueEntryStatus @default(ENQUEUED)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  notificationQueue NotificationQueue @relation(fields: [notificationQueueId], references: [id], onDelete: Cascade)
+  notification      Notification      @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationQueueId])
+  @@index([notificationId])
+  @@index([status, scheduledFor])
+  @@map("notification_queue_entries")
+  @@schema("notifications")
+}
+
+enum TriggerType {
+  IMMEDIATE
+  SCHEDULED
+
+  @@map("trigger_type")
+  @@schema("notifications")
+}
+
+enum QueueEntryStatus {
+  ENQUEUED
+  ELIGIBLE
+  DEQUEUED
+  RESOLVED
+  CANCELLED
+  EXPIRED
+
+  @@map("queue_entry_status")
+  @@schema("notifications")
+}
+
+/// Independent Aggregate Root; one physical send attempt against one
+/// Provider.
+model NotificationDelivery {
+  id                String         @id @default(uuid()) @db.Uuid
+  notificationId    String         @db.Uuid
+  providerId        String         @db.Uuid
+  status            DeliveryStatus @default(QUEUED)
+  /// A retry always creates a new Delivery, linked by this additive
+  /// reference — never a mutation of the Delivery it retries from.
+  retryOfDeliveryId String?        @db.Uuid
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  failureReason     String?        @db.Text
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  provider     Provider     @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  retryOfDelivery NotificationDelivery?  @relation("DeliveryRetry", fields: [retryOfDeliveryId], references: [id], onDelete: SetNull)
+  retryDeliveries NotificationDelivery[] @relation("DeliveryRetry")
+
+  retries                 NotificationRetry[]
+  communicationLogEntries CommunicationLog[]
+
+  @@index([notificationId])
+  @@index([providerId])
+  @@index([status])
+  @@map("notification_deliveries")
+  @@schema("notifications")
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  READ
+  OPENED
+  CLICKED
+  FAILED
+  BOUNCED
+  UNDELIVERABLE
+  EXPIRED
+
+  @@map("delivery_status")
+  @@schema("notifications")
+}
+
+/// Child entity of Notification Delivery; owns only the attempt counter,
+/// backoff schedule, and next-eligible-time.
+model NotificationRetry {
+  id                     String   @id @default(uuid()) @db.Uuid
+  notificationDeliveryId String   @db.Uuid
+  attemptNumber          Int
+  backoffSeconds         Int
+  nextEligibleAt         DateTime
+  createdAt              DateTime @default(now())
+
+  notificationDelivery NotificationDelivery @relation(fields: [notificationDeliveryId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationDeliveryId, attemptNumber])
+  @@map("notification_retries")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Bulk Execution
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; one message fanned out to a resolved audience/segment.
+/// "Campaign Notification" is a Broadcast with
+/// `AudienceSource = CAMPAIGN_SEGMENT`, not a separate entity.
+model Broadcast {
+  id              String          @id @default(uuid()) @db.Uuid
+  organizationId  String          @db.Uuid
+  templateId      String          @db.Uuid
+  audienceSource  AudienceSource
+  /// Resolves `CampaignSegment`/`LeadFilter` by identity against
+  /// `campaigns`/`leads` — cross-schema, opaque config, no Prisma relation.
+  audienceConfig  Json            @db.JsonB
+  status          BroadcastStatus @default(DRAFT)
+  scheduledFor    DateTime?
+  createdByUserId String          @db.Uuid
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  template       NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  notifications  Notification[]
+  resultingBatch NotificationBatch?
+
+  @@index([organizationId])
+  @@map("broadcasts")
+  @@schema("notifications")
+}
+
+enum AudienceSource {
+  EXPLICIT_LIST
+  CAMPAIGN_SEGMENT
+  LEAD_FILTER
+  CUSTOMER_SEGMENT
+
+  @@map("audience_source")
+  @@schema("notifications")
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  DISPATCHING
+  COMPLETED
+  CANCELLED
+
+  @@map("broadcast_status")
+  @@schema("notifications")
+}
+
+/// Independent Aggregate Root; the execution/tracking envelope for
+/// enterprise-scale bulk sends.
+/// Progress (`totalItems`/`processedItems`) is deliberately NOT persisted
+/// on this row — ADR 0008: "Progress tracking is always a derived rollup
+/// over Batch Item statuses, never an independently maintained counter."
+/// Callers compute progress with
+/// `SELECT status, COUNT(*) FROM notifications.notification_batch_items
+/// WHERE notification_batch_id = $1 GROUP BY status`, the same
+/// derived-read-model pattern as `reports.AnalyticsSnapshot` and
+/// `documents.AuditTrail`.
+model NotificationBatch {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  sourceType     BatchSourceType
+  broadcastId    String?         @unique @db.Uuid
+  throttlePolicy Json?           @db.JsonB
+  status         BatchStatus     @default(DRAFT)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  broadcast     Broadcast?              @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+  items         NotificationBatchItem[]
+  notifications Notification[]
+
+  @@index([organizationId])
+  @@map("notification_batches")
+  @@schema("notifications")
+}
+
+enum BatchSourceType {
+  BROADCAST
+  SCHEDULED_JOB
+  BULK_EVENT_TRIGGER
+  BULK_ADMIN_ACTION
+
+  @@map("batch_source_type")
+  @@schema("notifications")
+}
+
+enum BatchStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  COMPLETED_WITH_FAILURES
+  CANCELLED
+
+  @@map("batch_status")
+  @@schema("notifications")
+}
+
+/// Child entity; one immutable work-item row, recorded before any
+/// Notification exists.
+model NotificationBatchItem {
+  id                      String          @id @default(uuid()) @db.Uuid
+  notificationBatchId     String          @db.Uuid
+  recipientRef            Json            @db.JsonB
+  personalizationData     Json?           @db.JsonB
+  status                  BatchItemStatus @default(PENDING)
+  resultingNotificationId String?         @unique @db.Uuid
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  notificationBatch     NotificationBatch @relation(fields: [notificationBatchId], references: [id], onDelete: Cascade)
+  resultingNotification Notification?     @relation(fields: [resultingNotificationId], references: [id], onDelete: SetNull)
+
+  @@index([notificationBatchId])
+  @@map("notification_batch_items")
+  @@schema("notifications")
+}
+
+enum BatchItemStatus {
+  PENDING
+  PROCESSING
+  NOTIFIED
+  FAILED
+  SKIPPED
+  CANCELLED
+  RETRYING
+
+  @@map("batch_item_status")
+  @@schema("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// History & Event Sourcing
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root, platform-level, structurally append-only. Permanent
+/// record of every significant Notification/Delivery lifecycle transition.
+model CommunicationLog {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @db.Uuid
+  notificationId         String   @db.Uuid
+  notificationDeliveryId String?  @db.Uuid
+  eventType              String   @db.VarChar(150)
+  details                Json?    @db.JsonB
+  occurredAt             DateTime @default(now())
+
+  /// Tamper-evidence hash chain (platform-contracts.md §4), the same
+  /// canonical shape as `documents.AuditTrail`: each record hashes its own
+  /// content plus the previous record's hash. Computing/verifying the
+  /// chain is application/trigger logic, not a Prisma concern — Prisma
+  /// only preserves the two columns.
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  notification         Notification          @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  notificationDelivery NotificationDelivery? @relation(fields: [notificationDeliveryId], references: [id], onDelete: SetNull)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level, the same treatment as documents.audit_trail:
+  //   REVOKE UPDATE, DELETE ON notifications.communication_log FROM application_role;
+  // Strong RANGE-partitioning-by-`occurred_at` candidate at enterprise
+  // send volume.
+  @@index([organizationId])
+  @@index([notificationId])
+  @@index([occurredAt])
+  @@map("communication_log")
+  @@schema("notifications")
+}
+
+/// Aggregate Root; admin-configured mapping from one domain event to a
+/// Template, an audience-resolution rule, and a Channel policy — the seam
+/// every other bounded context uses to cause a Notification.
+model EventTriggerSubscription {
+  id              String                    @id @default(uuid()) @db.Uuid
+  organizationId  String                    @db.Uuid
+  domainEventType String                    @db.VarChar(150)
+  templateId      String                    @db.Uuid
+  audienceRule    Json                      @db.JsonB
+  channelPolicy   Json                      @db.JsonB
+  status          TriggerSubscriptionStatus @default(CONFIGURED)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  template        NotificationTemplate         @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  processedEvents EventTriggerProcessedEvent[]
+
+  @@index([organizationId])
+  @@index([domainEventType])
+  @@index([templateId])
+  @@map("event_trigger_subscriptions")
+  @@schema("notifications")
+}
+
+enum TriggerSubscriptionStatus {
+  CONFIGURED
+  ACTIVE
+  DISABLED
+  ARCHIVED
+
+  @@map("trigger_subscription_status")
+  @@schema("notifications")
+}
+
+/// Idempotency ledger: "creation of a Notification is always idempotent by
+/// (eventId, triggerSubscriptionId)" (notifications.md). Composite primary
+/// key directly enforces this.
+model EventTriggerProcessedEvent {
+  eventId               String   @db.Uuid
+  triggerSubscriptionId String   @db.Uuid
+  processedAt           DateTime @default(now())
+
+  eventTriggerSubscription EventTriggerSubscription @relation(fields: [triggerSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, triggerSubscriptionId])
+  @@map("event_trigger_processed_events")
+  @@schema("notifications")
+}

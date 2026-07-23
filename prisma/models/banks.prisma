@@ -1,0 +1,120 @@
+// ============================================================================
+// banks — src/modules/banks
+//
+// Source: ADR 0005, docs/modules/banks.md.
+//
+// `banks` owns lending-partner (Bank/NBFC) master data. It never writes
+// Loan Product, Loan Application, or Disbursement state — those modules
+// reference Bank/Bank Branch/Commission Policy Version by identity only.
+// ============================================================================
+
+/// The lending partner/NBFC master record. Never hard-deleted — a decade of
+/// loan history must keep resolving to the Bank that funded it.
+model Bank {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @db.Uuid
+  name           String     @db.VarChar(200)
+  code           String     @db.VarChar(50)
+  status         BankStatus @default(ONBOARDED)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  branches                 BankBranch[]
+  commissionPolicyVersions CommissionPolicyVersion[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("banks")
+  @@schema("banks")
+}
+
+enum BankStatus {
+  ONBOARDED
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+
+  @@map("bank_status")
+  @@schema("banks")
+}
+
+/// A specific operating location of a Bank, used for loan case
+/// login/processing. Always "Bank Branch," never bare "Branch" —
+/// `organization`'s Branch is a distinct, Mudrax-internal concept.
+model BankBranch {
+  id        String           @id @default(uuid()) @db.Uuid
+  bankId    String           @db.Uuid
+  name      String           @db.VarChar(200)
+  code      String           @db.VarChar(50)
+  address   String?          @db.Text
+  status    BankBranchStatus @default(ADDED)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  bank Bank @relation(fields: [bankId], references: [id], onDelete: Restrict)
+
+  @@unique([bankId, code])
+  @@index([bankId])
+  @@map("bank_branches")
+  @@schema("banks")
+}
+
+enum BankBranchStatus {
+  ADDED
+  ACTIVE
+  CLOSED
+
+  @@map("bank_branch_status")
+  @@schema("banks")
+}
+
+/// The versioned, immutable ruleset governing commission calculation for a
+/// Bank, optionally scoped to one Loan Product. A policy change always
+/// creates a new version; no version is ever edited after it becomes
+/// Effective.
+model CommissionPolicyVersion {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  bankId             String                 @db.Uuid
+  // Cross-schema, optional reference to loan_products.LoanProduct.id.
+  // Null means "applies to every Loan Product of this Bank."
+  loanProductId      String?                @db.Uuid
+  versionNumber      Int
+  status             CommissionPolicyStatus @default(DRAFTED)
+  rateStructure      Json                   @db.JsonB
+  clawbackWindowDays Int?
+  clawbackRule       Json?                  @db.JsonB
+  effectiveFrom      DateTime?
+  effectiveTo        DateTime?
+  createdByUserId    String                 @db.Uuid
+  createdAt          DateTime               @default(now())
+  publishedAt        DateTime?
+
+  bank Bank @relation(fields: [bankId], references: [id], onDelete: Restrict)
+
+  // MANUAL SQL FOLLOW-UP: "At most one Commission Policy Version may be
+  // Effective for a given Bank/Loan-Product combination at any point in
+  // time" (banks.md). A plain unique index on (bankId, loanProductId) would
+  // under-enforce because Postgres treats every NULL loanProductId as
+  // distinct, and over-enforce because it would also block a second DRAFTED
+  // version from ever existing. Use a partial unique index on an
+  // expression that folds NULL to a sentinel:
+  //   CREATE UNIQUE INDEX commission_policy_versions_one_effective
+  //     ON banks.commission_policy_versions
+  //     (bank_id, COALESCE(loan_product_id, '00000000-0000-0000-0000-000000000000'))
+  //     WHERE status = 'EFFECTIVE';
+  @@unique([bankId, loanProductId, versionNumber])
+  @@index([bankId])
+  @@index([loanProductId])
+  @@map("commission_policy_versions")
+  @@schema("banks")
+}
+
+enum CommissionPolicyStatus {
+  DRAFTED
+  EFFECTIVE
+  SUPERSEDED
+
+  @@map("commission_policy_status")
+  @@schema("banks")
+}

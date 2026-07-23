@@ -1,0 +1,136 @@
+// ============================================================================
+// disbursements — src/modules/disbursements
+//
+// Source: ADR 0005, docs/modules/disbursements.md.
+//
+// Single write path for both Disbursement and Commission. Publishes events
+// that `loan_accounts` reacts to; never writes Loan Account state directly.
+// ============================================================================
+
+/// One funds-release event referencing exactly one Loan Application, and,
+/// from the first Disbursement onward, the Loan Account it created/adds to.
+/// Each Disbursement is its own immutable record once Reconciled.
+model Disbursement {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  // Cross-schema references (loan_applications.LoanApplication,
+  // loan_accounts.LoanAccount, banks.Bank) — no Prisma relation declared;
+  // see the manual FK note below.
+  loanApplicationId String  @db.Uuid
+  loanAccountId     String? @db.Uuid
+  bankId            String  @db.Uuid
+
+  status              DisbursementStatus @default(SCHEDULED_EXPECTED)
+  /// Idempotency key — a retried event must never create a second
+  /// Disbursement/Loan Account for the same Application.
+  bankReferenceNumber String             @db.VarChar(100)
+  amount              Decimal            @db.Decimal(18, 2)
+  trancheNumber       Int                @default(1)
+
+  scheduledAt    DateTime?
+  disbursedAt    DateTime?
+  reconciledAt   DateTime?
+  reversedAt     DateTime?
+  reversalReason String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  commission Commission?
+
+  // MANUAL SQL FOLLOW-UP:
+  //   ALTER TABLE disbursements.disbursements
+  //     ADD CONSTRAINT disbursements_loan_application_id_fkey
+  //       FOREIGN KEY (loan_application_id)
+  //       REFERENCES loan_applications.loan_applications(id),
+  //     ADD CONSTRAINT disbursements_loan_account_id_fkey
+  //       FOREIGN KEY (loan_account_id) REFERENCES loan_accounts.loan_accounts(id),
+  //     ADD CONSTRAINT disbursements_bank_id_fkey
+  //       FOREIGN KEY (bank_id) REFERENCES banks.banks(id);
+  //
+  // MANUAL SQL FOLLOW-UP: "the first Disbursement against a Loan
+  // Application creates the Loan Account; every subsequent Disbursement
+  // for that Application adds to the same Loan Account" (disbursements.md)
+  // — i.e. exactly one Disbursement per Loan Application may have
+  // `loan_account_id IS NULL`, and it must be the lowest `tranche_number`.
+  // This spans multiple sibling rows, so it requires a trigger rather than
+  // a CHECK constraint:
+  //   CREATE OR REPLACE FUNCTION disbursements.enforce_first_tranche_creates_account()
+  //     RETURNS trigger AS $$ ... $$ LANGUAGE plpgsql;
+  //   CREATE CONSTRAINT TRIGGER disbursements_first_tranche_account_check
+  //     AFTER INSERT OR UPDATE ON disbursements.disbursements
+  //     FOR EACH ROW EXECUTE FUNCTION disbursements.enforce_first_tranche_creates_account();
+  @@unique([bankId, bankReferenceNumber])
+  @@unique([loanApplicationId, trancheNumber])
+  @@index([organizationId])
+  @@index([loanApplicationId])
+  @@index([loanAccountId])
+  @@map("disbursements")
+  @@schema("disbursements")
+}
+
+enum DisbursementStatus {
+  SCHEDULED_EXPECTED
+  DISBURSED
+  RECONCILED
+  REVERSED
+  FAILED
+
+  @@map("disbursement_status")
+  @@schema("disbursements")
+}
+
+/// A child entity of Disbursement recording the DSA commission earned from
+/// that specific Disbursement. Carries both a reference to the effective
+/// Commission Policy Version AND its own immutable inline snapshot — the
+/// inline snapshot is the authoritative historical fact, independent of the
+/// referenced policy's continued existence.
+model Commission {
+  id             String @id @default(uuid()) @db.Uuid
+  disbursementId String @unique @db.Uuid
+
+  // Cross-schema reference to banks.CommissionPolicyVersion.id.
+  commissionPolicyVersionId String @db.Uuid
+
+  status CommissionStatus @default(ACCRUED)
+
+  /// Immutable inline snapshot of the rate/slab tier, computed amount, and
+  /// clawback rule actually applied — never re-derived from a live join to
+  /// (possibly since-revised) policy data.
+  rateSnapshot         Json    @db.JsonB
+  computedAmount       Decimal @db.Decimal(18, 2)
+  clawbackRuleSnapshot Json    @db.JsonB
+
+  invoicedAt   DateTime?
+  receivedAt   DateTime?
+  reconciledAt DateTime?
+
+  clawbackAmount Decimal?  @db.Decimal(18, 2)
+  clawbackAt     DateTime?
+  clawbackReason String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  disbursement Disbursement @relation(fields: [disbursementId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP:
+  //   ALTER TABLE disbursements.commissions
+  //     ADD CONSTRAINT commissions_commission_policy_version_id_fkey
+  //       FOREIGN KEY (commission_policy_version_id)
+  //       REFERENCES banks.commission_policy_versions(id);
+  @@index([commissionPolicyVersionId])
+  @@map("commissions")
+  @@schema("disbursements")
+}
+
+enum CommissionStatus {
+  ACCRUED
+  INVOICED
+  RECEIVED
+  RECONCILED
+
+  @@map("commission_status")
+  @@schema("disbursements")
+}

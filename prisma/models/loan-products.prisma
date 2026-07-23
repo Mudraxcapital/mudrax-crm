@@ -1,0 +1,83 @@
+// ============================================================================
+// loan_products — src/modules/loan-products
+//
+// Source: ADR 0005, docs/modules/loan-products.md.
+//
+// A Loan Product belongs to exactly one Bank by identity — `loan-products`
+// never lives inside the Bank aggregate as an embedded child collection
+// ("Bank offers Loan Products," not "Bank owns Loan Products").
+// ============================================================================
+
+/// Closed, admin-extendable catalog (Car Loan, Home Loan, LAP, Personal
+/// Loan, Business Loan, BT/Top-up variants, and future types) — never a
+/// hardcoded enum.
+model LoanProductType {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(100)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loanProducts LoanProduct[]
+
+  @@unique([organizationId, name])
+  @@map("loan_product_types")
+  @@schema("loan_products")
+}
+
+/// One lending product definition, referencing exactly one Bank by
+/// identity. A Retired product remains resolvable for every historical
+/// Loan Application, Eligibility Snapshot, or Loan Offer that already
+/// referenced it.
+model LoanProduct {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizationId    String            @db.Uuid
+  // Cross-schema reference to banks.Bank.id.
+  bankId            String            @db.Uuid
+  loanProductTypeId String            @db.Uuid
+  /// e.g. "Standard", "Top-Up", "Balance-Transfer" — combined with Bank +
+  /// Product Type for the catalog's uniqueness rule.
+  variant           String            @default("Standard") @db.VarChar(100)
+  name              String            @db.VarChar(200)
+  status            LoanProductStatus @default(DRAFT)
+
+  minInterestRate Decimal @db.Decimal(6, 3)
+  maxInterestRate Decimal @db.Decimal(6, 3)
+  minTenureMonths Int
+  maxTenureMonths Int
+  minLoanAmount   Decimal @db.Decimal(18, 2)
+  maxLoanAmount   Decimal @db.Decimal(18, 2)
+
+  eligibilityRules Json? @db.JsonB
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanProductType LoanProductType @relation(fields: [loanProductTypeId], references: [id], onDelete: Restrict)
+
+  // MANUAL SQL FOLLOW-UP: interest-rate and tenure ranges are business
+  // invariants Prisma cannot enforce declaratively:
+  //   ALTER TABLE loan_products.loan_products
+  //     ADD CONSTRAINT loan_products_interest_rate_range_check
+  //       CHECK (min_interest_rate <= max_interest_rate),
+  //     ADD CONSTRAINT loan_products_tenure_range_check
+  //       CHECK (min_tenure_months <= max_tenure_months),
+  //     ADD CONSTRAINT loan_products_amount_range_check
+  //       CHECK (min_loan_amount <= max_loan_amount);
+  @@unique([bankId, loanProductTypeId, variant])
+  @@index([organizationId])
+  @@index([bankId])
+  @@map("loan_products")
+  @@schema("loan_products")
+}
+
+enum LoanProductStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  RETIRED
+
+  @@map("loan_product_status")
+  @@schema("loan_products")
+}

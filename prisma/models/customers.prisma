@@ -1,0 +1,223 @@
+// ============================================================================
+// customers — src/modules/customers
+//
+// Source: ADR 0004, docs/modules/customers.md, docs/domain/domain-model.md
+// ("Customers Bounded Context").
+//
+// Customer identity is anchored on a weighted set of identifiers (PAN >
+// Aadhaar > Phone/Email), never on any single mutable contact field.
+// ============================================================================
+
+/// The identity aggregate root. Never hard-deleted — Merged/Archived are
+/// terminal lifecycle states, not deletions.
+model Customer {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+
+  fullName String    @db.VarChar(200)
+  dob      DateTime? @db.Date
+
+  /// Computed automatically whenever an Identifier is added
+  /// (customers.md: "not independently persisted" as its own table, but
+  /// still a physical column recalculated by domain logic on every write).
+  identityConfidence IdentityConfidence @default(UNVERIFIED)
+  status             CustomerStatus     @default(ACTIVE)
+
+  /// Permanent tombstone/redirect once Merged — every historical reference
+  /// (today Lead; future Loan Application, Disbursement, Document) resolves
+  /// through this pointer so nothing is ever orphaned.
+  mergedIntoCustomerId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mergedIntoCustomer  Customer?  @relation("CustomerMergeRedirect", fields: [mergedIntoCustomerId], references: [id], onDelete: SetNull)
+  mergedAwayCustomers Customer[] @relation("CustomerMergeRedirect")
+
+  identifiers            CustomerIdentifier[]
+  duplicateCandidatesAsA CustomerDuplicateCandidate[] @relation("DuplicateCandidateCustomerA")
+  duplicateCandidatesAsB CustomerDuplicateCandidate[] @relation("DuplicateCandidateCustomerB")
+  mergesAsSurvivor       CustomerMerge[]              @relation("MergeSurvivor")
+  mergeAsMergedAway      CustomerMerge?               @relation("MergeMergedAway")
+
+  @@index([organizationId])
+  @@index([mergedIntoCustomerId])
+  @@map("customers")
+  @@schema("customers")
+}
+
+enum IdentityConfidence {
+  UNVERIFIED
+  DECLARED
+  VERIFIED
+
+  @@map("identity_confidence")
+  @@schema("customers")
+}
+
+enum CustomerStatus {
+  ACTIVE
+  MERGED
+  ARCHIVED
+
+  @@map("customer_status")
+  @@schema("customers")
+}
+
+/// One identity/contact proof held by a Customer. PAN and Aadhaar are
+/// singular-per-Customer strong anchors; Phone and Email support multiple
+/// concurrent and historical (superseded) values.
+model CustomerIdentifier {
+  id         String         @id @default(uuid()) @db.Uuid
+  customerId String         @db.Uuid
+  type       IdentifierType
+
+  /// Deterministic-match hash. Populated ONLY for PAN/AADHAAR (the strong,
+  /// cross-Customer-unique anchors); left null for PHONE/EMAIL, which are
+  /// explicitly non-unique. The full Aadhaar number is never stored in any
+  /// column — this one-way salted hash is the only form used for matching.
+  valueHash String? @db.VarChar(128)
+
+  /// Normalized value used for PHONE/EMAIL probabilistic matching only
+  /// (never unique — the same phone/email may legitimately appear on more
+  /// than one Customer).
+  valueNormalized String? @db.VarChar(320)
+
+  /// Masked display value for every type (PAN last 4, Aadhaar last 4,
+  /// phone/email partially masked per UI policy).
+  valueMasked String @db.VarChar(50)
+
+  /// At-rest-encrypted payload (PAN full value; phone/email full value).
+  /// Never the plaintext Aadhaar number (platform-contracts.md §3).
+  valueEncrypted String? @db.Text
+
+  status                   IdentifierStatus @default(ACTIVE)
+  verifiedAt               DateTime?
+  verificationSource       String?          @db.VarChar(100)
+  supersededByIdentifierId String?          @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer               Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  supersededByIdentifier CustomerIdentifier?  @relation("IdentifierSupersession", fields: [supersededByIdentifierId], references: [id], onDelete: SetNull)
+  supersedesIdentifiers  CustomerIdentifier[] @relation("IdentifierSupersession")
+
+  // MANUAL SQL FOLLOW-UP: `valueHash` uniqueness below is expressed as a
+  // full composite unique index (safe because PHONE/EMAIL rows always carry
+  // `valueHash = NULL`, and Postgres treats NULLs as distinct). If a future
+  // requirement ever populates `valueHash` for PHONE/EMAIL too (e.g. for a
+  // stronger internal matching engine) WITHOUT wanting uniqueness, this
+  // must be converted to a partial unique index instead:
+  //   CREATE UNIQUE INDEX customer_identifiers_pan_aadhaar_unique
+  //     ON customers.customer_identifiers (type, value_hash)
+  //     WHERE type IN ('PAN', 'AADHAAR') AND value_hash IS NOT NULL;
+  //
+  // MANUAL SQL FOLLOW-UP: "PAN and Aadhaar are singular per Customer"
+  // (customers.md) — at most one ACTIVE identifier of each type per
+  // Customer, while still allowing superseded history rows to coexist.
+  // Not expressible in Prisma (partial unique index):
+  //   CREATE UNIQUE INDEX customer_identifiers_one_active_pan_per_customer
+  //     ON customers.customer_identifiers (customer_id)
+  //     WHERE type = 'PAN' AND status = 'ACTIVE';
+  //   CREATE UNIQUE INDEX customer_identifiers_one_active_aadhaar_per_customer
+  //     ON customers.customer_identifiers (customer_id)
+  //     WHERE type = 'AADHAAR' AND status = 'ACTIVE';
+  @@unique([type, valueHash])
+  @@index([customerId])
+  @@index([valueNormalized])
+  @@map("customer_identifiers")
+  @@schema("customers")
+}
+
+enum IdentifierType {
+  PAN
+  AADHAAR
+  PHONE
+  EMAIL
+
+  @@map("identifier_type")
+  @@schema("customers")
+}
+
+enum IdentifierStatus {
+  ACTIVE
+  SUPERSEDED
+
+  @@map("identifier_status")
+  @@schema("customers")
+}
+
+/// Flags that two Customer records probably represent the same real person,
+/// pending human review. Deterministic matches (PAN/Aadhaar) still route
+/// through here for auditability even though resolution is automatic.
+model CustomerDuplicateCandidate {
+  id               String                   @id @default(uuid()) @db.Uuid
+  customerAId      String                   @db.Uuid
+  customerBId      String                   @db.Uuid
+  matchType        DuplicateMatchType
+  matchScore       Decimal?                 @db.Decimal(5, 4)
+  status           DuplicateCandidateStatus @default(DETECTED)
+  reviewedByUserId String?                  @db.Uuid
+  reviewedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  customerA Customer        @relation("DuplicateCandidateCustomerA", fields: [customerAId], references: [id], onDelete: Cascade)
+  customerB Customer        @relation("DuplicateCandidateCustomerB", fields: [customerBId], references: [id], onDelete: Cascade)
+  merges    CustomerMerge[]
+
+  // MANUAL SQL FOLLOW-UP: enforce a canonical, order-independent pair (so
+  // (A,B) and (B,A) are never both raised) with a CHECK constraint Prisma
+  // cannot express:
+  //   ALTER TABLE customers.customer_duplicate_candidates
+  //     ADD CONSTRAINT customer_duplicate_candidates_ordered_pair_check
+  //     CHECK (customer_a_id < customer_b_id);
+  @@unique([customerAId, customerBId])
+  @@index([customerBId])
+  @@map("customer_duplicate_candidates")
+  @@schema("customers")
+}
+
+enum DuplicateMatchType {
+  DETERMINISTIC_PAN
+  DETERMINISTIC_AADHAAR
+  PROBABILISTIC_PHONE
+  PROBABILISTIC_EMAIL
+  PROBABILISTIC_NAME_DOB
+
+  @@map("duplicate_match_type")
+  @@schema("customers")
+}
+
+enum DuplicateCandidateStatus {
+  DETECTED
+  REVIEWED
+  MERGED
+  DISMISSED
+
+  @@map("duplicate_candidate_status")
+  @@schema("customers")
+}
+
+/// The permanent, auditable record of a manual decision to combine two
+/// Customer identities. Immutable once recorded — structurally append-only,
+/// no update/delete use-case.
+model CustomerMerge {
+  id                   String   @id @default(uuid()) @db.Uuid
+  survivingCustomerId  String   @db.Uuid
+  mergedAwayCustomerId String   @unique @db.Uuid
+  duplicateCandidateId String?  @db.Uuid
+  mergedByUserId       String   @db.Uuid
+  reason               String?  @db.Text
+  mergedAt             DateTime @default(now())
+
+  survivingCustomer  Customer                    @relation("MergeSurvivor", fields: [survivingCustomerId], references: [id], onDelete: Restrict)
+  mergedAwayCustomer Customer                    @relation("MergeMergedAway", fields: [mergedAwayCustomerId], references: [id], onDelete: Restrict)
+  duplicateCandidate CustomerDuplicateCandidate? @relation(fields: [duplicateCandidateId], references: [id], onDelete: SetNull)
+
+  @@index([survivingCustomerId])
+  @@index([duplicateCandidateId])
+  @@map("customer_merges")
+  @@schema("customers")
+}

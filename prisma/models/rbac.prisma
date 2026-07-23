@@ -1,0 +1,116 @@
+// ============================================================================
+// rbac — src/modules/rbac
+//
+// Source: ADR 0002 (Users and Enterprise RBAC), docs/platform/platform-contracts.md
+// (§2 RBAC Data Scope).
+//
+// Approved conceptual relationship (ADR 0002):
+//   Users -> UserRoles -> Roles -> RolePermissions -> Permissions
+// `rbac` is the sole authorization module; it never owns User identity.
+// ============================================================================
+
+/// A responsibility bundle (Caller, Manager, Team Leader, Admin, and future
+/// positions — HR, Branch Manager, Regional Manager, Recovery Officer, Sales
+/// Executive, ...). Never a hardcoded enum; always an admin-configurable
+/// catalog row.
+model Role {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  description    String?  @db.Text
+  isSystemRole   Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("roles")
+  @@schema("rbac")
+}
+
+/// One atomic capability (e.g. `lead.reassign`, `document.verify`,
+/// `commission_policy.publish`). Referenced, never duplicated, by every
+/// module's authorization check.
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique @db.VarChar(150)
+  description String?  @db.Text
+  module      String   @db.VarChar(100)
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+  @@schema("rbac")
+}
+
+/// Grants a Permission to a Role at a specific enterprise-wide Data Scope
+/// (platform-contracts.md §2: Self / Team / Branch / Organization / System).
+/// Composite primary key: a Role holds each Permission at exactly one Scope.
+model RolePermission {
+  roleId          String    @db.Uuid
+  permissionId    String    @db.Uuid
+  dataScope       DataScope
+  grantedAt       DateTime  @default(now())
+  grantedByUserId String?   @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+  @@schema("rbac")
+}
+
+/// Assigns one or more Roles to a User. Composite primary key — a User
+/// holds a given Role at most once concurrently, but a User "can hold
+/// multiple Roles where the organization requires it" (ADR 0002).
+/// `effectiveFrom`/`effectiveTo` support temporary assignments without a
+/// single-role-field's inability to do so (ADR 0002, Alternatives Considered).
+model UserRole {
+  // `userId` references `users`.User.id across schemas — see the manual FK
+  // note below; no Prisma relation is declared here to keep `rbac`'s module
+  // dependency one-directional (`rbac` does not import `users`' Prisma
+  // model), matching this codebase's module-boundary discipline (ADR 0001).
+  userId           String    @db.Uuid
+  roleId           String    @db.Uuid
+  effectiveFrom    DateTime  @default(now())
+  effectiveTo      DateTime?
+  assignedByUserId String?   @db.Uuid
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // MANUAL SQL FOLLOW-UP:
+  //   ALTER TABLE rbac.user_roles
+  //     ADD CONSTRAINT user_roles_user_id_fkey
+  //     FOREIGN KEY (user_id) REFERENCES users.users(id);
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+  @@schema("rbac")
+}
+
+/// Enterprise-wide RBAC Data Scope vocabulary (platform-contracts.md §2).
+/// Fixed, closed set by design — adding a scope tier is a deliberate
+/// platform-contract change, never a per-module extension.
+enum DataScope {
+  /// Only records the acting User owns or is directly assigned to.
+  SELF
+  /// Records belonging to any User who is a member of the same Team.
+  TEAM
+  /// Records belonging to any Team/User under the same Branch.
+  BRANCH
+  /// All records belonging to the acting User's Organization.
+  ORGANIZATION
+  /// Platform/technical scope not bound to business-record ownership.
+  SYSTEM
+
+  @@map("data_scope")
+  @@schema("rbac")
+}

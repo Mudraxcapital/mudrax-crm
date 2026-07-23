@@ -1,0 +1,490 @@
+// ============================================================================
+// reports — src/modules/reports
+//
+// Source: ADR 0009, docs/modules/reports.md.
+//
+// `reports` is a derived, read-side bounded context: it consumes domain
+// events published by every other module and owns only its own derived
+// work product. It never becomes the source of truth for another module's
+// business data, and never performs a live cross-module join.
+// ============================================================================
+
+enum MetricDomain {
+  LEAD
+  LOAN
+  TELEPHONY
+  DOCUMENT
+  USER
+  ORGANIZATION
+  AUDIT
+
+  @@map("metric_domain")
+  @@schema("reports")
+}
+
+enum FreshnessPolicy {
+  REAL_TIME
+  NEAR_REAL_TIME
+  PERIODIC
+
+  @@map("freshness_policy")
+  @@schema("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Metrics, KPIs & Datasets
+// ---------------------------------------------------------------------------
+
+/// Independent Aggregate Root; a named, reusable, governed analytical data
+/// source assembled from published domain events — never a database table
+/// or a live cross-module join.
+model AnalyticsDataset {
+  id              String        @id @default(uuid()) @db.Uuid
+  organizationId  String        @db.Uuid
+  name            String        @db.VarChar(200)
+  sourceEvents    Json          @db.JsonB
+  grainDefinition Json          @db.JsonB
+  versionNumber   Int           @default(1)
+  status          DatasetStatus @default(DEFINED)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  metricDefinitions MetricDefinition[]
+  reportTemplates   ReportTemplate[]
+  exportJobs        ExportJob[]
+
+  @@unique([organizationId, name, versionNumber])
+  @@index([organizationId])
+  @@map("analytics_datasets")
+  @@schema("reports")
+}
+
+enum DatasetStatus {
+  DEFINED
+  PUBLISHED
+  DEPRECATED
+  RETIRED
+
+  @@map("dataset_status")
+  @@schema("reports")
+}
+
+/// Aggregate Root; the single reusable calculation source. A `Domain`
+/// discriminator realizes every "*Analytics" subject area without a
+/// parallel entity family per domain.
+model MetricDefinition {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  organizationId           String                 @db.Uuid
+  name                     String                 @db.VarChar(200)
+  domain                   MetricDomain
+  analyticsDatasetId       String?                @db.Uuid
+  aggregationFunction      String                 @db.VarChar(100)
+  dimensions               Json                   @db.JsonB
+  freshnessPolicy          FreshnessPolicy
+  freshnessIntervalSeconds Int?
+  status                   MetricDefinitionStatus @default(DRAFT)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  analyticsDataset AnalyticsDataset?         @relation(fields: [analyticsDatasetId], references: [id], onDelete: SetNull)
+  versions         MetricDefinitionVersion[]
+  kpis             Kpi[]
+  snapshots        AnalyticsSnapshot[]
+  dashboardWidgets DashboardWidget[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([domain])
+  @@map("metric_definitions")
+  @@schema("reports")
+}
+
+enum MetricDefinitionStatus {
+  DRAFT
+  PUBLISHED
+  DEPRECATED
+  RETIRED
+
+  @@map("metric_definition_status")
+  @@schema("reports")
+}
+
+/// Formula edits are versioned, append-only.
+model MetricDefinitionVersion {
+  id                 String   @id @default(uuid()) @db.Uuid
+  metricDefinitionId String   @db.Uuid
+  versionNumber      Int
+  formula            Json     @db.JsonB
+  publishedAt        DateTime @default(now())
+
+  metricDefinition MetricDefinition    @relation(fields: [metricDefinitionId], references: [id], onDelete: Cascade)
+  snapshots        AnalyticsSnapshot[]
+
+  @@unique([metricDefinitionId, versionNumber])
+  @@map("metric_definition_versions")
+  @@schema("reports")
+}
+
+/// Independent Aggregate Root; a business-curated indicator that elevates
+/// one Metric Definition to leadership visibility. References exactly one
+/// Metric Definition by identity; never hard-deleted once it has appeared
+/// on any Snapshot/Execution.
+model Kpi {
+  id                 String    @id @default(uuid()) @db.Uuid
+  organizationId     String    @db.Uuid
+  metricDefinitionId String    @db.Uuid
+  name               String    @db.VarChar(200)
+  status             KpiStatus @default(DEFINED)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  metricDefinition MetricDefinition   @relation(fields: [metricDefinitionId], references: [id], onDelete: Restrict)
+  targetVersions   KpiTargetVersion[]
+  dashboardWidgets DashboardWidget[]
+
+  @@unique([organizationId, name])
+  @@index([metricDefinitionId])
+  @@map("kpis")
+  @@schema("reports")
+}
+
+enum KpiStatus {
+  DEFINED
+  ACTIVE
+  RETIRED
+
+  @@map("kpi_status")
+  @@schema("reports")
+}
+
+/// Append-only KPI Target Version history.
+model KpiTargetVersion {
+  id              String   @id @default(uuid()) @db.Uuid
+  kpiId           String   @db.Uuid
+  versionNumber   Int
+  targetValue     Decimal  @db.Decimal(18, 4)
+  thresholdConfig Json     @db.JsonB
+  effectiveFrom   DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  kpi Kpi @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  @@unique([kpiId, versionNumber])
+  @@map("kpi_target_versions")
+  @@schema("reports")
+}
+
+/// An immutable, timestamped, pre-computed rollup of one or more Metric
+/// Definitions. Structurally append-only — no update/delete use-case.
+/// Always pins the Metric Definition Version it used.
+model AnalyticsSnapshot {
+  id                        String    @id @default(uuid()) @db.Uuid
+  organizationId            String    @db.Uuid
+  metricDefinitionId        String    @db.Uuid
+  metricDefinitionVersionId String    @db.Uuid
+  periodStart               DateTime
+  periodEnd                 DateTime
+  value                     Json      @db.JsonB
+  computedAt                DateTime  @default(now())
+  publishedAt               DateTime?
+
+  metricDefinition        MetricDefinition        @relation(fields: [metricDefinitionId], references: [id], onDelete: Restrict)
+  metricDefinitionVersion MetricDefinitionVersion @relation(fields: [metricDefinitionVersionId], references: [id], onDelete: Restrict)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only + high volume — revoke
+  // UPDATE/DELETE at the DB role level and consider RANGE partitioning by
+  // `period_start`, the same treatment as documents.audit_trail and
+  // notifications.communication_log:
+  //   REVOKE UPDATE, DELETE ON reports.analytics_snapshots FROM application_role;
+  @@index([organizationId])
+  @@index([metricDefinitionId, periodStart])
+  @@map("analytics_snapshots")
+  @@schema("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Dashboarding
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; a named, curated visual workspace. Stores only layout
+/// and widget bindings — never business data.
+model Dashboard {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  name           String            @db.VarChar(200)
+  audience       DashboardAudience
+  ownerUserId    String?           @db.Uuid
+  status         DashboardStatus   @default(DRAFT)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  widgets DashboardWidget[]
+
+  @@index([organizationId])
+  @@map("dashboards")
+  @@schema("reports")
+}
+
+enum DashboardAudience {
+  EXECUTIVE
+  BRANCH
+  TEAM
+  PERSONAL
+
+  @@map("dashboard_audience")
+  @@schema("reports")
+}
+
+enum DashboardStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("dashboard_status")
+  @@schema("reports")
+}
+
+/// Child entity of Dashboard; one visual tile binding a visualization type
+/// to exactly one Metric Definition or KPI, with its own embedded Report
+/// Filter.
+model DashboardWidget {
+  id                 String       @id @default(uuid()) @db.Uuid
+  dashboardId        String       @db.Uuid
+  visualizationType  String       @db.VarChar(50)
+  metricDefinitionId String?      @db.Uuid
+  kpiId              String?      @db.Uuid
+  /// Embedded Report Filter Value Object — absolute and/or
+  /// relative/dynamic expressions (e.g. `RollingLast(30, Days)`).
+  reportFilter       Json         @db.JsonB
+  sortOrder          Int          @default(0)
+  status             WidgetStatus @default(ADDED)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  dashboard        Dashboard         @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  metricDefinition MetricDefinition? @relation(fields: [metricDefinitionId], references: [id], onDelete: SetNull)
+  kpi              Kpi?              @relation(fields: [kpiId], references: [id], onDelete: SetNull)
+
+  // MANUAL SQL FOLLOW-UP: "binding exactly one Metric Definition or KPI" —
+  //   ALTER TABLE reports.dashboard_widgets
+  //     ADD CONSTRAINT dashboard_widgets_exactly_one_binding_check
+  //     CHECK (num_nonnulls(metric_definition_id, kpi_id) = 1);
+  @@index([dashboardId])
+  @@map("dashboard_widgets")
+  @@schema("reports")
+}
+
+enum WidgetStatus {
+  ADDED
+  CONFIGURED
+  ACTIVE
+  REMOVED
+
+  @@map("widget_status")
+  @@schema("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Report Definition, Execution & Delivery
+// ---------------------------------------------------------------------------
+
+/// Aggregate Root; a reusable, admin/system-defined report blueprint.
+/// Global by default (`organizationId = null`), with an
+/// Organization-specific override by reference.
+model ReportTemplate {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  organizationId     String?                 @db.Uuid
+  name               String                  @db.VarChar(200)
+  columns            Json                    @db.JsonB
+  analyticsDatasetId String?                 @db.Uuid
+  defaultGrouping    Json?                   @db.JsonB
+  versionNumber      Int                     @default(1)
+  status             TemplateLifecycleStatus @default(DRAFT)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  analyticsDataset AnalyticsDataset? @relation(fields: [analyticsDatasetId], references: [id], onDelete: SetNull)
+  savedReports     SavedReport[]
+  executions       ReportExecution[]
+
+  @@unique([organizationId, name, versionNumber])
+  @@map("report_templates")
+  @@schema("reports")
+}
+
+enum TemplateLifecycleStatus {
+  DRAFT
+  PUBLISHED
+  DEPRECATED
+  RETIRED
+
+  @@map("template_lifecycle_status")
+  @@schema("reports")
+}
+
+/// A named, owned, reusable parameterization of a Report Template plus a
+/// specific Report Filter.
+model SavedReport {
+  id               String            @id @default(uuid()) @db.Uuid
+  ownerUserId      String            @db.Uuid
+  reportTemplateId String            @db.Uuid
+  name             String            @db.VarChar(200)
+  filterConfig     Json              @db.JsonB
+  status           SavedReportStatus @default(CREATED)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  reportTemplate  ReportTemplate    @relation(fields: [reportTemplateId], references: [id], onDelete: Restrict)
+  scheduledReport ScheduledReport?
+  executions      ReportExecution[]
+
+  @@index([ownerUserId])
+  @@index([reportTemplateId])
+  @@map("saved_reports")
+  @@schema("reports")
+}
+
+enum SavedReportStatus {
+  CREATED
+  ACTIVE
+  ARCHIVED
+
+  @@map("saved_report_status")
+  @@schema("reports")
+}
+
+/// A recurring execution policy that runs a Saved Report on a cadence.
+/// Pause/Resume kept distinct from Cancel.
+model ScheduledReport {
+  id            String                @id @default(uuid()) @db.Uuid
+  savedReportId String                @unique @db.Uuid
+  cadence       Json                  @db.JsonB
+  status        ScheduledReportStatus @default(ACTIVE)
+  nextFireAt    DateTime?
+  lastFiredAt   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  savedReport SavedReport       @relation(fields: [savedReportId], references: [id], onDelete: Cascade)
+  executions  ReportExecution[]
+
+  @@map("scheduled_reports")
+  @@schema("reports")
+}
+
+enum ScheduledReportStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+
+  @@map("scheduled_report_status")
+  @@schema("reports")
+}
+
+/// Independent Aggregate Root; one concrete, immutable run of a Report
+/// Template Version plus resolved Report Filter. Immutable once Completed.
+model ReportExecution {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String               @db.Uuid
+  savedReportId     String?              @db.Uuid
+  scheduledReportId String?              @db.Uuid
+  /// Pins the exact Report Template row this run used. Each distinct
+  /// `(organizationId, name, versionNumber)` combination on `ReportTemplate`
+  /// is its own immutable row — i.e. the row identified by this id IS the
+  /// Report Template Version, the same "version-per-row" shape used by
+  /// `MetricDefinitionVersion`/`AnalyticsSnapshot.metricDefinitionVersionId`.
+  reportTemplateId  String               @db.Uuid
+  triggerType       ExecutionTriggerType
+  /// The *resolved*, frozen absolute values a relative filter (e.g.
+  /// `RollingLast(30, Days)`) actually ran with.
+  resolvedFilter    Json                 @db.JsonB
+  status            ExecutionStatus      @default(QUEUED)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  failureReason     String?              @db.Text
+  createdAt         DateTime             @default(now())
+
+  reportTemplate  ReportTemplate   @relation(fields: [reportTemplateId], references: [id], onDelete: Restrict)
+  savedReport     SavedReport?     @relation(fields: [savedReportId], references: [id], onDelete: SetNull)
+  scheduledReport ScheduledReport? @relation(fields: [scheduledReportId], references: [id], onDelete: SetNull)
+  exportJobs      ExportJob[]
+
+  @@index([organizationId])
+  @@index([reportTemplateId])
+  @@index([savedReportId])
+  @@index([scheduledReportId])
+  @@map("report_executions")
+  @@schema("reports")
+}
+
+enum ExecutionTriggerType {
+  AD_HOC
+  SCHEDULED
+
+  @@map("execution_trigger_type")
+  @@schema("reports")
+}
+
+enum ExecutionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+
+  @@map("execution_status")
+  @@schema("reports")
+}
+
+/// Independent Aggregate Root; one render operation converting a completed
+/// Report Execution's result (or, for BI-feed formats, a live Dataset
+/// connection) into a deliverable artifact. A retry always creates a new,
+/// linked Export Job.
+model ExportJob {
+  id                 String          @id @default(uuid()) @db.Uuid
+  organizationId     String          @db.Uuid
+  reportExecutionId  String?         @db.Uuid
+  analyticsDatasetId String?         @db.Uuid
+  exportFormat       ExportFormat
+  status             ExportJobStatus @default(QUEUED)
+  /// Cross-schema reference to documents.Attachment.id — storage mechanics
+  /// only, never promoted to a compliance Document.
+  resultAttachmentId String?         @db.Uuid
+  retryOfExportJobId String?         @db.Uuid
+  failureReason      String?         @db.Text
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  reportExecution  ReportExecution?  @relation(fields: [reportExecutionId], references: [id], onDelete: SetNull)
+  analyticsDataset AnalyticsDataset? @relation(fields: [analyticsDatasetId], references: [id], onDelete: SetNull)
+
+  retryOfExportJob ExportJob?  @relation("ExportJobRetry", fields: [retryOfExportJobId], references: [id], onDelete: SetNull)
+  retryExportJobs  ExportJob[] @relation("ExportJobRetry")
+
+  @@index([organizationId])
+  @@index([reportExecutionId])
+  @@map("export_jobs")
+  @@schema("reports")
+}
+
+enum ExportFormat {
+  PDF
+  EXCEL
+  CSV
+  POWER_BI_FEED
+  TABLEAU_FEED
+  DATA_WAREHOUSE_FEED
+
+  @@map("export_format")
+  @@schema("reports")
+}
+
+enum ExportJobStatus {
+  QUEUED
+  RENDERING
+  COMPLETED
+  FAILED
+
+  @@map("export_job_status")
+  @@schema("reports")
+}

@@ -1,10 +1,15 @@
 // Main Prisma schema file — generator and datasource blocks ONLY.
 //
 // This project uses Prisma's multi-file schema support (GA since v6.7.0).
-// Domain models are intentionally NOT defined yet. Each business module will
-// get its own file under `prisma/models/` (e.g. `leads.prisma`,
-// `loan-applications.prisma`) once schema design is approved — see
-// `prisma/models/README.md`.
+// Domain models live under `prisma/models/*.prisma`, one file per
+// `src/modules/*` business module, mirroring the accepted bounded-context
+// ownership recorded in `docs/domain/domain-model.md` and ADR 0001-0011.
+//
+// Physical design translation only — see `prisma/models/README.md` and the
+// PR/ADR that approved this schema for the full mapping rationale. No
+// architecture, ERD, or entity-boundary decision is made in this file or its
+// sibling model files; every table, relationship, and constraint here is a
+// direct, faithful translation of already-accepted documentation.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,6 +17,25 @@ generator client {
 
 // NOTE (Prisma ORM v7): the datasource `url` is configured in
 // `prisma.config.ts`, not here — schema-level `url` is no longer supported.
+//
+// `schemas` enables PostgreSQL multi-schema support (GA since Prisma 6.13,
+// no `previewFeatures` flag required). Every Postgres schema below maps
+// 1:1 to one `src/modules/*` bounded context. Cross-schema relations are
+// ordinary Postgres foreign keys — Prisma imposes no extra ceremony beyond
+// declaring the target schema in this list and tagging each model with
+// `@@schema(...)`.
+//
+// NOTE: the Prisma parser in this version requires the `schemas` array to
+// be a single line within the `datasource` block (a multi-line array here
+// fails validation with "not a valid definition within a datasource").
+// Modules, in order: CRM Core (organization, users, rbac, customers,
+// leads, follow_ups, campaigns), Loan Management (banks, loan_products,
+// loan_applications, loan_accounts, disbursements), Telephony & Call
+// Center (telephony), Document Management (documents), Notifications &
+// Communications (notifications), Reports & Analytics (reports), and the
+// AI Platform's six sibling modules (ai_core, ai_documents, ai_telephony,
+// ai_crm, ai_analytics, ai_governance).
 datasource db {
   provider = "postgresql"
+  schemas  = ["organization", "users", "rbac", "customers", "leads", "follow_ups", "campaigns", "banks", "loan_products", "loan_applications", "loan_accounts", "disbursements", "telephony", "documents", "notifications", "reports", "ai_core", "ai_documents", "ai_telephony", "ai_crm", "ai_analytics", "ai_governance"]
 }
