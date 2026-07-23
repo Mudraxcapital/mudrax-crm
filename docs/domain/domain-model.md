@@ -651,6 +651,144 @@ Digital Signature capability — cosmetic overlay versus legally binding
 cryptographic execution — and the two must never be collapsed into one
 concept.
 
+## Notifications & Communications Bounded Context
+
+This bounded context records accepted decisions from
+[ADR 0008](../adr/0008-notifications-communications-aggregate-boundaries-and-provider-abstraction.md).
+It covers everything required to decide, template, queue, send, retry, and
+prove delivery of every communication Mudrax Capitals sends or receives —
+Email, SMS, WhatsApp, Push, In-App, and future Webhook — from a business
+event through to a provable delivered/failed outcome, including
+enterprise-scale bulk sends. All entities below are owned by a single
+module, `notifications`.
+
+### Core Intent & Execution
+
+| Entity | Business responsibility |
+| --- | --- |
+| Notification | Aggregate Root; the business intent to communicate something to someone, independent of how many channels or attempts it takes to deliver it |
+| Notification Delivery | Independent Aggregate Root; one physical send attempt against one Provider |
+| Delivery Status | Value Object catalog on Notification Delivery (Queued/Sending/Sent/Delivered/Read/Opened/Clicked/Failed/Bounced/Undeliverable/Expired) |
+| Notification Retry | Child entity of Notification Delivery; owns only the attempt counter, backoff, and next-eligible-time |
+
+### Templates & Channels
+
+| Entity | Business responsibility |
+| --- | --- |
+| Notification Template | Aggregate Root; versioned, reusable content definition. Global by default, with an Organization-specific override by reference |
+| Notification Channel | Aggregate Root; tenant-level configuration of one medium (Email/SMS/WhatsApp/Push/In-App/future Webhook) |
+
+### Provider Abstraction
+
+| Entity | Business responsibility |
+| --- | --- |
+| Provider | Aggregate Root; one vendor integration (Twilio, MSG91, Gupshup, Meta WhatsApp, AWS SES, SendGrid, Firebase, future) behind a single port |
+| Provider Failover Policy | Child entity of Notification Channel; ordered Provider priority list plus a health-threshold switch rule |
+| Provider Health Check | Child entity of Provider, append-only; recorded health-probe signal feeding failover decisions |
+
+### Preferences, Subscriptions & Consent Boundary
+
+| Entity | Business responsibility |
+| --- | --- |
+| Notification Preference | Aggregate Root; the concrete realization of the "Communication Preference" concept, owned by `notifications`; per-Recipient, per-EventCategory, optionally per-Channel |
+| Notification Subscription | Aggregate Root; per-Topic opt-in/opt-out for Broadcast content, independent of Preference |
+
+### Queueing & Scheduling
+
+| Entity | Business responsibility |
+| --- | --- |
+| Notification Queue | Aggregate Root; the standing outbound work queue per Channel/priority |
+| Notification Queue Entry | Child entity of Notification Queue; one resolved work item, carrying the `TriggerType`/`scheduledFor` that realizes "Scheduled Notification" |
+
+### Bulk Execution
+
+| Entity | Business responsibility |
+| --- | --- |
+| Broadcast | Aggregate Root; one message fanned out to a resolved audience/segment; "Campaign Notification" is a Broadcast with `AudienceSource = CampaignSegment`, not a separate entity |
+| Notification Batch | Independent Aggregate Root; execution/tracking envelope for enterprise-scale bulk sends (EMI reminders, festival greetings, marketing campaigns, organization announcements) |
+| Notification Batch Item | Child entity of Notification Batch; one immutable work-item row recorded before any Notification exists |
+
+### History & Event Sourcing
+
+| Entity | Business responsibility |
+| --- | --- |
+| Communication Log | Aggregate Root, platform-level, structurally append-only; permanent record of every significant Notification/Delivery transition |
+| Event Trigger Subscription | Aggregate Root; admin-configured mapping from a domain event to a Template, audience rule, and Channel policy — the seam other bounded contexts use to cause a Notification |
+
+### Notification Represents Intent; Notification Delivery Represents Execution
+
+Notification is the business fact, decided once; Notification Delivery is a
+separate, independent Aggregate Root representing one physical send attempt
+against one Provider — the identical intent/execution split already applied
+to Loan Application/Loan Account (ADR 0005) and Call Attempt/"Call" (ADR
+0006). A Notification is immutable once Queued; a correction always creates
+a new Notification and cancels the old one. Notification Retry is a child
+entity of Notification Delivery, mirroring Dialer Retry (ADR 0006): it never
+mutates the Delivery it retries from, always producing a new Delivery linked
+by an additive `retryOfDeliveryId` reference.
+
+### Channels and Providers Are Discriminated, Never Duplicated Per Vendor
+
+Email, SMS, WhatsApp, Push, and In-App are `ChannelType` values on
+Notification Channel, not separate entities; Twilio, MSG91, Gupshup, Meta
+WhatsApp, AWS SES, SendGrid, and Firebase are `ProviderType` values on
+Provider, behind a single `INotificationProvider` port — the identical
+discriminator-and-port pattern already accepted for Telephony's Trunk (ADR
+0006) and Documents' Storage Location (ADR 0007). Provider Failover Policy
+(versioned, append-only) and Provider Health Check (system-written,
+append-only) let multi-provider failover and health monitoring ship as
+configuration and adapters, never a redesign.
+
+### Preference Resolution Is a Strict, Centralized Four-Layer Order
+
+Consent (future, separate compliance Aggregate) blocks `Marketing`-category
+sends only and is checked first; `Transactional`/`OTP`-category
+Notifications always deliver regardless of Preference; Notification
+Preference (per-Recipient, per-EventCategory) governs
+`Operational`/`Marketing` sends; Notification Subscription (per-Topic)
+governs Broadcast opt-in/opt-out independently. These four layers are
+resolved once, centrally, at Notification/Queue Entry creation — never
+re-derived independently per Channel — and must never be collapsed into one
+concept, extending the Consent/Communication Preference split this document
+already recorded.
+
+### Notification Batch Supports Enterprise-Scale Bulk Sends Without an All-or-Nothing Transaction
+
+Notification Batch is an independent Aggregate Root (same
+independent-lifecycle test as Notification Delivery above) owning many
+immutable Notification Batch Item children, created before any Notification
+exists — the same shape as Import Batch/Import Row (`leads`) preceding Lead
+creation. A `SourceType` discriminator distinguishes content-uniform bulk
+sends (dispatched via Broadcast, which additively references its resulting
+Batch) from content-personalized bulk sends (e.g. EMI reminders, created
+directly from a scheduled job with no Broadcast involved). Batch progress is
+always a derived rollup over Batch Item outcomes — never an independent
+counter — the same discipline already applied to Document Bundle
+completeness (ADR 0007). Partial failure is a first-class, expected outcome
+(`Completed` vs. `Completed-with-Failures`); batch-level retry re-drives
+only `Failed` items into new Notifications/Deliveries, never mutating the
+originals; Cancellation is forward-only and never touches completed/
+in-flight items; Pause/Resume is a distinct, non-terminal, idempotently
+resumable state pair, never collapsed with Cancel; and a Batch's future
+`ThrottlePolicy` is always bounded by its Notification Channel's own
+rate limit.
+
+### Communication Log Is the Permanent Record; Event Trigger Subscription Is the One-Directional Seam
+
+Communication Log is a platform-level Aggregate Root with no update/delete
+use-case exposed at the domain layer at all — the same structural,
+not-merely-conventional append-only guarantee already applied to Audit Trail
+(ADR 0007) — kept deliberately separate from prunable/archivable operational
+Delivery data. Event Trigger Subscription is the only mechanism other
+bounded contexts use to cause a Notification: `leads`, `follow-ups`,
+`loan-applications`, `loan-accounts`, `documents`, and `telephony` publish
+domain events; `notifications` only consumes them, preserving this
+document's established one-directional dependency discipline
+(`campaigns -> leads`, `telephony -> leads`). Outbound Webhook (future) is a
+`ChannelType` value; inbound provider webhooks are never parsed directly by
+`notifications` — they are always translated first through the
+platform-level future Webhook Event Log below.
+
 ## Future Platform Entities
 
 The following entities are approved for the future domain model but are not
@@ -664,10 +802,12 @@ implemented.
   channel, capture source, timestamp, policy/version presented, and withdrawal
   history.
 - **Future Owner:** a future compliance/platform capability; it must remain
-  separate from ordinary notification preferences because consent is legal
-  evidence.
+  separate from `notifications`' Notification Preference because consent is
+  legal evidence, not operational choice.
 - **Relationships:** belongs to a Customer; may reference a Lead, communication
-  channel, capture source, policy version, and evidence artifact.
+  channel, capture source, policy version, and evidence artifact. Referenced
+  by identity from `notifications`' Notification Preference and checked
+  before any Marketing-category send.
 - **Lifecycle:** Requested -> Granted -> Withdrawn / Expired / Superseded.
 - **Business Rules:** consent must be purpose-specific, provable, and
   append-only in history; withdrawal stops future communication where legally
@@ -676,21 +816,14 @@ implemented.
   jurisdiction-specific retention, and consent synchronization with external
   communication providers.
 
-### Communication Preference
+### Communication Preference — Realized as Notification Preference
 
-- **Purpose:** records how and when a Customer prefers to be contacted.
-- **Business Responsibility:** captures preferred channels, contact times,
-  language, frequency, and opt-down choices to reduce unwanted outreach.
-- **Future Owner:** `notifications`, with legal eligibility checked against
-  Consent before delivery.
-- **Relationships:** belongs to a Customer; references one or more supported
-  notification/communication channels.
-- **Lifecycle:** Created -> Updated -> Inactive.
-- **Business Rules:** a preference cannot override a missing, expired, or
-  withdrawn Consent; mandatory service communications must be classified
-  separately from marketing preferences.
-- **Future Expansion:** per-product preferences, quiet hours, channel fallback
-  order, branch-specific contact windows, and AI-assisted best contact time.
+This concept is no longer future: it is realized as `Notification
+Preference`, owned by `notifications` per
+[ADR 0008](../adr/0008-notifications-communications-aggregate-boundaries-and-provider-abstraction.md)
+and the Notifications & Communications Bounded Context section above, with
+legal eligibility checked against the still-future Consent entity before any
+Marketing-category delivery.
 
 ### Webhook Event Log
 
@@ -703,7 +836,10 @@ implemented.
   modules receive translated domain commands/events rather than raw payloads.
 - **Relationships:** references an Integration configuration, provider event
   identifier, processing attempt(s), and any resulting Lead, Message, Call, or
-  other business entity.
+  other business entity. Inbound provider delivery/read receipts for
+  `notifications`' Notification Delivery are always translated through this
+  log first — `notifications` never parses a raw provider webhook payload
+  directly.
 - **Lifecycle:** Received -> Validated -> Processing -> Processed / Failed ->
   Retried / Dead-lettered.
 - **Business Rules:** provider event IDs must be idempotent; raw payload access
@@ -731,14 +867,20 @@ flowchart LR
   Campaigns -.-> Reports[Reports and Analytics]
   Leads -.-> Reports
   Telephony -.-> Reports
-  Consent[Consent] --> Customers
-  CommPreference[Communication Preference] --> Customers
-  Consent --> Notifications[Notifications]
-  CommPreference --> Notifications
-  WebhookLog[Webhook Event Log] --> Integrations[Integrations]
+  Consent[Consent - future] --> Customers
+  Users --> Notifications[Notifications]
+  Customers --> Notifications
+  Consent -.->|blocks Marketing sends| Notifications
+  Leads -- publishes events via Event Trigger Subscription --> Notifications
+  FollowUp -- publishes events via Event Trigger Subscription --> Notifications
+  Telephony -- publishes events via Event Trigger Subscription --> Notifications
+  Campaigns -- Broadcast AudienceSource: CampaignSegment --> Notifications
+  Leads -- Broadcast AudienceSource: LeadFilter --> Notifications
+  Notifications -.-> Reports
+  WebhookLog[Webhook Event Log - future] --> Integrations[Integrations]
   Integrations --> Leads
-  Integrations --> Notifications
   Integrations --> Telephony
+  WebhookLog -- translated event updates Delivery Status --> Notifications
   Leads --> LoanApplications[Loan Applications]
   Customers --> LoanApplications
   Banks[Banks] --> LoanProducts[Loan Products]
@@ -757,6 +899,8 @@ flowchart LR
   Disbursements -- OwnerContext --> Documents
   LoanProducts -- Checklist Template scope --> Documents
   Documents -.-> Reports
+  LoanAccounts -- publishes events via Event Trigger Subscription --> Notifications
+  Documents -- publishes events via Event Trigger Subscription --> Notifications
 ```
 
 ## Domain Boundary Rules
@@ -771,8 +915,10 @@ flowchart LR
 5. Lead identity and sales-pipeline lifecycle, including Lead Assignment
    (current assignee and history), remain owned by `leads`.
 6. Call execution and Dialer Campaign behavior remain owned by `telephony`.
-7. Future Consent is legal evidence; Communication Preference is operational
-   choice. They must not be collapsed into one entity.
+7. Future Consent is legal evidence; Notification Preference (the realized
+   form of the formerly-future "Communication Preference," owned by
+   `notifications` per ADR 0008) is operational choice. They must not be
+   collapsed into one entity.
 8. Webhook Event Log is integration evidence, not a business aggregate and not
    a substitute for Timeline or Audit Log.
 9. Customer identity is owned only by `customers`, anchored on a weighted set
@@ -901,3 +1047,57 @@ flowchart LR
     (a legally binding cryptographic execution artifact), both owned by
     `documents`, are permanently separate concepts and must never be
     collapsed into one.
+41. Notification (business intent) and Notification Delivery (one physical
+    send attempt) are permanently separate Aggregate Roots, both owned by
+    `notifications` — the same intent/execution split already established
+    for Loan Application/Loan Account (rule 15) and Call Attempt/"Call"
+    (rule 25). A Notification is immutable once Queued; a correction always
+    creates a new Notification, never an in-place edit.
+42. Notification Retry (owned by `notifications`) is a child entity of
+    Notification Delivery that never mutates the Delivery it retries from —
+    a retry always creates a new Notification Delivery, linked by an
+    additive `retryOfDeliveryId` reference, mirroring Dialer Retry (rule
+    25's discipline).
+43. Email, SMS, WhatsApp, Push, In-App, and future Webhook are never
+    separate entities. They are `ChannelType`/`ProviderType` discriminator
+    values on Notification Channel and Provider (owned by `notifications`),
+    behind a single `INotificationProvider` port — the same pattern already
+    established for Trunk (rule 27) and Storage Location (rule 38). Vendor
+    SDK code lives only in `src/integrations/notifications/*`.
+44. Notification Preference resolution is centralized and strictly ordered:
+    future Consent (blocks Marketing-category sends only) -> Category
+    (Transactional/OTP always deliver) -> Notification Preference
+    (Operational/Marketing) -> Notification Subscription (per-Topic,
+    Broadcast-specific). These four layers, all referenced from
+    `notifications`, must never be collapsed or independently re-derived
+    per Channel.
+45. "Scheduled Notification" and "Campaign Notification" are never modeled
+    as separate entities. The former is a `TriggerType`/`scheduledFor` on
+    Notification Queue Entry; the latter is a Broadcast with
+    `AudienceSource = CampaignSegment` — both owned by `notifications`.
+46. Notification Batch (owned by `notifications`) is an independent
+    Aggregate Root owning many immutable Notification Batch Item children,
+    created before any Notification exists — the same shape as Import
+    Batch/Import Row (rule 10's Lead-creation workflow). Batch progress is
+    always a derived rollup over Batch Item outcomes, never an independent
+    counter. Partial failure is a first-class outcome
+    (`Completed-with-Failures`); batch-level retry and Cancellation never
+    mutate or touch already-completed/in-flight items; Pause/Resume is a
+    distinct, non-terminal, idempotently resumable state pair, never
+    collapsed with Cancel.
+47. Communication Log (owned by `notifications`, platform-level) exposes no
+    update/delete use-case at the domain layer at all — the same structural
+    append-only guarantee already established for Audit Trail (rule 8's
+    discipline, applied to Webhook Event Log, and ADR 0007's Audit Trail).
+    It is kept separate from prunable/archivable operational Notification
+    Delivery data.
+48. Event Trigger Subscription (owned by `notifications`) is the only
+    mechanism other bounded contexts use to cause a Notification. `leads`,
+    `follow-ups`, `loan-applications`, `loan-accounts`, `documents`, and
+    `telephony` publish domain events; `notifications` only consumes them —
+    it never writes state in any of those modules, preserving the
+    one-directional dependency discipline already established for
+    `campaigns -> leads` (rule 11) and `telephony -> leads` (rule 25's
+    event-publish pattern). Inbound provider webhooks are never parsed
+    directly by `notifications`; they are always translated first through
+    the platform-level future Webhook Event Log (rule 8).

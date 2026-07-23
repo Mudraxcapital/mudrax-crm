@@ -19,3 +19,4 @@ Short, numbered documents recording *why* a significant architecture decision wa
 | [0005](0005-loan-management-aggregate-boundaries-and-lifecycle.md) | Loan Management: Aggregate Boundaries and Lifecycle | Accepted |
 | [0006](0006-telephony-call-center-aggregate-boundaries.md) | Telephony & Call Center: Aggregate Boundaries and Provider Abstraction | Accepted |
 | [0007](0007-document-management-aggregate-boundaries-and-storage-abstraction.md) | Document Management: Aggregate Boundaries, Storage Abstraction, and Document Bundles | Accepted |
+| [0008](0008-notifications-communications-aggregate-boundaries-and-provider-abstraction.md) | Notifications & Communications: Aggregate Boundaries and Provider Abstraction | Accepted |
