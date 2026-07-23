@@ -16,3 +16,4 @@ Short, numbered documents recording *why* a significant architecture decision wa
 | [0002](0002-users-and-enterprise-rbac.md) | Users and Enterprise RBAC | Accepted |
 | [0003](0003-organization-and-campaign-bounded-contexts.md) | Organization and Campaign Bounded Contexts | Accepted (amended by 0004) |
 | [0004](0004-crm-core-customer-identity-and-lead-ownership.md) | CRM Core: Customer Identity, Lead Ownership, and Campaign/Reports Boundaries | Accepted |
+| [0005](0005-loan-management-aggregate-boundaries-and-lifecycle.md) | Loan Management: Aggregate Boundaries and Lifecycle | Accepted |
