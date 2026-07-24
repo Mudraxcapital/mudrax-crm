@@ -36,14 +36,22 @@ hours, and escalation policies without duplicating User identity or RBAC.
 
 ## Implementation Status
 
-The **Organization** aggregate (the root entity itself — name, code, status,
-timezone) is implemented: repository, application use-cases (create/update/
-read/list), validation, DTOs, a dedicated `organization.manage` Permission,
-`/organizations` + `/organizations/[id]/edit` pages, a REST API
-(`/api/organizations`), and an append-only, hash-chained Audit Log
-(`organization.organization_audit_log`) recording every create/update.
+The **Organization**, **Branch**, **Department**, and **Team** aggregates are
+implemented: repository, application use-cases (create/update/read/list),
+validation, DTOs, dedicated Permissions (`organization.manage`,
+`branch.manage`, `department.manage`, `team.manage`, plus `organization.view`
+shared across all four for read access), pages (`/organizations`, `/branches`,
+`/departments`, `/teams`, each with a matching `[id]/edit` page), REST APIs
+(`/api/organizations`, `/api/branches`, `/api/departments`, `/api/teams`),
+and an append-only, hash-chained Audit Log
+(`organization.organization_audit_log`, one shared table per module,
+distinguished by `targetType`) recording every create/update. Team's
+`branchId` is validated against a real Branch in the same Organization before
+being written.
 
-Team, Branch, Region, Department, Holiday Calendar, Working Hours, and
-Escalation Rule remain architecture documentation only — no repository, API,
-UI, or business logic exists for them yet. Their Prisma models exist (from
-the earlier schema-only pass) but are not wired to any application code.
+Region, Holiday Calendar, Working Hours, and Escalation Rule remain
+architecture documentation only — no repository, API, UI, or business logic
+exists for them yet. Their Prisma models exist (from the earlier
+schema-only pass) but are not wired to any application code. Branch's
+`regionId` column is not yet surfaced through the Branch aggregate's
+application/presentation layers for the same reason.

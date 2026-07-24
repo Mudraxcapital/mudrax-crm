@@ -45,9 +45,23 @@ export default async function Home() {
         </ul>
       </section>
 
-      <Link href="/admin" className="text-sm underline underline-offset-4">
-        Go to admin-only page →
-      </Link>
+      <nav className="flex flex-wrap gap-4">
+        <Link href="/organizations" className="text-sm underline underline-offset-4">
+          Organizations →
+        </Link>
+        <Link href="/branches" className="text-sm underline underline-offset-4">
+          Branches →
+        </Link>
+        <Link href="/departments" className="text-sm underline underline-offset-4">
+          Departments →
+        </Link>
+        <Link href="/teams" className="text-sm underline underline-offset-4">
+          Teams →
+        </Link>
+        <Link href="/admin" className="text-sm underline underline-offset-4">
+          Go to admin-only page →
+        </Link>
+      </nav>
     </div>
   );
 }

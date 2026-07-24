@@ -17,5 +17,14 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "prisma/**/*.test.ts"],
+    // *.integration.test.ts files share one real Postgres instance and,
+    // within it, one *global* (not per-Organization/per-aggregate) hash
+    // chain per audit log table (each INSERT's previousRecordHash is
+    // "whatever the single most-recently-inserted row in the whole table
+    // was" — see migration 20260724184500's trigger). Running test files in
+    // parallel would let unrelated suites' audit inserts interleave and
+    // break each suite's own "my update chains to my own create" assertion,
+    // so every file runs sequentially instead.
+    fileParallelism: false,
   },
 });

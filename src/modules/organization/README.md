@@ -82,32 +82,53 @@ Call Later tasks, and future SLA breaches.
 
 ## Implementation Status
 
-The **Organization** aggregate root itself is implemented end-to-end:
+The **Organization**, **Branch**, **Department**, and **Team** aggregates are
+implemented end-to-end, following the identical Clean Architecture + `make*`
+factory pattern for each:
 
-- `domain/` — `Organization` entity, `OrganizationAuditRecord`, repository
-  interface, domain errors.
-- `application/` — `createOrganization`/`updateOrganization`/
-  `getOrganization`/`listOrganizations`/`listOrganizationAuditLog` use-cases,
-  Zod validators, DTOs.
-- `infrastructure/` — `PrismaOrganizationRepository` (writes the
-  Organization row and its Audit Record atomically in one `$transaction`).
-- `presentation/` — Server Actions + `OrganizationForm`, consumed by
-  `src/app/organizations/page.tsx` (list + create) and
-  `src/app/organizations/[id]/edit/page.tsx` (edit).
-- `src/app/api/organizations` — REST API (`GET`/`POST`/`GET :id`/`PATCH :id`).
-- RBAC: `organization.view` (read, Caller+) and `organization.manage`
-  (create/update, Admin-only, SYSTEM scope) — see
-  `prisma/seed/lib/rbac-catalog.ts`.
+- `domain/` — `Organization`/`Branch`/`Department`/`Team` entities, the
+  shared `OrganizationAuditRecord`/`OrganizationAuditActor` shape (module-
+  level, reused by every aggregate's Audit Record — not duplicated per
+  aggregate), one repository interface per aggregate, and domain errors
+  (`*NotFoundError`, `Duplicate*CodeError`, plus Team's
+  `InvalidBranchReferenceError` for its cross-aggregate `branchId` check).
+- `application/` — `create*`/`update*`/`get*`/`list*`/`list*AuditLog`
+  use-cases, Zod validators, DTOs, one set per aggregate.
+  `createTeam`/`updateTeam` additionally depend on `BranchRepository` to
+  validate `branchId` references a real Branch in the same Organization
+  before writing (an explicit `findById -> null -> typed error` check,
+  established here as the pattern for same-module cross-aggregate
+  references, rather than relying on the database's FK constraint to fail
+  silently).
+- `infrastructure/` — `PrismaBranchRepository`/`PrismaDepartmentRepository`/
+  `PrismaTeamRepository` (alongside `PrismaOrganizationRepository`), each
+  writing its row and Audit Record atomically in one `$transaction`.
+- `presentation/` — Server Actions + `BranchForm`/`DepartmentForm`/`TeamForm`,
+  consumed by `src/app/branches`, `src/app/departments`, and `src/app/teams`
+  (list + create pages, `[id]/edit` pages). `organizationId` is always taken
+  from the acting User's own Authorization Context
+  (`session.authContext.organizationId`), never from client-supplied input.
+- `src/app/api/{branches,departments,teams}` — REST API
+  (`GET`/`POST`/`GET :id`/`PATCH :id`) for each aggregate.
+- RBAC: `organization.view` (read all four aggregates, Caller+),
+  `organization.manage` (Organization create/update, Admin-only, SYSTEM
+  scope), `branch.manage` (Manager+), `department.manage` (Admin-only),
+  `team.manage` (Manager+) — see `prisma/seed/lib/rbac-catalog.ts`.
 - Audit logging: every create/update writes an append-only, hash-chained
-  `organization.organization_audit_log` row (migrations `...add_organization_audit_log`
-  and `..._organization_audit_log_protections`), the same canonical shape
-  platform-contracts.md §4 already uses for `documents.AuditTrail` /
-  `notifications.CommunicationLog` / `ai_core.AiAuditLog`.
-- Tests: `src/modules/organization/__tests__` (unit tests against a fake
-  repository, plus one integration test against the real database).
+  `organization.organization_audit_log` row — the **same table** the
+  Organization aggregate itself uses (one Audit Trail per module,
+  platform-contracts.md §4, not one table per aggregate), distinguished by
+  `targetType` (`"Branch"` / `"Department"` / `"Team"` / `"Organization"`).
+  No new migration was needed for Branch/Department/Team: the table's shape
+  was already generic.
+- Tests: `src/modules/organization/__tests__` — unit tests against an
+  in-memory fake repository per aggregate (create/update/get/list/schema
+  validation, including Team's Branch-reference checks), plus one
+  integration test per aggregate against the real database (verifying the
+  live hash-chain trigger and append-only Audit Trail).
 
-Team, Branch, Region, Department, Holiday Calendar, Working Hours, and
-Escalation Rule remain architecture documentation only — their Prisma
-models exist, but no repository, use-case, API, or UI has been built for
-them. This was an explicit scope boundary: only the Organization aggregate
-itself was implemented in this pass.
+Region, Holiday Calendar, Working Hours, and Escalation Rule remain
+architecture documentation only — their Prisma models exist, but no
+repository, use-case, API, or UI has been built for them. Branch's
+`regionId` column exists but is intentionally not surfaced by this module's
+domain/application/presentation layers until Region itself is implemented.
