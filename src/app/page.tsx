@@ -82,6 +82,12 @@ export default async function Home() {
         <Link href="/crm" className="text-sm underline underline-offset-4">
           CRM Dashboard →
         </Link>
+        <Link href="/telephony" className="text-sm underline underline-offset-4">
+          Telephony →
+        </Link>
+        <Link href="/documents" className="text-sm underline underline-offset-4">
+          Documents →
+        </Link>
       </nav>
     </div>
   );

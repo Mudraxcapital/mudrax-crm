@@ -505,6 +505,19 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     minRole: "Team Leader",
   },
   {
+    code: "document.category.manage",
+    module: "documents",
+    description: "Configure Document Category and Document Type catalogs.",
+    minRole: "Admin",
+  },
+  {
+    code: "documents.dashboard.view",
+    module: "documents",
+    description:
+      "View the Documents Dashboard (Total Documents, by Category, Pending Verification, Recently Uploaded).",
+    minRole: "Team Leader",
+  },
+  {
     code: "retention_policy.manage",
     module: "documents",
     description: "Configure Document retention rules.",

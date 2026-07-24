@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# local document storage (LocalDiskStorageAdapter)
+/.data/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
