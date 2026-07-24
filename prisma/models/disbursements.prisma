@@ -134,3 +134,43 @@ enum CommissionStatus {
   @@map("commission_status")
   @@schema("disbursements")
 }
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Module-owned Audit Record table for Disbursement / Commission.
+/// Same canonical shape as reports.report_audit_log (platform-contracts.md §4).
+model DisbursementAuditLog {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  organizationId     String                  @db.Uuid
+  occurredAt         DateTime                @default(now())
+  actorType          DisbursementsActorType
+  actorId            String?                 @db.Uuid
+  action             String                  @db.VarChar(200)
+  targetType         String                  @db.VarChar(100)
+  targetId           String                  @db.Uuid
+  correlationId      String?                 @db.Uuid
+  beforeState        Json?                   @db.JsonB
+  afterState         Json?                   @db.JsonB
+  recordHash         String                  @db.VarChar(128)
+  previousRecordHash String?                 @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level (see migration
+  // 20260725030001_manual_loan_audit_log_protections).
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("disbursement_audit_log")
+  @@schema("disbursements")
+}
+
+enum DisbursementsActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("disbursements_actor_type")
+  @@schema("disbursements")
+}

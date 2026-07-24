@@ -81,3 +81,43 @@ enum LoanProductStatus {
   @@map("loan_product_status")
   @@schema("loan_products")
 }
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Module-owned Audit Record table for Loan Product / Loan Product Type.
+/// Same canonical shape as reports.report_audit_log (platform-contracts.md §4).
+model LoanProductAuditLog {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String               @db.Uuid
+  occurredAt         DateTime             @default(now())
+  actorType          LoanProductsActorType
+  actorId            String?              @db.Uuid
+  action             String               @db.VarChar(200)
+  targetType         String               @db.VarChar(100)
+  targetId           String               @db.Uuid
+  correlationId      String?              @db.Uuid
+  beforeState        Json?                @db.JsonB
+  afterState         Json?                @db.JsonB
+  recordHash         String               @db.VarChar(128)
+  previousRecordHash String?              @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level (see migration
+  // 20260725030001_manual_loan_audit_log_protections).
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("loan_product_audit_log")
+  @@schema("loan_products")
+}
+
+enum LoanProductsActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("loan_products_actor_type")
+  @@schema("loan_products")
+}

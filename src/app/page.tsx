@@ -94,6 +94,9 @@ export default async function Home() {
         <Link href="/reports" className="text-sm underline underline-offset-4">
           Reports &amp; Analytics →
         </Link>
+        <Link href="/loans" className="text-sm underline underline-offset-4">
+          Loan Management →
+        </Link>
       </nav>
     </div>
   );
