@@ -5,7 +5,11 @@
 // by infrastructure/repositories/PrismaAgentSessionRepository.
 // ============================================================================
 
-import type { AgentSession, AgentSessionStatus, AgentStatusHistory } from "../entities/AgentSession";
+import type {
+  AgentSession,
+  AgentSessionStatus,
+  AgentStatusHistory,
+} from "../entities/AgentSession";
 import type { TelephonyAuditActor, TelephonyAuditRecord } from "../entities/TelephonyAuditRecord";
 
 export interface StartAgentSessionData {

@@ -5,10 +5,7 @@ import {
   InvalidCustomerReferenceError,
   InvalidLeadReferenceError,
 } from "../domain/errors/TelephonyErrors";
-import {
-  FakeCallAttemptRepository,
-  FakeCallOutcomeRepository,
-} from "./fakeTelephonyRepositories";
+import { FakeCallAttemptRepository, FakeCallOutcomeRepository } from "./fakeTelephonyRepositories";
 import {
   FakeCustomerLookupPort,
   FakeLeadLookupPort,

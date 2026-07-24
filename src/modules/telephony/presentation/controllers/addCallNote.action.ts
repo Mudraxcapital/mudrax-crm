@@ -7,11 +7,7 @@
 // ============================================================================
 
 import { revalidatePath } from "next/cache";
-import {
-  addCallNote,
-  CallAttemptNotFoundError,
-  createCallNoteSchema,
-} from "@/modules/telephony";
+import { addCallNote, CallAttemptNotFoundError, createCallNoteSchema } from "@/modules/telephony";
 import { requirePermission } from "@/infra/auth/session";
 import type { TelephonyFormState } from "./initiateClickToCall.action";
 

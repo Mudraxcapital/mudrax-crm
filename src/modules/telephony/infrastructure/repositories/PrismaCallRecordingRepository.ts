@@ -9,7 +9,10 @@ import type {
   UpdateCallRecordingData,
 } from "../../domain/repositories/CallRecordingRepository";
 import type { CallRecording } from "../../domain/entities/CallRecording";
-import type { TelephonyAuditActor, TelephonyAuditRecord } from "../../domain/entities/TelephonyAuditRecord";
+import type {
+  TelephonyAuditActor,
+  TelephonyAuditRecord,
+} from "../../domain/entities/TelephonyAuditRecord";
 import { toCallRecording, toTelephonyAuditRecord } from "../mappers/telephonyMapper";
 
 const TARGET_TYPE_CALL_RECORDING = "CallRecording";

@@ -83,7 +83,10 @@ export default async function TelephonyCallsPage() {
             <ClickToCallForm
               action={initiateClickToCallAction}
               leads={leads.map((lead) => ({ id: lead.id, label: lead.fullNameSnapshot }))}
-              customers={customers.map((customer) => ({ id: customer.id, label: customer.fullName }))}
+              customers={customers.map((customer) => ({
+                id: customer.id,
+                label: customer.fullName,
+              }))}
               assignees={assignees.map((user) => ({ id: user.id, fullName: user.fullName }))}
             />
           </div>

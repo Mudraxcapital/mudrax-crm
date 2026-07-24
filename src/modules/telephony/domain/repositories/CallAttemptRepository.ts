@@ -5,7 +5,12 @@
 // by infrastructure/repositories/PrismaCallAttemptRepository.
 // ============================================================================
 
-import type { CallAttempt, CallDirection, CallDisposition, CallStatus } from "../entities/CallAttempt";
+import type {
+  CallAttempt,
+  CallDirection,
+  CallDisposition,
+  CallStatus,
+} from "../entities/CallAttempt";
 import type { TelephonyAuditActor, TelephonyAuditRecord } from "../entities/TelephonyAuditRecord";
 
 export interface CreateCallAttemptData {
@@ -78,7 +83,10 @@ export interface CallAttemptRepository {
     range: { from: Date; to: Date },
     filter?: { statuses?: CallStatus[] },
   ): Promise<number>;
-  averageDurationInRange(organizationId: string, range: { from: Date; to: Date }): Promise<number | null>;
+  averageDurationInRange(
+    organizationId: string,
+    range: { from: Date; to: Date },
+  ): Promise<number | null>;
   countByAgentInRange(
     organizationId: string,
     range: { from: Date; to: Date },

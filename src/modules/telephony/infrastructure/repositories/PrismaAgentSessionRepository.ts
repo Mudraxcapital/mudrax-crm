@@ -13,8 +13,15 @@ import type {
   ListAgentSessionsFilter,
   StartAgentSessionData,
 } from "../../domain/repositories/AgentSessionRepository";
-import type { AgentSession, AgentSessionStatus, AgentStatusHistory } from "../../domain/entities/AgentSession";
-import type { TelephonyAuditActor, TelephonyAuditRecord } from "../../domain/entities/TelephonyAuditRecord";
+import type {
+  AgentSession,
+  AgentSessionStatus,
+  AgentStatusHistory,
+} from "../../domain/entities/AgentSession";
+import type {
+  TelephonyAuditActor,
+  TelephonyAuditRecord,
+} from "../../domain/entities/TelephonyAuditRecord";
 import {
   toAgentSession,
   toAgentStatusHistory,

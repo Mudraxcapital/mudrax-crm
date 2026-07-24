@@ -23,7 +23,11 @@ describe("getTelephonyDashboard", () => {
       status: "ACTIVE",
       fullName: "Agent Smith",
     });
-    getTelephonyDashboard = makeGetTelephonyDashboard(repository, callOutcomeRepository, userLookup);
+    getTelephonyDashboard = makeGetTelephonyDashboard(
+      repository,
+      callOutcomeRepository,
+      userLookup,
+    );
     now = new Date();
   });
 

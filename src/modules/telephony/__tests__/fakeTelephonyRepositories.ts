@@ -30,16 +30,26 @@ import type {
   ListAgentSessionsFilter,
   StartAgentSessionData,
 } from "../domain/repositories/AgentSessionRepository";
-import type { AgentSession, AgentSessionStatus, AgentStatusHistory } from "../domain/entities/AgentSession";
+import type {
+  AgentSession,
+  AgentSessionStatus,
+  AgentStatusHistory,
+} from "../domain/entities/AgentSession";
 import type {
   CallRecordingRepository,
   CreateCallRecordingData,
   UpdateCallRecordingData,
 } from "../domain/repositories/CallRecordingRepository";
 import type { CallRecording } from "../domain/entities/CallRecording";
-import type { CreateExtensionData, ExtensionRepository } from "../domain/repositories/ExtensionRepository";
+import type {
+  CreateExtensionData,
+  ExtensionRepository,
+} from "../domain/repositories/ExtensionRepository";
 import type { Extension } from "../domain/entities/Extension";
-import type { TelephonyAuditActor, TelephonyAuditRecord } from "../domain/entities/TelephonyAuditRecord";
+import type {
+  TelephonyAuditActor,
+  TelephonyAuditRecord,
+} from "../domain/entities/TelephonyAuditRecord";
 
 let nextId = 1;
 function makeId(): string {
@@ -86,7 +96,8 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
   async list(organizationId: string, filter?: ListCallAttemptsFilter): Promise<CallAttempt[]> {
     let results = [...this.calls.values()].filter((call) => call.organizationId === organizationId);
     if (filter?.leadId) results = results.filter((call) => call.leadId === filter.leadId);
-    if (filter?.customerId) results = results.filter((call) => call.customerId === filter.customerId);
+    if (filter?.customerId)
+      results = results.filter((call) => call.customerId === filter.customerId);
     if (filter?.agentUserId)
       results = results.filter((call) => call.agentUserId === filter.agentUserId);
     if (filter?.missedOnly) {
@@ -423,7 +434,9 @@ export class FakeAgentSessionRepository implements AgentSessionRepository {
       logoutAt: null,
     };
     this.sessions.set(id, session);
-    this.statusHistory.set(id, [{ id: makeId(), agentSessionId: id, status: "LOGGED_IN", changedAt: now }]);
+    this.statusHistory.set(id, [
+      { id: makeId(), agentSessionId: id, status: "LOGGED_IN", changedAt: now },
+    ]);
     recordAudit(
       this.auditLog,
       actor,

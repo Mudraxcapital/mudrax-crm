@@ -18,7 +18,10 @@ import type {
 } from "../../domain/repositories/CallAttemptRepository";
 import type { CallAttempt } from "../../domain/entities/CallAttempt";
 import { MISSED_CALL_STATUSES } from "../../domain/entities/CallAttempt";
-import type { TelephonyAuditActor, TelephonyAuditRecord } from "../../domain/entities/TelephonyAuditRecord";
+import type {
+  TelephonyAuditActor,
+  TelephonyAuditRecord,
+} from "../../domain/entities/TelephonyAuditRecord";
 import { toCallAttempt, toTelephonyAuditRecord } from "../mappers/telephonyMapper";
 
 const TARGET_TYPE_CALL_ATTEMPT = "CallAttempt";

@@ -454,7 +454,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   {
     code: "call.recording.log",
     module: "telephony",
-    description: "Record/update Call Recording metadata (file reference, duration, provider metadata) — distinct from `call.recording.access` (playback).",
+    description:
+      "Record/update Call Recording metadata (file reference, duration, provider metadata) — distinct from `call.recording.access` (playback).",
     minRole: "Caller",
   },
   {
@@ -466,13 +467,15 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   {
     code: "agent_session.self",
     module: "telephony",
-    description: "Log into/out of one's own Agent Session and change one's own availability status.",
+    description:
+      "Log into/out of one's own Agent Session and change one's own availability status.",
     minRole: "Caller",
   },
   {
     code: "telephony.dashboard.view",
     module: "telephony",
-    description: "View the Telephony Dashboard (Calls Today, Connected/Missed, Calls by Agent, Recent Calls).",
+    description:
+      "View the Telephony Dashboard (Calls Today, Connected/Missed, Calls by Agent, Recent Calls).",
     minRole: "Team Leader",
   },
 

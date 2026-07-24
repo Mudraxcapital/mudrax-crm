@@ -36,12 +36,7 @@ export function makeChangeAgentSessionStatus(repository: AgentSessionRepository)
       throw new AgentSessionAlreadyEndedError(id);
     }
 
-    const updated = await repository.changeStatusWithAudit(
-      id,
-      input.status,
-      actor,
-      correlationId,
-    );
+    const updated = await repository.changeStatusWithAudit(id, input.status, actor, correlationId);
 
     return toAgentSessionDto(updated);
   };

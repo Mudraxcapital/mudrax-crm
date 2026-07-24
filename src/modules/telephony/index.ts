@@ -47,7 +47,10 @@ import {
 } from "./application/use-cases/getAgentSession";
 import { makeCreateCallRecording } from "./application/use-cases/createCallRecording";
 import { makeUpdateCallRecording } from "./application/use-cases/updateCallRecording";
-import { makeGetCallRecording, makeListCallRecordings } from "./application/use-cases/getCallRecording";
+import {
+  makeGetCallRecording,
+  makeListCallRecordings,
+} from "./application/use-cases/getCallRecording";
 import { makeGetTelephonyDashboard } from "./application/use-cases/getTelephonyDashboard";
 
 export type {
@@ -73,7 +76,10 @@ export type {
   AgentSessionStatus,
   AgentStatusHistory,
 } from "./domain/entities/AgentSession";
-export { AGENT_SESSION_STATUSES, MANUAL_AGENT_SESSION_STATUSES } from "./domain/entities/AgentSession";
+export {
+  AGENT_SESSION_STATUSES,
+  MANUAL_AGENT_SESSION_STATUSES,
+} from "./domain/entities/AgentSession";
 export type { CallRecording } from "./domain/entities/CallRecording";
 export type { Extension } from "./domain/entities/Extension";
 export type {
@@ -106,7 +112,10 @@ export type { CallNoteDto } from "./application/dto/CallNoteDto";
 export type { CallOutcomeDto } from "./application/dto/CallOutcomeDto";
 export type { AgentSessionDto, AgentStatusHistoryDto } from "./application/dto/AgentSessionDto";
 export type { CallRecordingDto } from "./application/dto/CallRecordingDto";
-export type { CallsByAgentDto, TelephonyDashboardDto } from "./application/dto/TelephonyDashboardDto";
+export type {
+  CallsByAgentDto,
+  TelephonyDashboardDto,
+} from "./application/dto/TelephonyDashboardDto";
 
 export {
   initiateClickToCallSchema,
