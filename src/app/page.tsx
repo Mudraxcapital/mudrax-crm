@@ -88,6 +88,9 @@ export default async function Home() {
         <Link href="/documents" className="text-sm underline underline-offset-4">
           Documents →
         </Link>
+        <Link href="/notifications" className="text-sm underline underline-offset-4">
+          Notifications →
+        </Link>
       </nav>
     </div>
   );

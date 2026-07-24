@@ -614,6 +614,45 @@ enum BatchItemStatus {
 // History & Event Sourcing
 // ---------------------------------------------------------------------------
 
+/// Module-owned Audit Record table for configuration / intent aggregates
+/// (Template, Preference, Queue, Notification, Delivery). Same canonical
+/// shape as telephony.telephony_audit_log / leads.lead_audit_log
+/// (platform-contracts.md §4). Notification/Delivery history itself also
+/// appends to CommunicationLog.
+model NotificationAuditLog {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  organizationId     String                   @db.Uuid
+  occurredAt         DateTime                 @default(now())
+  actorType          NotificationsActorType
+  actorId            String?                  @db.Uuid
+  action             String                   @db.VarChar(200)
+  targetType         String                   @db.VarChar(100)
+  targetId           String                   @db.Uuid
+  correlationId      String?                  @db.Uuid
+  beforeState        Json?                    @db.JsonB
+  afterState         Json?                    @db.JsonB
+  recordHash         String                   @db.VarChar(128)
+  previousRecordHash String?                  @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level (see migration
+  // 20260725010001_manual_notifications_audit_log_protections).
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("notification_audit_log")
+  @@schema("notifications")
+}
+
+enum NotificationsActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("notifications_actor_type")
+  @@schema("notifications")
+}
+
 /// Aggregate Root, platform-level, structurally append-only. Permanent
 /// record of every significant Notification/Delivery lifecycle transition.
 model CommunicationLog {

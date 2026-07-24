@@ -532,6 +532,12 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
 
   // notifications --------------------------------------------------------------
   {
+    code: "notification.view",
+    module: "notifications",
+    description: "View Notifications, Queue Entries, and Notification History.",
+    minRole: "Caller",
+  },
+  {
     code: "notification.send",
     module: "notifications",
     description: "Trigger an ad-hoc Notification send.",
@@ -548,6 +554,25 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: "notifications",
     description: "Create/publish Notification Templates.",
     minRole: "Admin",
+  },
+  {
+    code: "notification.preference.manage",
+    module: "notifications",
+    description: "Create or update Notification Preferences for a recipient.",
+    minRole: "Caller",
+  },
+  {
+    code: "notification.queue.process",
+    module: "notifications",
+    description: "Process the Notification Queue and retry failed Deliveries.",
+    minRole: "Team Leader",
+  },
+  {
+    code: "notifications.dashboard.view",
+    module: "notifications",
+    description:
+      "View the Notifications Dashboard (Total, Pending, Sent, Failed, Channel Breakdown, Recent).",
+    minRole: "Team Leader",
   },
   {
     code: "provider.manage",

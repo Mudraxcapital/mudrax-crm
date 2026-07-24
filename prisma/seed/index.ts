@@ -30,6 +30,7 @@ import { seedLeads } from "./steps/10-leads";
 import { seedFollowUps } from "./steps/11-follow-ups";
 import { seedLoanApplications } from "./steps/12-loan-applications";
 import { seedTelephonyCatalogs } from "./steps/13-telephony-catalogs";
+import { seedNotificationCatalogs } from "./steps/14-notification-catalogs";
 
 async function main(): Promise<void> {
   const prisma = createSeedClient();
@@ -75,6 +76,7 @@ async function main(): Promise<void> {
     admin.adminUserId,
   );
   await seedTelephonyCatalogs(prisma, org.organizationId);
+  await seedNotificationCatalogs(prisma, org.organizationId);
 
   section("Done");
   explain(
