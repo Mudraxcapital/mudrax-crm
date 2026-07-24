@@ -91,6 +91,9 @@ export default async function Home() {
         <Link href="/notifications" className="text-sm underline underline-offset-4">
           Notifications →
         </Link>
+        <Link href="/reports" className="text-sm underline underline-offset-4">
+          Reports &amp; Analytics →
+        </Link>
       </nav>
     </div>
   );

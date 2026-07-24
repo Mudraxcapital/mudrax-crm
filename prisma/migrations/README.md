@@ -58,6 +58,8 @@ for how the same phases apply differently once real data exists.
 | 18 | `20260724212351_manual_telephony_audit_log_protections` | EXPAND/CONTRACT | 17 | Hash-chain `BEFORE INSERT` trigger + `REVOKE UPDATE, DELETE` for `telephony.telephony_audit_log`, mirroring migrations 14/16's treatment of the other Audit Record tables. |
 | 19 | `20260725010000_add_notifications_audit_log` | EXPAND | 1 | Hand-written: adds `notifications.notification_audit_log` + `notifications_actor_type` enum for the Notifications module's configuration/intent Audit Log (platform-contracts.md §4). Communication Log remains the Notification History table. |
 | 20 | `20260725010001_manual_notifications_audit_log_protections` | EXPAND/CONTRACT | 19 | Hash-chain `BEFORE INSERT` trigger + `REVOKE UPDATE, DELETE` for `notifications.notification_audit_log`, mirroring migration 18. |
+| 21 | `20260725020000_add_reports_audit_log` | EXPAND | 1 | Hand-written: adds `reports.report_audit_log` + `reports_actor_type` enum for the Reports module's configuration/intent Audit Log (platform-contracts.md §4). |
+| 22 | `20260725020001_manual_reports_audit_log_protections` | EXPAND/CONTRACT | 21 | Hash-chain `BEFORE INSERT` trigger + `REVOKE UPDATE, DELETE` for `reports.report_audit_log`, mirroring migration 20. |
 
 ### A note on migrations 13–14 and future schema changes to this project
 

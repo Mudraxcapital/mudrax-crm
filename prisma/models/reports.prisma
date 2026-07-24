@@ -488,3 +488,45 @@ enum ExportJobStatus {
   @@map("export_job_status")
   @@schema("reports")
 }
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Module-owned Audit Record table for configuration / intent aggregates
+/// (Dashboard, Report Template, Saved Report, Report Execution, Export Job).
+/// Same canonical shape as notifications.notification_audit_log
+/// (platform-contracts.md §4).
+model ReportAuditLog {
+  id                 String            @id @default(uuid()) @db.Uuid
+  organizationId     String            @db.Uuid
+  occurredAt         DateTime          @default(now())
+  actorType          ReportsActorType
+  actorId            String?           @db.Uuid
+  action             String            @db.VarChar(200)
+  targetType         String            @db.VarChar(100)
+  targetId           String            @db.Uuid
+  correlationId      String?           @db.Uuid
+  beforeState        Json?             @db.JsonB
+  afterState         Json?             @db.JsonB
+  recordHash         String            @db.VarChar(128)
+  previousRecordHash String?           @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — revoke UPDATE/DELETE
+  // at the database role level (see migration
+  // 20260725020001_manual_reports_audit_log_protections).
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("report_audit_log")
+  @@schema("reports")
+}
+
+enum ReportsActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("reports_actor_type")
+  @@schema("reports")
+}
