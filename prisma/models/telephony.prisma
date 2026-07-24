@@ -210,6 +210,13 @@ model CallAttempt {
   leadId     String? @db.Uuid
   customerId String? @db.Uuid
 
+  // Cross-schema reference to users.User.id — the Agent this Call Attempt
+  // is assigned to/handled by. Additive and distinct from `extensionId`
+  // (the technical dial endpoint), so Call Logs/Call History/the Telephony
+  // Dashboard can report "Calls by Agent" without requiring Extension
+  // management to be implemented first.
+  agentUserId String? @db.Uuid
+
   extensionId      String? @db.Uuid
   trunkId          String? @db.Uuid
   telephonyLineId  String? @db.Uuid
@@ -218,6 +225,12 @@ model CallAttempt {
   direction   CallDirection
   status      CallStatus       @default(INITIATING)
   disposition CallDisposition?
+
+  /// Admin-configurable business outcome the Agent records against a Call
+  /// (e.g. "Interested"/"Callback Requested") — permanently distinct from
+  /// the system-detected `disposition` above (ADR 0006) and from `leads`'
+  /// Call Feedback Status, which remains the sole Lead-state write.
+  callOutcomeId String? @db.Uuid
 
   /// Outbound retries always create a new Call Attempt, linked to the
   /// predecessor additively — never a mutation/reopening of a completed one.
@@ -238,6 +251,7 @@ model CallAttempt {
   trunk          Trunk?          @relation(fields: [trunkId], references: [id], onDelete: SetNull)
   telephonyLine  TelephonyLine?  @relation(fields: [telephonyLineId], references: [id], onDelete: SetNull)
   ivrFlowVersion IvrFlowVersion? @relation(fields: [ivrFlowVersionId], references: [id], onDelete: SetNull)
+  callOutcome    CallOutcome?    @relation(fields: [callOutcomeId], references: [id], onDelete: SetNull)
 
   retryOfCallAttempt CallAttempt?  @relation("CallAttemptRetry", fields: [retryOfCallAttemptId], references: [id], onDelete: SetNull)
   retryAttempts      CallAttempt[] @relation("CallAttemptRetry")
@@ -246,6 +260,7 @@ model CallAttempt {
   monitoringSessions CallMonitoringSession[]
   transfers          CallTransfer[]
   conferenceEntries  CallConference[]
+  notes              CallNote[]
 
   // MANUAL SQL FOLLOW-UP: Call Attempt is the highest-volume table in this
   // schema and a strong candidate for native PostgreSQL range partitioning
@@ -255,10 +270,53 @@ model CallAttempt {
   @@index([organizationId])
   @@index([leadId])
   @@index([customerId])
+  @@index([agentUserId])
   @@index([extensionId])
   @@index([status])
   @@index([initiatedAt])
+  @@index([callOutcomeId])
   @@map("call_attempts")
+  @@schema("telephony")
+}
+
+/// Admin-configurable catalog of business Call Outcomes an Agent may record
+/// against a Call Attempt (docs/modules/telephony.md — "Call outcomes must
+/// be configurable"). Never a hardcoded enum, matching the same
+/// never-a-hardcoded-enum discipline `leads` already applies to Lead Stage/
+/// Lead Source/Lost Reason.
+model CallOutcome {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String   @db.VarChar(150)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  callAttempts CallAttempt[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("call_outcomes")
+  @@schema("telephony")
+}
+
+/// Free-text Call Note linked to exactly one Call Attempt — the telephony
+/// equivalent of `leads`' LeadNote, kept in this module because it annotates
+/// call execution, not Lead state.
+model CallNote {
+  id            String   @id @default(uuid()) @db.Uuid
+  callAttemptId String   @db.Uuid
+  // Cross-schema reference to users.User.id.
+  authorUserId  String   @db.Uuid
+  body          String   @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  callAttempt CallAttempt @relation(fields: [callAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([callAttemptId])
+  @@map("call_notes")
   @@schema("telephony")
 }
 
@@ -318,6 +376,9 @@ model CallRecording {
   transcriptRef    String?   @db.VarChar(255)
   summaryRef       String?   @db.VarChar(255)
   qualityScoreRef  String?   @db.VarChar(255)
+  /// Opaque, provider-specific metadata only (e.g. codec, provider recording
+  /// id) — never the audio payload itself (ADR 0006).
+  providerMetadata Json?     @db.JsonB
   startedAt        DateTime
   endedAt          DateTime?
   createdAt        DateTime  @default(now())
@@ -739,5 +800,48 @@ model DialerRetry {
 
   @@unique([dialerQueueEntryId, attemptNumber])
   @@map("dialer_retries")
+  @@schema("telephony")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+enum TelephonyActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("telephony_actor_type")
+  @@schema("telephony")
+}
+
+/// One immutable, append-only fact about a change to a telephony module
+/// aggregate (Call Attempt, Call Note, Call Outcome, Agent Session, Call
+/// Recording) — the canonical Audit Record shape platform-contracts.md §4
+/// requires of every module-owned audit record (identical shape to
+/// leads.LeadAuditLog / customers.CustomerAuditLog). MANUAL SQL FOLLOW-UP:
+/// hash-chain trigger + `REVOKE UPDATE, DELETE` applied in a follow-up
+/// migration, matching organization/leads/customers/follow_ups/campaigns.
+model TelephonyAuditLog {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  occurredAt     DateTime           @default(now())
+  actorType      TelephonyActorType
+  actorId        String?            @db.Uuid
+  action         String             @db.VarChar(200)
+  targetType     String             @db.VarChar(100)
+  targetId       String             @db.Uuid
+  correlationId  String?            @db.Uuid
+  beforeState    Json?              @db.JsonB
+  afterState     Json?              @db.JsonB
+
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("telephony_audit_log")
   @@schema("telephony")
 }

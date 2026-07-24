@@ -439,6 +439,42 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Configure Dialer Campaigns and trunk pools.",
     minRole: "Admin",
   },
+  {
+    code: "call.update",
+    module: "telephony",
+    description: "Transition a Call Attempt's lifecycle status and record its Call Outcome.",
+    minRole: "Caller",
+  },
+  {
+    code: "call.note.manage",
+    module: "telephony",
+    description: "Add or edit a Call Note against a Call Attempt.",
+    minRole: "Caller",
+  },
+  {
+    code: "call.recording.log",
+    module: "telephony",
+    description: "Record/update Call Recording metadata (file reference, duration, provider metadata) — distinct from `call.recording.access` (playback).",
+    minRole: "Caller",
+  },
+  {
+    code: "call.outcome.manage",
+    module: "telephony",
+    description: "Create, update, or retire entries in the configurable Call Outcome catalog.",
+    minRole: "Admin",
+  },
+  {
+    code: "agent_session.self",
+    module: "telephony",
+    description: "Log into/out of one's own Agent Session and change one's own availability status.",
+    minRole: "Caller",
+  },
+  {
+    code: "telephony.dashboard.view",
+    module: "telephony",
+    description: "View the Telephony Dashboard (Calls Today, Connected/Missed, Calls by Agent, Recent Calls).",
+    minRole: "Team Leader",
+  },
 
   // documents ------------------------------------------------------------------
   {
