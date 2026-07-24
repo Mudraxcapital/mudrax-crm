@@ -1,10 +1,14 @@
-import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { listCustomers } from "@/modules/customers";
 import { listNotificationPreferences } from "@/modules/notifications";
 import { listUserSummaries } from "@/modules/users";
 import { NotificationPreferenceForm } from "@/modules/notifications/presentation/components/NotificationPreferenceForm";
 import { upsertNotificationPreferenceAction } from "@/modules/notifications/presentation/controllers/upsertNotificationPreference.action";
+import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
+import { Badge } from "@/shared/ui/Badge";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { TabNav } from "@/shared/ui/Tabs";
 
 export default async function NotificationPreferencesPage() {
   const { session, authContext } = await requirePermission("notification.preference.manage");
@@ -16,57 +20,65 @@ export default async function NotificationPreferencesPage() {
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/notifications" className="text-sm underline underline-offset-4">
-        ← Notifications
-      </Link>
+    <PageSection>
+      <PageHeader
+        title="Settings"
+        description="Notification preferences and delivery controls. Transactional and OTP always deliver."
+        breadcrumbs={[{ label: "Organization" }, { label: "Settings" }]}
+      />
 
-      <div>
-        <h1 className="text-lg font-semibold">Notification Preferences</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
-          Per-user / per-customer preferences. Transactional and OTP always deliver.
-        </p>
-      </div>
+      <TabNav
+        activeHref="/notifications/preferences"
+        items={[
+          { href: "/notifications/preferences", label: "Preferences" },
+          { href: "/organizations", label: "Organization" },
+          { href: "/admin", label: "Admin" },
+        ]}
+      />
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <NotificationPreferenceForm
-          action={upsertNotificationPreferenceAction}
-          defaultRecipientId={session.user.id}
-          users={users.map((user) => ({ id: user.id, fullName: user.fullName }))}
-          customers={customers.map((customer) => ({
-            id: customer.id,
-            label: customer.fullName,
-          }))}
+      <Card>
+        <CardHeader
+          title="Upsert preference"
+          description="Configure channel preferences for users or customers."
         />
-      </section>
+        <CardBody>
+          <NotificationPreferenceForm
+            action={upsertNotificationPreferenceAction}
+            defaultRecipientId={session.user.id}
+            users={users.map((user) => ({ id: user.id, fullName: user.fullName }))}
+            customers={customers.map((customer) => ({
+              id: customer.id,
+              label: customer.fullName,
+            }))}
+          />
+        </CardBody>
+      </Card>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
-          <h2 className="text-sm font-medium">Saved Preferences</h2>
-        </div>
-        <ul className="flex flex-col">
+      <Card>
+        <CardHeader title="Saved preferences" />
+        <CardBody className="p-0">
           {preferences.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">
-              No preferences saved.
-            </li>
+            <EmptyState title="No preferences saved" description="Create one above to get started." />
           ) : (
-            preferences.map((preference) => (
-              <li
-                key={preference.id}
-                className="flex items-center justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
-              >
-                <span>
-                  {preference.recipientType} · {preference.eventCategory}
-                  {preference.channelType ? ` · ${preference.channelType}` : ""}
-                </span>
-                <span className="text-foreground/60">
-                  {preference.isEnabled ? "Enabled" : "Disabled"}
-                </span>
-              </li>
-            ))
+            <ul className="divide-y divide-border">
+              {preferences.map((preference) => (
+                <li
+                  key={preference.id}
+                  className="flex items-center justify-between gap-3 px-5 py-3 text-sm"
+                >
+                  <span>
+                    {preference.recipientType} · {preference.eventCategory}
+                    {preference.channelType ? ` · ${preference.channelType}` : ""}
+                  </span>
+                  <Badge tone={preference.isEnabled ? "success" : "neutral"} dot>
+                    {preference.isEnabled ? "Enabled" : "Disabled"}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
-      </section>
-    </div>
+        </CardBody>
+      </Card>
+    </PageSection>
   );
 }

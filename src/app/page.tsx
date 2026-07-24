@@ -1,103 +1,120 @@
 import Link from "next/link";
 import { requireAuth } from "@/infra/auth/session";
-import { LogoutButton } from "@/modules/auth/presentation/components/LogoutButton";
+import { hasPermission } from "@/modules/rbac";
+import { countCustomers } from "@/modules/customers";
+import { countLeads, getLeadsByStage } from "@/modules/leads";
+import { listCampaigns } from "@/modules/campaigns";
+import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
+import { Badge } from "@/shared/ui/Badge";
+import { BarList } from "@/shared/ui/Charts";
+import { Button } from "@/shared/ui/Button";
+
+const QUICK_LINKS = [
+  { href: "/customers", label: "Customers", desc: "Identity records", perm: "customer.view" },
+  { href: "/leads", label: "Leads", desc: "Pipeline inquiries", perm: "lead.view" },
+  { href: "/leads/pipeline", label: "Pipeline", desc: "Kanban board", perm: "lead.view" },
+  { href: "/campaigns", label: "Campaigns", desc: "Outbound distribution", perm: "campaign.view" },
+  { href: "/telephony", label: "Telephony", desc: "Call operations", perm: "telephony.dashboard.view" },
+  { href: "/documents", label: "Documents", desc: "Files & verification", perm: "documents.dashboard.view" },
+  { href: "/notifications", label: "Notifications", desc: "Email · SMS · WhatsApp", perm: "notifications.dashboard.view" },
+  { href: "/reports", label: "Reports", desc: "Analytics & KPIs", perm: "report.view" },
+  { href: "/loans", label: "Loans", desc: "Applications & accounts", perm: "loan_application.view" },
+  { href: "/crm", label: "CRM Overview", desc: "Operational dashboard", perm: null },
+] as const;
 
 export default async function Home() {
   const { session, authContext } = await requireAuth();
 
+  const canCustomers = hasPermission(authContext, "customer.view");
+  const canLeads = hasPermission(authContext, "lead.view");
+  const canCampaigns = hasPermission(authContext, "campaign.view");
+
+  const [totalCustomers, totalLeads, leadsByStage, campaigns] = await Promise.all([
+    canCustomers ? countCustomers(authContext.organizationId) : Promise.resolve(0),
+    canLeads ? countLeads(authContext.organizationId) : Promise.resolve(0),
+    canLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
+    canCampaigns ? listCampaigns(authContext.organizationId) : Promise.resolve([]),
+  ]);
+
+  const activeCampaigns = campaigns.filter((c) => c.status === "ACTIVE").length;
+  const links = QUICK_LINKS.filter(
+    (link) => link.perm === null || hasPermission(authContext, link.perm),
+  );
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-8 px-6 py-12">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Mudrax CRM</h1>
-          <p className="text-foreground/60 text-sm">Authentication &amp; RBAC foundation</p>
-        </div>
-        <LogoutButton />
-      </header>
+    <PageSection>
+      <PageHeader
+        title={`Good day, ${session.user.fullName.split(" ")[0] ?? session.user.fullName}`}
+        description="Your enterprise workspace for loan DSA operations."
+        meta={
+          <>
+            <Badge tone="accent" dot>
+              {authContext.roles.map((r) => r.name).join(", ") || "Member"}
+            </Badge>
+            <Badge tone="neutral">{session.user.email}</Badge>
+          </>
+        }
+        actions={
+          <Link href="/crm">
+            <Button variant="secondary">Open CRM Dashboard</Button>
+          </Link>
+        }
+      />
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-foreground/60 text-sm font-medium">Signed in as</h2>
-        <p className="mt-1 text-lg font-medium">{session.user.fullName}</p>
-        <p className="text-foreground/60 text-sm">{session.user.email}</p>
-        <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-foreground/60">Organization ID</dt>
-          <dd className="font-mono text-xs">{session.user.organizationId}</dd>
-          <dt className="text-foreground/60">Roles</dt>
-          <dd>{authContext.roles.map((role) => role.name).join(", ") || "None"}</dd>
-          <dt className="text-foreground/60">Branch</dt>
-          <dd className="font-mono text-xs">{authContext.scope.branchId ?? "—"}</dd>
-          <dt className="text-foreground/60">Team</dt>
-          <dd className="font-mono text-xs">{authContext.scope.teamId ?? "—"}</dd>
-        </dl>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {canCustomers ? <StatCard label="Customers" value={totalCustomers} /> : null}
+        {canLeads ? <StatCard label="Leads" value={totalLeads} /> : null}
+        {canCampaigns ? <StatCard label="Active Campaigns" value={activeCampaigns} /> : null}
+        <StatCard
+          label="Permissions"
+          value={Object.keys(authContext.permissions).length}
+          hint="Effective access rights"
+        />
       </section>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-foreground/60 text-sm font-medium">
-          Effective permissions ({Object.keys(authContext.permissions).length})
-        </h2>
-        <ul className="mt-3 grid max-h-64 grid-cols-1 gap-1 overflow-y-auto font-mono text-xs sm:grid-cols-2">
-          {Object.entries(authContext.permissions).map(([code, scope]) => (
-            <li key={code} className="text-foreground/80 flex justify-between gap-2">
-              <span>{code}</span>
-              <span className="text-foreground/50">{scope}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
+          <CardHeader
+            title="Jump back in"
+            description="Most-used areas of the product, filtered to your permissions."
+          />
+          <CardBody className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="group hover:border-accent/40 hover:bg-accent-muted/30 flex items-start justify-between gap-3 rounded-lg border border-border px-3.5 py-3 transition-colors"
+              >
+                <div>
+                  <p className="text-sm font-medium tracking-tight group-hover:text-accent">
+                    {link.label}
+                  </p>
+                  <p className="text-muted mt-0.5 text-xs">{link.desc}</p>
+                </div>
+                <span className="text-muted-foreground group-hover:text-accent text-sm">→</span>
+              </Link>
+            ))}
+          </CardBody>
+        </Card>
 
-      <nav className="flex flex-wrap gap-4">
-        <Link href="/organizations" className="text-sm underline underline-offset-4">
-          Organizations →
-        </Link>
-        <Link href="/branches" className="text-sm underline underline-offset-4">
-          Branches →
-        </Link>
-        <Link href="/departments" className="text-sm underline underline-offset-4">
-          Departments →
-        </Link>
-        <Link href="/teams" className="text-sm underline underline-offset-4">
-          Teams →
-        </Link>
-        <Link href="/admin" className="text-sm underline underline-offset-4">
-          Go to admin-only page →
-        </Link>
-      </nav>
-
-      <nav className="flex flex-wrap gap-4 border-t border-black/10 pt-6 dark:border-white/15">
-        <Link href="/customers" className="text-sm underline underline-offset-4">
-          Customers →
-        </Link>
-        <Link href="/leads" className="text-sm underline underline-offset-4">
-          Leads →
-        </Link>
-        <Link href="/follow-ups" className="text-sm underline underline-offset-4">
-          Follow-ups →
-        </Link>
-        <Link href="/campaigns" className="text-sm underline underline-offset-4">
-          Campaigns →
-        </Link>
-        <Link href="/activity" className="text-sm underline underline-offset-4">
-          Activity Timeline →
-        </Link>
-        <Link href="/crm" className="text-sm underline underline-offset-4">
-          CRM Dashboard →
-        </Link>
-        <Link href="/telephony" className="text-sm underline underline-offset-4">
-          Telephony →
-        </Link>
-        <Link href="/documents" className="text-sm underline underline-offset-4">
-          Documents →
-        </Link>
-        <Link href="/notifications" className="text-sm underline underline-offset-4">
-          Notifications →
-        </Link>
-        <Link href="/reports" className="text-sm underline underline-offset-4">
-          Reports &amp; Analytics →
-        </Link>
-        <Link href="/loans" className="text-sm underline underline-offset-4">
-          Loan Management →
-        </Link>
-      </nav>
-    </div>
+        <Card className="lg:col-span-2">
+          <CardHeader title="Pipeline snapshot" description="Leads by stage" />
+          <CardBody>
+            {canLeads ? (
+              <BarList
+                data={leadsByStage.map((entry) => ({
+                  key: entry.stageId,
+                  label: entry.stageName,
+                  value: entry.count,
+                }))}
+              />
+            ) : (
+              <p className="text-muted text-sm">You don’t have lead visibility.</p>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+    </PageSection>
   );
 }

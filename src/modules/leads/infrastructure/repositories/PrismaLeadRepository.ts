@@ -71,6 +71,14 @@ export class PrismaLeadRepository implements LeadRepository {
     return rows.map(toLead);
   }
 
+  async repointCustomer(fromCustomerId: string, toCustomerId: string): Promise<number> {
+    const result = await this.prisma.lead.updateMany({
+      where: { customerId: fromCustomerId },
+      data: { customerId: toCustomerId },
+    });
+    return result.count;
+  }
+
   async count(organizationId: string, filter?: ListLeadsFilter): Promise<number> {
     return this.prisma.lead.count({ where: this.buildWhere(organizationId, filter) });
   }
@@ -100,6 +108,14 @@ export class PrismaLeadRepository implements LeadRepository {
     if (filter?.leadSourceId) where.leadSourceId = filter.leadSourceId;
     if (filter?.campaignId) where.campaignId = filter.campaignId;
     if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
+    if (filter?.search) {
+      const q = filter.search.trim();
+      where.OR = [
+        { fullNameSnapshot: { contains: q, mode: "insensitive" } },
+        { phoneSnapshot: { contains: q, mode: "insensitive" } },
+        { emailSnapshot: { contains: q, mode: "insensitive" } },
+      ];
+    }
     return where;
   }
 

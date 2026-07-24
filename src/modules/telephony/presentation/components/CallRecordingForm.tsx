@@ -18,8 +18,7 @@ type CallRecordingFormAction = (
   formData: FormData,
 ) => Promise<TelephonyFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function CallRecordingForm({ action }: { action: CallRecordingFormAction }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
@@ -27,7 +26,7 @@ export function CallRecordingForm({ action }: { action: CallRecordingFormAction 
   return (
     <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex flex-1 flex-col gap-1.5">
-        <label className="text-foreground/80 text-sm font-medium">Storage reference</label>
+        <label className="mx-label">Storage reference</label>
         <input
           name="storageReference"
           type="text"
@@ -37,12 +36,12 @@ export function CallRecordingForm({ action }: { action: CallRecordingFormAction 
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-foreground/80 text-sm font-medium">Duration (seconds)</label>
+        <label className="mx-label">Duration (seconds)</label>
         <input name="durationSeconds" type="number" min={0} className={`${inputClass} w-32`} />
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}
@@ -50,7 +49,7 @@ export function CallRecordingForm({ action }: { action: CallRecordingFormAction 
       <button
         type="submit"
         disabled={isPending}
-        className="bg-foreground text-background rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        className="mx-btn mx-btn-primary"
       >
         {isPending ? "Saving…" : "Log Recording"}
       </button>

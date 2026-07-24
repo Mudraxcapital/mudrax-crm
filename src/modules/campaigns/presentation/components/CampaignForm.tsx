@@ -16,8 +16,7 @@ type CampaignFormAction = (
   formData: FormData,
 ) => Promise<CampaignFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function CampaignForm({ action }: { action: CampaignFormAction }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
@@ -25,7 +24,7 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="name" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="name" className="mx-label">
           Name
         </label>
         <input
@@ -40,7 +39,7 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="description" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="description" className="mx-label">
           Description (optional)
         </label>
         <textarea
@@ -54,13 +53,13 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="startDate" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="startDate" className="mx-label">
             Start date (optional)
           </label>
           <input id="startDate" name="startDate" type="date" className={inputClass} />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="endDate" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="endDate" className="mx-label">
             End date (optional)
           </label>
           <input id="endDate" name="endDate" type="date" className={inputClass} />
@@ -68,7 +67,7 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

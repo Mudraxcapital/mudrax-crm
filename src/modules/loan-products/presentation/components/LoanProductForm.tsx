@@ -5,8 +5,7 @@ import { LOAN_PRODUCT_STATUSES } from "../../domain/entities/LoanProduct";
 import type { LoanProductsFormState } from "../controllers/loanProductsFormState";
 
 const initialState: LoanProductsFormState = {};
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm outline-none focus:border-black/30 dark:border-white/15";
+const inputClass = "mx-input";
 
 type FormAction = (s: LoanProductsFormState | undefined, fd: FormData) => Promise<LoanProductsFormState>;
 

@@ -19,22 +19,22 @@ export default async function DocumentsLibraryPage() {
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/documents" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/documents" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Documents Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Document Library</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Document Library</h1>
+        <p className="text-muted mt-1 text-sm">
           Uploaded Documents linked to Customers and Leads.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="text-foreground/60 border-b border-black/10 dark:border-white/15">
+            <tr className="text-muted border-b border-border">
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Owner</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -45,7 +45,7 @@ export default async function DocumentsLibraryPage() {
           <tbody>
             {documents.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-foreground/60 px-4 py-6 text-center">
+                <td colSpan={5} className="text-muted px-4 py-6 text-center">
                   No Documents yet.
                 </td>
               </tr>
@@ -53,7 +53,7 @@ export default async function DocumentsLibraryPage() {
               documents.map((document) => (
                 <tr
                   key={document.id}
-                  className="border-b border-black/5 last:border-0 dark:border-white/10"
+                  className="border-b border-border last:border-0"
                 >
                   <td className="px-4 py-3">{document.documentTypeName ?? "—"}</td>
                   <td className="px-4 py-3">
@@ -65,7 +65,7 @@ export default async function DocumentsLibraryPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/documents/library/${document.id}`}
-                      className="text-sm underline underline-offset-4"
+                      className="text-sm text-accent hover:text-accent hover:underline underline-offset-4"
                     >
                       View
                     </Link>
@@ -78,7 +78,7 @@ export default async function DocumentsLibraryPage() {
       </section>
 
       {canUpload ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Upload Document</h2>
           <div className="mt-4">
             <UploadDocumentForm

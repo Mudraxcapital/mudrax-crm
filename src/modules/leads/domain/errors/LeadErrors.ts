@@ -70,3 +70,31 @@ export class LeadNoteNotFoundError extends Error {
     this.name = "LeadNoteNotFoundError";
   }
 }
+
+export class SavedViewNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Saved View ${id} was not found.`);
+    this.name = "SavedViewNotFoundError";
+  }
+}
+
+export class ImportBatchNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Import Batch ${id} was not found.`);
+    this.name = "ImportBatchNotFoundError";
+  }
+}
+
+export class LeadMergeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LeadMergeError";
+  }
+}
+
+export class BulkOperationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BulkOperationError";
+  }
+}

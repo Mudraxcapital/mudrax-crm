@@ -1,5 +1,12 @@
 // Public API of the `activity-timeline` module.
 //
-// Every export another module is allowed to depend on must be re-exported from here.
-// No other module may import from this module's internal folders directly.
-export {};
+// Read-composition over module-owned Audit Trails (no separate write model /
+// Prisma schema — LeadAuditLog etc. are the backing store).
+
+export {
+  listUnifiedTimeline,
+  listCustomerTimeline,
+  type TimelineEntry,
+  type TimelineSource,
+  type TimelineSources,
+} from "./application/use-cases/listUnifiedTimeline";

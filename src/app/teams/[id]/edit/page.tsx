@@ -23,14 +23,14 @@ export default async function EditTeamPage({ params }: { params: Promise<{ id: s
   const boundAction = updateTeamAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href="/teams" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href="/teams" className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Teams
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Team</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{team.name}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Team</h1>
+        <p className="text-muted mt-1 text-sm">{team.name}</p>
       </div>
 
       <TeamForm action={boundAction} team={team} branches={branches} submitLabel="Save changes" />

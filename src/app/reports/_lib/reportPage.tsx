@@ -17,7 +17,7 @@ export async function ReportTypePage({ reportType }: { reportType: ReportType })
       </Link>
       <div>
         <h1 className="text-lg font-semibold">{REPORT_TYPE_LABELS[reportType]}</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <p className="text-muted mt-1 text-sm">
           Filter by date range, branch, department, team, or user, then run or save.
         </p>
       </div>

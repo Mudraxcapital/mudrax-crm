@@ -22,14 +22,14 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const boundAction = updateCampaignAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href={`/campaigns/${id}`} className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href={`/campaigns/${id}`} className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Campaign
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Campaign</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{campaign.name}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Campaign</h1>
+        <p className="text-muted mt-1 text-sm">{campaign.name}</p>
       </div>
 
       <EditCampaignForm action={boundAction} campaign={campaign} />

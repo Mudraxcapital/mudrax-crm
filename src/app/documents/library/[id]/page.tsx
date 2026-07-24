@@ -49,71 +49,71 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
   const boundVerificationAction = updateVerificationStatusAction.bind(null, verification.id, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/documents/library" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/documents/library" className="text-sm text-accent hover:underline underline-offset-4">
         ← Document Library
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">{document.documentTypeName ?? "Document"}</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">{document.documentTypeName ?? "Document"}</h1>
+        <p className="text-muted mt-1 text-sm">
           {document.ownerType} · {document.status} · Verification{" "}
           {document.latestVerificationStatus ?? "—"}
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Preview Metadata</h2>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-foreground/60">File name</dt>
+          <dt className="text-muted">File name</dt>
           <dd>{preview.fileName}</dd>
-          <dt className="text-foreground/60">MIME type</dt>
+          <dt className="text-muted">MIME type</dt>
           <dd>{preview.mimeType}</dd>
-          <dt className="text-foreground/60">Size (bytes)</dt>
+          <dt className="text-muted">Size (bytes)</dt>
           <dd>{preview.sizeBytes}</dd>
-          <dt className="text-foreground/60">Checksum</dt>
+          <dt className="text-muted">Checksum</dt>
           <dd className="font-mono text-xs break-all">{preview.checksum}</dd>
-          <dt className="text-foreground/60">Version</dt>
+          <dt className="text-muted">Version</dt>
           <dd>{preview.versionNumber}</dd>
         </dl>
         <div className="mt-4">
           <Link
             href={`/api/documents/${id}/download`}
-            className="text-sm underline underline-offset-4"
+            className="text-sm text-accent hover:underline underline-offset-4"
           >
             Download current version →
           </Link>
         </div>
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 ">
           <h2 className="text-sm font-medium">Versions</h2>
         </div>
         <ul className="flex flex-col">
           {versions.map((version) => (
             <li
               key={version.id}
-              className="flex items-center justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+              className="flex items-center justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
             >
               <span>
                 v{version.versionNumber} · {version.status}
               </span>
-              <span className="text-foreground/60">
+              <span className="text-muted">
                 {new Date(version.createdAt).toLocaleString()}
               </span>
             </li>
           ))}
         </ul>
         {canUpload ? (
-          <div className="border-t border-black/10 p-4 dark:border-white/15">
+          <div className="border-t border-border p-4 ">
             <DocumentVersionForm action={boundVersionAction} />
           </div>
         ) : null}
       </section>
 
       {canUpload ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Update Metadata</h2>
           <div className="mt-4">
             <DocumentMetadataForm
@@ -131,9 +131,9 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
       ) : null}
 
       {canVerify ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Verification</h2>
-          <p className="text-foreground/60 mt-1 text-sm">
+          <p className="text-muted mt-1 text-sm">
             Current cycle: {verification.status}
             {verification.rejectionReason ? ` — ${verification.rejectionReason}` : ""}
           </p>
@@ -146,21 +146,21 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 ">
           <h2 className="text-sm font-medium">Audit Log</h2>
         </div>
         <ul className="flex flex-col">
           {auditLog.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No audit entries.</li>
+            <li className="text-muted px-4 py-6 text-center text-sm">No audit entries.</li>
           ) : (
             auditLog.map((entry) => (
               <li
                 key={entry.id}
-                className="flex items-center justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+                className="flex items-center justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
               >
                 <span>{entry.action}</span>
-                <span className="text-foreground/60">{entry.occurredAt.toLocaleString()}</span>
+                <span className="text-muted">{entry.occurredAt.toLocaleString()}</span>
               </li>
             ))
           )}

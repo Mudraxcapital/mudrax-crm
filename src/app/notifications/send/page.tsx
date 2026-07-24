@@ -16,19 +16,19 @@ export default async function SendNotificationPage() {
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/notifications" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/notifications" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Notifications
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Send Notification</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Send Notification</h1>
+        <p className="text-muted mt-1 text-sm">
           Queue an Email, SMS, or WhatsApp notification through the Null provider.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <SendNotificationForm
           action={sendNotificationAction}
           templates={templates.map((template) => ({

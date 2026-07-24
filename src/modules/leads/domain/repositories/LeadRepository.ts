@@ -53,6 +53,8 @@ export interface ListLeadsFilter {
   campaignId?: string;
   /** Restricts to Leads currently assigned to one of these Users — used to enforce RBAC Data Scope (SELF/TEAM/BRANCH) at the presentation boundary. */
   assignedToUserIds?: string[];
+  /** Case-insensitive substring match over name/phone/email snapshots (Advanced Search). */
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -61,6 +63,8 @@ export interface LeadRepository {
   findById(id: string): Promise<Lead | null>;
   list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]>;
   listByCustomer(customerId: string): Promise<Lead[]>;
+  /** Used after Customer Merge to keep Lead ownership pointing at the survivor. */
+  repointCustomer(fromCustomerId: string, toCustomerId: string): Promise<number>;
   count(organizationId: string, filter?: ListLeadsFilter): Promise<number>;
   countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]>;
   countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]>;

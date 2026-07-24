@@ -15,8 +15,7 @@ type UpdateLeadFormAction = (
   formData: FormData,
 ) => Promise<LeadFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; lead: LeadDto }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
@@ -24,7 +23,7 @@ export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; l
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="fullNameSnapshot" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="fullNameSnapshot" className="mx-label">
           Lead name
         </label>
         <input
@@ -40,7 +39,7 @@ export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; l
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="phoneSnapshot" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="phoneSnapshot" className="mx-label">
             Phone
           </label>
           <input
@@ -52,7 +51,7 @@ export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; l
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="emailSnapshot" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="emailSnapshot" className="mx-label">
             Email
           </label>
           <input
@@ -66,7 +65,7 @@ export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; l
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}
@@ -74,7 +73,7 @@ export function EditLeadForm({ action, lead }: { action: UpdateLeadFormAction; l
       <button
         type="submit"
         disabled={isPending}
-        className="bg-foreground text-background mt-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        className="mx-btn mx-btn-primary mt-1"
       >
         {isPending ? "Saving…" : "Save changes"}
       </button>

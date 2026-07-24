@@ -22,14 +22,14 @@ export default async function EditDepartmentPage({ params }: { params: Promise<{
   const boundAction = updateDepartmentAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href="/departments" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href="/departments" className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Departments
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Department</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{department.name}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Department</h1>
+        <p className="text-muted mt-1 text-sm">{department.name}</p>
       </div>
 
       <DepartmentForm action={boundAction} department={department} submitLabel="Save changes" />

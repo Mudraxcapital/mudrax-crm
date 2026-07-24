@@ -34,15 +34,15 @@ export default async function BankDetailPage({ params }: { params: Promise<{ id:
   const policies = await listCommissionPolicies(bank.id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/banks" className="text-sm underline underline-offset-4">← Banks</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/banks" className="text-sm text-accent hover:underline underline-offset-4">← Banks</Link>
       <div>
-        <h1 className="text-lg font-semibold">{bank.name}</h1>
-        <p className="text-foreground/60 mt-1 text-sm font-mono">{bank.code} · {bank.status}</p>
+        <h1 className="text-xl font-semibold tracking-tight">{bank.name}</h1>
+        <p className="text-muted mt-1 text-sm font-mono">{bank.code} · {bank.status}</p>
       </div>
 
       {canManage ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Update Bank</h2>
           <div className="mt-4">
             <BankForm
@@ -54,15 +54,15 @@ export default async function BankDetailPage({ params }: { params: Promise<{ id:
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Bank Branches</h2>
         <ul className="mt-4 flex flex-col gap-2 text-sm">
           {branches.length === 0 ? (
-            <li className="text-foreground/60">No branches yet.</li>
+            <li className="text-muted">No branches yet.</li>
           ) : (
             branches.map((b) => (
               <li key={b.id} className="flex justify-between">
-                <span>{b.name} <span className="text-foreground/50 font-mono text-xs">({b.code})</span></span>
+                <span>{b.name} <span className="text-muted-foreground font-mono text-xs">({b.code})</span></span>
                 <span>{b.status}</span>
               </li>
             ))
@@ -75,11 +75,11 @@ export default async function BankDetailPage({ params }: { params: Promise<{ id:
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Commission Policies</h2>
         <ul className="mt-4 flex flex-col gap-3 text-sm">
           {policies.length === 0 ? (
-            <li className="text-foreground/60">No policies yet.</li>
+            <li className="text-muted">No policies yet.</li>
           ) : (
             policies.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-4">

@@ -31,14 +31,14 @@ export default async function DashboardDetailPage({
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/reports/dashboards" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/reports/dashboards" className="text-sm text-accent hover:underline underline-offset-4">
         ← Dashboards
       </Link>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">{dashboard.name}</h1>
-          <p className="text-foreground/60 mt-1 text-sm">
+          <h1 className="text-xl font-semibold tracking-tight">{dashboard.name}</h1>
+          <p className="text-muted mt-1 text-sm">
             {dashboard.audience} · {dashboard.status}
           </p>
         </div>
@@ -49,7 +49,7 @@ export default async function DashboardDetailPage({
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {dashboard.widgets.length === 0 ? (
-          <p className="text-foreground/60 text-sm">No widgets configured.</p>
+          <p className="text-muted text-sm">No widgets configured.</p>
         ) : (
           dashboard.widgets.map((widget) => {
             const label = widget.kpiKey ?? widget.visualizationType;
@@ -57,9 +57,9 @@ export default async function DashboardDetailPage({
             return (
               <div
                 key={widget.id}
-                className="rounded-xl border border-black/10 p-6 dark:border-white/15"
+                className="mx-card p-5"
               >
-                <p className="text-foreground/60 text-xs font-medium tracking-wide uppercase">
+                <p className="text-muted text-xs font-medium tracking-wide uppercase">
                   {label}
                 </p>
                 <p className="mt-2 text-3xl font-semibold">{value}</p>

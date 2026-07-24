@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+import {
+  advancedLeadSearchSchema,
+  bulkAssignLeadsSchema,
+  createSavedViewSchema,
+  importLeadsCsvSchema,
+  mergeLeadsSchema,
+} from "../application/validators/productivitySchemas";
+
+const uuid = "11111111-1111-1111-1111-111111111111";
+
+describe("productivitySchemas", () => {
+  it("accepts a saved view with optional filter fields", () => {
+    const parsed = createSavedViewSchema.parse({
+      name: "Hot leads",
+      filterConfig: { search: "rahul", currentStageId: uuid },
+      isShared: true,
+    });
+    expect(parsed.name).toBe("Hot leads");
+    expect(parsed.filterConfig.currentStageId).toBe(uuid);
+  });
+
+  it("accepts advanced search input", () => {
+    const parsed = advancedLeadSearchSchema.parse({ search: "99", limit: 25 });
+    expect(parsed.search).toBe("99");
+  });
+
+  it("requires CSV text for import", () => {
+    expect(() =>
+      importLeadsCsvSchema.parse({ leadSourceId: uuid, csvText: "" }),
+    ).toThrow();
+  });
+
+  it("accepts bulk assign payload", () => {
+    const parsed = bulkAssignLeadsSchema.parse({
+      leadIds: [uuid],
+      assignedToUserId: uuid,
+    });
+    expect(parsed.leadIds).toHaveLength(1);
+  });
+
+  it("rejects merging a lead into itself", () => {
+    const parsed = mergeLeadsSchema.parse({
+      survivingLeadId: uuid,
+      mergedAwayLeadId: "22222222-2222-2222-2222-222222222222",
+    });
+    expect(parsed.survivingLeadId).not.toBe(parsed.mergedAwayLeadId);
+  });
+});

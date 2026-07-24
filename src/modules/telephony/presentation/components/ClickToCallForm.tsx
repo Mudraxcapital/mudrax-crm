@@ -18,8 +18,7 @@ type ClickToCallFormAction = (
   formData: FormData,
 ) => Promise<TelephonyFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function ClickToCallForm({
   action,
@@ -38,7 +37,7 @@ export function ClickToCallForm({
     <form action={formAction} className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="leadId" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="leadId" className="mx-label">
             Lead (optional)
           </label>
           <select id="leadId" name="leadId" className={inputClass}>
@@ -51,7 +50,7 @@ export function ClickToCallForm({
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="customerId" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="customerId" className="mx-label">
             Customer (optional)
           </label>
           <select id="customerId" name="customerId" className={inputClass}>
@@ -65,11 +64,11 @@ export function ClickToCallForm({
         </div>
       </div>
 
-      <p className="text-foreground/60 text-xs">At least one of Lead / Customer is required.</p>
+      <p className="text-muted text-xs">At least one of Lead / Customer is required.</p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="toPhoneNumber" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="toPhoneNumber" className="mx-label">
             Phone number (optional)
           </label>
           <input
@@ -82,7 +81,7 @@ export function ClickToCallForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="agentUserId" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="agentUserId" className="mx-label">
             Assign to Agent (optional)
           </label>
           <select id="agentUserId" name="agentUserId" className={inputClass}>
@@ -97,7 +96,7 @@ export function ClickToCallForm({
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

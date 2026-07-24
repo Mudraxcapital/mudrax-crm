@@ -2,113 +2,106 @@ import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { getNotificationsDashboard } from "@/modules/notifications";
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-      <p className="text-foreground/60 text-xs font-medium tracking-wide uppercase">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
-    </div>
-  );
-}
+import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
+import { BarList } from "@/shared/ui/Charts";
+import { Button } from "@/shared/ui/Button";
+import { Badge, statusTone } from "@/shared/ui/Badge";
+import { TabNav } from "@/shared/ui/Tabs";
+import { EmptyState } from "@/shared/ui/EmptyState";
 
 export default async function NotificationsDashboardPage() {
   const { authContext } = await requirePermission("notifications.dashboard.view");
   const canManageTemplates = hasPermission(authContext, "notification.template.manage");
   const canSend = hasPermission(authContext, "notification.send");
-
   const dashboard = await getNotificationsDashboard(authContext.organizationId);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/" className="text-sm underline underline-offset-4">
-        ← Home
-      </Link>
+    <PageSection>
+      <PageHeader
+        title="Notifications"
+        description="Email, SMS, and WhatsApp delivery across the organization."
+        actions={
+          <>
+            {canManageTemplates ? (
+              <Link href="/notifications/templates">
+                <Button variant="secondary">Templates</Button>
+              </Link>
+            ) : null}
+            {canSend ? (
+              <Link href="/notifications/send">
+                <Button>Send</Button>
+              </Link>
+            ) : null}
+          </>
+        }
+      />
 
-      <div>
-        <h1 className="text-lg font-semibold">Notifications Dashboard</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
-          Overview of Email, SMS, and WhatsApp notification activity.
-        </p>
-      </div>
+      <TabNav
+        activeHref="/notifications"
+        items={[
+          { href: "/notifications", label: "Overview" },
+          { href: "/notifications/history", label: "History" },
+          { href: "/notifications/queue", label: "Queue" },
+          { href: "/notifications/templates", label: "Templates" },
+          { href: "/notifications/preferences", label: "Preferences" },
+          ...(canSend ? [{ href: "/notifications/send", label: "Send" }] : []),
+        ]}
+      />
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Total" value={dashboard.totalNotifications} />
         <StatCard label="Pending" value={dashboard.pending} />
         <StatCard label="Sent" value={dashboard.sent} />
         <StatCard label="Failed" value={dashboard.failed} />
       </section>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-sm font-medium">Channel Breakdown</h2>
-        <ul className="mt-4 flex flex-col gap-2 text-sm">
-          {dashboard.channelBreakdown.length === 0 ? (
-            <li className="text-foreground/60">No Notifications yet.</li>
-          ) : (
-            dashboard.channelBreakdown.map((entry) => (
-              <li key={entry.channelType} className="flex items-center justify-between">
-                <span>{entry.channelType}</span>
-                <span className="font-medium">{entry.count}</span>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Channel breakdown" />
+          <CardBody>
+            <BarList
+              data={dashboard.channelBreakdown.map((entry) => ({
+                key: entry.channelType,
+                label: entry.channelType,
+                value: entry.count,
+              }))}
+            />
+          </CardBody>
+        </Card>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 dark:border-white/15">
-          <h2 className="text-sm font-medium">Recent Notifications</h2>
-          <Link href="/notifications/history" className="text-xs underline underline-offset-4">
-            History →
-          </Link>
-        </div>
-        <ul className="flex flex-col">
-          {dashboard.recentNotifications.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">
-              No Notifications yet.
-            </li>
-          ) : (
-            dashboard.recentNotifications.map((notification) => (
-              <li
-                key={notification.id}
-                className="flex items-center justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
-              >
-                <Link
-                  href={`/notifications/${notification.id}`}
-                  className="underline underline-offset-4"
-                >
-                  {notification.channelType ?? "—"} · {notification.status}
-                </Link>
-                <span className="text-foreground/60">
-                  {new Date(notification.createdAt).toLocaleString()}
-                </span>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-
-      <nav className="flex flex-wrap gap-4 text-sm">
-        {canSend ? (
-          <Link href="/notifications/send" className="underline underline-offset-4">
-            Send →
-          </Link>
-        ) : null}
-        {canManageTemplates ? (
-          <Link href="/notifications/templates" className="underline underline-offset-4">
-            Templates →
-          </Link>
-        ) : null}
-        <Link href="/notifications/queue" className="underline underline-offset-4">
-          Queue →
-        </Link>
-        <Link href="/notifications/history" className="underline underline-offset-4">
-          History →
-        </Link>
-        <Link href="/notifications/preferences" className="underline underline-offset-4">
-          Preferences →
-        </Link>
-      </nav>
-    </div>
+        <Card>
+          <CardHeader
+            title="Recent notifications"
+            actions={
+              <Link href="/notifications/history">
+                <Button variant="ghost" size="sm">
+                  History
+                </Button>
+              </Link>
+            }
+          />
+          <CardBody className="p-0">
+            {dashboard.recentNotifications.length === 0 ? (
+              <EmptyState title="No notifications yet" />
+            ) : (
+              <ul className="divide-y divide-border">
+                {dashboard.recentNotifications.map((notification) => (
+                  <li key={notification.id}>
+                    <Link
+                      href={`/notifications/${notification.id}`}
+                      className="hover:bg-accent-muted/30 flex items-center justify-between gap-3 px-5 py-3 text-sm transition-colors"
+                    >
+                      <span className="font-medium">{notification.channelType ?? "—"}</span>
+                      <Badge tone={statusTone(notification.status)}>{notification.status}</Badge>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+    </PageSection>
   );
 }

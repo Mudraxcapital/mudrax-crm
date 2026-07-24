@@ -22,29 +22,29 @@ export default async function DocumentCategoriesPage() {
   }));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/documents" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/documents" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Documents Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Document Categories &amp; Types</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Document Categories &amp; Types</h1>
+        <p className="text-muted mt-1 text-sm">
           Admin catalog used to classify every uploaded Document.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Add Category</h2>
         <div className="mt-4">
           <DocumentCategoryForm action={createDocumentCategoryAction} />
         </div>
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <ul className="flex flex-col">
           {categories.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">
+            <li className="text-muted px-4 py-6 text-center text-sm">
               No Document Categories configured yet.
             </li>
           ) : (
@@ -53,7 +53,7 @@ export default async function DocumentCategoriesPage() {
               return (
                 <li
                   key={category.id}
-                  className="border-b border-black/5 px-4 py-4 last:border-0 dark:border-white/10"
+                  className="border-b border-border px-4 py-4 last:border-0 "
                 >
                   <DocumentCategoryForm action={boundUpdate} category={category} />
                 </li>
@@ -63,17 +63,17 @@ export default async function DocumentCategoriesPage() {
         </ul>
       </section>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Add Document Type</h2>
         <div className="mt-4">
           <DocumentTypeForm action={createDocumentTypeAction} categories={categoryOptions} />
         </div>
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <ul className="flex flex-col">
           {documentTypes.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">
+            <li className="text-muted px-4 py-6 text-center text-sm">
               No Document Types configured yet.
             </li>
           ) : (
@@ -82,7 +82,7 @@ export default async function DocumentCategoriesPage() {
               return (
                 <li
                   key={documentType.id}
-                  className="border-b border-black/5 px-4 py-4 last:border-0 dark:border-white/10"
+                  className="border-b border-border px-4 py-4 last:border-0 "
                 >
                   <DocumentTypeForm
                     action={boundUpdate}

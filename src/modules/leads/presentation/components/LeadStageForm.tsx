@@ -19,8 +19,7 @@ type ChangeLeadStageFormAction = (
   formData: FormData,
 ) => Promise<LeadFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function LeadStageForm({
   action,
@@ -42,7 +41,7 @@ export function LeadStageForm({
   return (
     <form action={formAction} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="stageId" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="stageId" className="mx-label">
           Stage
         </label>
         <select
@@ -62,7 +61,7 @@ export function LeadStageForm({
 
       {needsLostReason ? (
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lostReasonId" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="lostReasonId" className="mx-label">
             Lost Reason
           </label>
           <select id="lostReasonId" name="lostReasonId" required className={inputClass}>
@@ -77,7 +76,7 @@ export function LeadStageForm({
       ) : null}
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

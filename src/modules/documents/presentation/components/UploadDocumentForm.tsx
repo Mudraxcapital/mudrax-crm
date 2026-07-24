@@ -14,8 +14,7 @@ type UploadDocumentFormAction = (
   formData: FormData,
 ) => Promise<DocumentsFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function UploadDocumentForm({
   action,
@@ -36,7 +35,7 @@ export function UploadDocumentForm({
     <form action={formAction} className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label className="text-foreground/80 text-sm font-medium">Document Type</label>
+          <label className="mx-label">Document Type</label>
           <select name="documentTypeId" required className={inputClass}>
             <option value="">Select type…</option>
             {documentTypes.map((type) => (
@@ -47,7 +46,7 @@ export function UploadDocumentForm({
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-foreground/80 text-sm font-medium">Owner Type</label>
+          <label className="mx-label">Owner Type</label>
           <select
             name="ownerType"
             required
@@ -60,7 +59,7 @@ export function UploadDocumentForm({
           </select>
         </div>
         <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label className="text-foreground/80 text-sm font-medium">
+          <label className="mx-label">
             {ownerType === "CUSTOMER" ? "Customer" : "Lead"}
           </label>
           <select name="ownerId" required className={inputClass} defaultValue="">
@@ -73,13 +72,13 @@ export function UploadDocumentForm({
           </select>
         </div>
         <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label className="text-foreground/80 text-sm font-medium">File</label>
+          <label className="mx-label">File</label>
           <input name="file" type="file" required className={inputClass} />
         </div>
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

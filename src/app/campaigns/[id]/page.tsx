@@ -60,22 +60,22 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   );
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/campaigns" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/campaigns" className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Campaigns
       </Link>
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{campaign.name}</h1>
-          <p className="text-foreground/60 mt-1 text-sm">
+          <h1 className="text-xl font-semibold tracking-tight">{campaign.name}</h1>
+          <p className="text-muted mt-1 text-sm">
             {campaign.status} · {campaign.startDate ?? "—"} → {campaign.endDate ?? "—"}
           </p>
         </div>
         {canManage ? (
           <Link
             href={`/campaigns/${campaign.id}/edit`}
-            className="text-sm underline underline-offset-4"
+            className="text-sm text-accent hover:underline underline-offset-4"
           >
             Edit
           </Link>
@@ -83,22 +83,22 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       </div>
 
       {campaign.description ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Description</h2>
           <p className="text-foreground/80 mt-2 text-sm">{campaign.description}</p>
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Statistics</h2>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-foreground/60">Active members</dt>
+          <dt className="text-muted">Active members</dt>
           <dd>{statistics.activeMemberCount}</dd>
-          <dt className="text-foreground/60">Assignment batches run</dt>
+          <dt className="text-muted">Assignment batches run</dt>
           <dd>{statistics.assignmentBatchCount}</dd>
-          <dt className="text-foreground/60">Total Leads allocated</dt>
+          <dt className="text-muted">Total Leads allocated</dt>
           <dd>{statistics.totalLeadsAllocated}</dd>
-          <dt className="text-foreground/60">Completed / Failed batches</dt>
+          <dt className="text-muted">Completed / Failed batches</dt>
           <dd>
             {statistics.completedAssignmentBatches} / {statistics.failedAssignmentBatches}
           </dd>
@@ -106,7 +106,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       </section>
 
       {canManage ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Status</h2>
           <div className="mt-4">
             <CampaignStatusForm action={boundChangeStatus} currentStatus={campaign.status} />
@@ -114,21 +114,21 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Members</h2>
         <ul className="mt-4 flex flex-col gap-2 text-sm">
           {activeMembers.length === 0 ? (
-            <li className="text-foreground/60">No active members yet.</li>
+            <li className="text-muted">No active members yet.</li>
           ) : (
             activeMembers.map((member) => (
               <li key={member.userId} className="flex items-center justify-between">
                 <span>
                   {userNameById.get(member.userId) ?? member.userId}{" "}
-                  <span className="text-foreground/60">(weight {member.allocationWeight})</span>
+                  <span className="text-muted">(weight {member.allocationWeight})</span>
                 </span>
                 {canManage ? (
                   <form action={removeCampaignMemberAction.bind(null, id, member.userId)}>
-                    <button type="submit" className="text-xs underline underline-offset-4">
+                    <button type="submit" className="text-xs text-accent hover:underline underline-offset-4">
                       Remove
                     </button>
                   </form>
@@ -151,7 +151,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       </section>
 
       {canAssign ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Assign Leads</h2>
           <div className="mt-4">
             <AssignCampaignLeadsForm
@@ -170,21 +170,21 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 ">
           <h2 className="text-sm font-medium">Activity</h2>
         </div>
         <ul className="flex flex-col">
           {auditLog.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No activity yet.</li>
+            <li className="text-muted px-4 py-6 text-center text-sm">No activity yet.</li>
           ) : (
             auditLog.map((record) => (
               <li
                 key={record.id}
-                className="flex justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+                className="flex justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
               >
                 <span>{record.action}</span>
-                <span className="text-foreground/60">
+                <span className="text-muted">
                   {new Date(record.occurredAt).toLocaleString()}
                 </span>
               </li>

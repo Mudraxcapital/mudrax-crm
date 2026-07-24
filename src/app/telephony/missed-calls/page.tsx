@@ -12,22 +12,22 @@ export default async function TelephonyMissedCallsPage() {
   const calls = await listMissedCalls(authContext.organizationId, filter);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/telephony/calls" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/telephony/calls" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← All Calls
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Missed Calls</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Missed Calls</h1>
+        <p className="text-muted mt-1 text-sm">
           Calls that never connected — No Answer, Busy, Failed, or Abandoned.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="text-foreground/60 border-b border-black/10 dark:border-white/15">
+            <tr className="text-muted border-b border-border">
               <th className="px-4 py-3 font-medium">Direction</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Initiated</th>
@@ -37,7 +37,7 @@ export default async function TelephonyMissedCallsPage() {
           <tbody>
             {calls.length === 0 ? (
               <tr>
-                <td colSpan={4} className="text-foreground/60 px-4 py-6 text-center">
+                <td colSpan={4} className="text-muted px-4 py-6 text-center">
                   No Missed Calls.
                 </td>
               </tr>
@@ -45,7 +45,7 @@ export default async function TelephonyMissedCallsPage() {
               calls.map((call) => (
                 <tr
                   key={call.id}
-                  className="border-b border-black/5 last:border-0 dark:border-white/10"
+                  className="border-b border-border last:border-0"
                 >
                   <td className="px-4 py-3">{call.direction}</td>
                   <td className="px-4 py-3">{call.status}</td>
@@ -53,7 +53,7 @@ export default async function TelephonyMissedCallsPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/telephony/calls/${call.id}`}
-                      className="text-sm underline underline-offset-4"
+                      className="text-sm text-accent hover:text-accent hover:underline underline-offset-4"
                     >
                       View
                     </Link>

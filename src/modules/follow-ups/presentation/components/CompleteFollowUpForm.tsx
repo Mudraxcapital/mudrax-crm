@@ -24,11 +24,11 @@ export function CompleteFollowUpForm({ action }: { action: CompleteFollowUpFormA
         rows={2}
         maxLength={4000}
         placeholder="Outcome notes (optional)…"
-        className="rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40"
+        className="mx-input"
       />
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

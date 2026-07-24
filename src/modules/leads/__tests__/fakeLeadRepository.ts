@@ -46,11 +46,31 @@ export class FakeLeadRepository implements LeadRepository {
           filter.assignedToUserIds!.includes(lead.currentAssigneeUserId),
       );
     }
+    if (filter?.search) {
+      const q = filter.search.toLowerCase();
+      results = results.filter(
+        (lead) =>
+          lead.fullNameSnapshot.toLowerCase().includes(q) ||
+          (lead.phoneSnapshot?.toLowerCase().includes(q) ?? false) ||
+          (lead.emailSnapshot?.toLowerCase().includes(q) ?? false),
+      );
+    }
     return results;
   }
 
   async listByCustomer(customerId: string): Promise<Lead[]> {
     return [...this.leads.values()].filter((lead) => lead.customerId === customerId);
+  }
+
+  async repointCustomer(fromCustomerId: string, toCustomerId: string): Promise<number> {
+    let count = 0;
+    for (const [id, lead] of this.leads.entries()) {
+      if (lead.customerId === fromCustomerId) {
+        this.leads.set(id, { ...lead, customerId: toCustomerId, updatedAt: new Date() });
+        count += 1;
+      }
+    }
+    return count;
   }
 
   async count(organizationId: string, filter?: ListLeadsFilter): Promise<number> {

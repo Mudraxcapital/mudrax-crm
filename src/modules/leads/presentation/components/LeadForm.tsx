@@ -19,8 +19,7 @@ type CreateLeadFormAction = (
   formData: FormData,
 ) => Promise<LeadFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function LeadForm({
   action,
@@ -38,7 +37,7 @@ export function LeadForm({
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="customerId" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="customerId" className="mx-label">
           Customer
         </label>
         <select id="customerId" name="customerId" required className={inputClass}>
@@ -52,7 +51,7 @@ export function LeadForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="fullNameSnapshot" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="fullNameSnapshot" className="mx-label">
           Lead name
         </label>
         <input
@@ -68,7 +67,7 @@ export function LeadForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="phoneSnapshot" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="phoneSnapshot" className="mx-label">
             Phone
           </label>
           <input
@@ -80,7 +79,7 @@ export function LeadForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="emailSnapshot" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="emailSnapshot" className="mx-label">
             Email
           </label>
           <input
@@ -94,7 +93,7 @@ export function LeadForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="leadSourceId" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="leadSourceId" className="mx-label">
           Lead Source
         </label>
         <select id="leadSourceId" name="leadSourceId" required className={inputClass}>
@@ -108,7 +107,7 @@ export function LeadForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="currentAssigneeUserId" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="currentAssigneeUserId" className="mx-label">
           Assign to (optional)
         </label>
         <select id="currentAssigneeUserId" name="currentAssigneeUserId" className={inputClass}>
@@ -122,7 +121,7 @@ export function LeadForm({
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}
@@ -130,7 +129,7 @@ export function LeadForm({
       <button
         type="submit"
         disabled={isPending}
-        className="bg-foreground text-background mt-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        className="mx-btn mx-btn-primary mt-1"
       >
         {isPending ? "Saving…" : "Create Lead"}
       </button>

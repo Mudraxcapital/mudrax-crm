@@ -19,8 +19,7 @@ type CreateFollowUpFormAction = (
   formData: FormData,
 ) => Promise<FollowUpFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function FollowUpForm({
   action,
@@ -35,7 +34,7 @@ export function FollowUpForm({
     <form action={formAction} className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="triggerType" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="triggerType" className="mx-label">
             Type
           </label>
           <select
@@ -51,7 +50,7 @@ export function FollowUpForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="scheduledFor" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="scheduledFor" className="mx-label">
             Scheduled for
           </label>
           <input
@@ -65,7 +64,7 @@ export function FollowUpForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="currentAssigneeUserId" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="currentAssigneeUserId" className="mx-label">
           Assign to (optional)
         </label>
         <select id="currentAssigneeUserId" name="currentAssigneeUserId" className={inputClass}>
@@ -79,7 +78,7 @@ export function FollowUpForm({
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

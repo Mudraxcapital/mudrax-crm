@@ -22,14 +22,14 @@ export default async function EditBranchPage({ params }: { params: Promise<{ id:
   const boundAction = updateBranchAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href="/branches" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href="/branches" className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Branches
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Branch</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{branch.name}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Branch</h1>
+        <p className="text-muted mt-1 text-sm">{branch.name}</p>
       </div>
 
       <BranchForm action={boundAction} branch={branch} submitLabel="Save changes" />

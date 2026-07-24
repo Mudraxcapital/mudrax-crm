@@ -10,8 +10,7 @@ type FormAction = (
   formData: FormData,
 ) => Promise<NotificationsFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function NotificationPreferenceForm({
   action,
@@ -30,7 +29,7 @@ export function NotificationPreferenceForm({
     <form action={formAction} className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="recipientType" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="recipientType" className="mx-label">
             Recipient type
           </label>
           <select id="recipientType" name="recipientType" required className={inputClass}>
@@ -39,7 +38,7 @@ export function NotificationPreferenceForm({
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="recipientId" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="recipientId" className="mx-label">
             Recipient
           </label>
           <select
@@ -70,7 +69,7 @@ export function NotificationPreferenceForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="eventCategory" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="eventCategory" className="mx-label">
             Event category
           </label>
           <input
@@ -82,7 +81,7 @@ export function NotificationPreferenceForm({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="channelType" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="channelType" className="mx-label">
             Channel (optional)
           </label>
           <select id="channelType" name="channelType" className={inputClass}>
@@ -100,7 +99,7 @@ export function NotificationPreferenceForm({
       </label>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

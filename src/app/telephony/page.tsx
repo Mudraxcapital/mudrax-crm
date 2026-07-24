@@ -1,19 +1,16 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { getTelephonyDashboard } from "@/modules/telephony";
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-      <p className="text-foreground/60 text-xs font-medium tracking-wide uppercase">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
-    </div>
-  );
-}
+import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
+import { BarList } from "@/shared/ui/Charts";
+import { Button } from "@/shared/ui/Button";
+import { Badge, statusTone } from "@/shared/ui/Badge";
+import { TabNav } from "@/shared/ui/Tabs";
+import { EmptyState } from "@/shared/ui/EmptyState";
 
 export default async function TelephonyDashboardPage() {
   const { authContext } = await requirePermission("telephony.dashboard.view");
-
   const dashboard = await getTelephonyDashboard(authContext.organizationId);
 
   const averageDurationLabel =
@@ -22,86 +19,84 @@ export default async function TelephonyDashboardPage() {
       : "—";
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/" className="text-sm underline underline-offset-4">
-        ← Home
-      </Link>
-
-      <div>
-        <h1 className="text-lg font-semibold">Telephony Dashboard</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
-          Operational overview of today&apos;s Call activity.
-        </p>
-      </div>
-
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Calls Today" value={dashboard.callsToday} />
-        <StatCard label="Connected Calls" value={dashboard.connectedCallsToday} />
-        <StatCard label="Missed Calls" value={dashboard.missedCallsToday} />
-        <StatCard label="Avg. Duration" value={averageDurationLabel} />
-      </section>
-
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-sm font-medium">Calls by Agent</h2>
-        <ul className="mt-4 flex flex-col gap-2 text-sm">
-          {dashboard.callsByAgent.length === 0 ? (
-            <li className="text-foreground/60">No Calls today.</li>
-          ) : (
-            dashboard.callsByAgent.map((entry) => (
-              <li
-                key={entry.agentUserId ?? "unassigned"}
-                className="flex items-center justify-between"
-              >
-                <span>{entry.agentName}</span>
-                <span className="font-medium">{entry.count}</span>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 dark:border-white/15">
-          <h2 className="text-sm font-medium">Recent Calls</h2>
-          <Link href="/telephony/calls" className="text-xs underline underline-offset-4">
-            View all →
+    <PageSection>
+      <PageHeader
+        title="Telephony"
+        description="Operational overview of today’s call activity."
+        actions={
+          <Link href="/telephony/calls">
+            <Button>All calls</Button>
           </Link>
-        </div>
-        <ul className="flex flex-col">
-          {dashboard.recentCalls.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No Calls yet.</li>
-          ) : (
-            dashboard.recentCalls.map((call) => (
-              <li
-                key={call.id}
-                className="flex items-center justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
-              >
-                <Link href={`/telephony/calls/${call.id}`} className="underline underline-offset-4">
-                  {call.direction} · {call.status}
-                </Link>
-                <span className="text-foreground/60">
-                  {new Date(call.initiatedAt).toLocaleString()}
-                </span>
-              </li>
-            ))
-          )}
-        </ul>
+        }
+      />
+
+      <TabNav
+        activeHref="/telephony"
+        items={[
+          { href: "/telephony", label: "Overview" },
+          { href: "/telephony/calls", label: "Calls" },
+          { href: "/telephony/missed-calls", label: "Missed" },
+          { href: "/telephony/agent-sessions", label: "Agents" },
+          { href: "/telephony/outcomes", label: "Outcomes" },
+        ]}
+      />
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Calls today" value={dashboard.callsToday} />
+        <StatCard label="Connected" value={dashboard.connectedCallsToday} />
+        <StatCard label="Missed" value={dashboard.missedCallsToday} />
+        <StatCard label="Avg. duration" value={averageDurationLabel} />
       </section>
 
-      <nav className="flex flex-wrap gap-4 text-sm">
-        <Link href="/telephony/calls" className="underline underline-offset-4">
-          Calls →
-        </Link>
-        <Link href="/telephony/missed-calls" className="underline underline-offset-4">
-          Missed Calls →
-        </Link>
-        <Link href="/telephony/agent-sessions" className="underline underline-offset-4">
-          Agent Sessions →
-        </Link>
-        <Link href="/telephony/outcomes" className="underline underline-offset-4">
-          Call Outcomes →
-        </Link>
-      </nav>
-    </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Calls by agent" />
+          <CardBody>
+            <BarList
+              data={dashboard.callsByAgent.map((entry) => ({
+                key: entry.agentUserId ?? "unassigned",
+                label: entry.agentName,
+                value: entry.count,
+              }))}
+            />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Recent calls"
+            actions={
+              <Link href="/telephony/calls">
+                <Button variant="ghost" size="sm">
+                  View all
+                </Button>
+              </Link>
+            }
+          />
+          <CardBody className="space-y-0 p-0">
+            {dashboard.recentCalls.length === 0 ? (
+              <EmptyState title="No calls yet" description="Click-to-call activity will show here." />
+            ) : (
+              <ul className="divide-y divide-border">
+                {dashboard.recentCalls.map((call) => (
+                  <li key={call.id}>
+                    <Link
+                      href={`/telephony/calls/${call.id}`}
+                      className="hover:bg-accent-muted/30 flex items-center justify-between gap-3 px-5 py-3 text-sm transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Badge tone={statusTone(call.status)}>{call.status}</Badge>
+                        <span className="font-medium">{call.direction}</span>
+                      </span>
+                      <span className="text-muted text-xs">Open →</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+    </PageSection>
   );
 }

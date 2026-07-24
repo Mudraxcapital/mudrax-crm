@@ -8,6 +8,12 @@
 import type { Customer, CustomerStatus } from "../entities/Customer";
 import type { CustomerIdentifier, IdentifierType } from "../entities/CustomerIdentifier";
 import type { CustomerAuditActor, CustomerAuditRecord } from "../entities/CustomerAuditRecord";
+import type {
+  CustomerDuplicateCandidate,
+  CustomerMerge,
+  DuplicateCandidateStatus,
+  DuplicateMatchType,
+} from "../entities/CustomerDuplicateCandidate";
 
 export interface CreateIdentifierData {
   type: IdentifierType;
@@ -42,6 +48,21 @@ export interface ListCustomersOptions {
   offset?: number;
 }
 
+export interface CreateDuplicateCandidateData {
+  customerAId: string;
+  customerBId: string;
+  matchType: DuplicateMatchType;
+  matchScore?: number | null;
+}
+
+export interface MergeCustomersData {
+  survivingCustomerId: string;
+  mergedAwayCustomerId: string;
+  duplicateCandidateId?: string | null;
+  mergedByUserId: string;
+  reason?: string | null;
+}
+
 export interface CustomerRepository {
   findById(id: string): Promise<CustomerWithIdentifiers | null>;
 
@@ -52,7 +73,18 @@ export interface CustomerRepository {
     valueHash: string,
   ): Promise<Customer | null>;
 
+  /** Probabilistic PHONE/EMAIL lookup (non-unique). */
+  listByNormalizedIdentifier(
+    organizationId: string,
+    type: IdentifierType,
+    valueNormalized: string,
+  ): Promise<CustomerWithIdentifiers[]>;
+
   list(organizationId: string, options?: ListCustomersOptions): Promise<Customer[]>;
+  listWithIdentifiers(
+    organizationId: string,
+    options?: ListCustomersOptions,
+  ): Promise<CustomerWithIdentifiers[]>;
   count(organizationId: string): Promise<number>;
 
   /** Creates the Customer, its Identifiers, and a "created" Audit Record atomically. */
@@ -69,6 +101,34 @@ export interface CustomerRepository {
     actor: CustomerAuditActor,
     correlationId?: string | null,
   ): Promise<CustomerWithIdentifiers>;
+
+  findDuplicateCandidate(id: string): Promise<CustomerDuplicateCandidate | null>;
+  listDuplicateCandidates(
+    organizationId: string,
+    status?: DuplicateCandidateStatus,
+  ): Promise<CustomerDuplicateCandidate[]>;
+  findDuplicatePair(
+    customerAId: string,
+    customerBId: string,
+  ): Promise<CustomerDuplicateCandidate | null>;
+  createDuplicateCandidate(
+    data: CreateDuplicateCandidateData,
+  ): Promise<CustomerDuplicateCandidate>;
+  updateDuplicateCandidateStatus(
+    id: string,
+    status: DuplicateCandidateStatus,
+    reviewedByUserId: string | null,
+  ): Promise<CustomerDuplicateCandidate>;
+
+  /**
+   * Customer Merge — survivor inherits identifiers; merged-away becomes MERGED
+   * tombstone with redirect (customers.md). Atomic with audit.
+   */
+  mergeWithAudit(
+    data: MergeCustomersData,
+    actor: CustomerAuditActor,
+    correlationId?: string | null,
+  ): Promise<{ survivor: CustomerWithIdentifiers; merge: CustomerMerge }>;
 
   /** Read-only Audit Trail access, scoped to one Customer (platform-contracts.md §4). */
   listAuditLog(customerId: string): Promise<CustomerAuditRecord[]>;

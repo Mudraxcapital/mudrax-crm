@@ -15,11 +15,11 @@ export default async function LoanOffersPage() {
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/loan-applications" className="text-sm underline underline-offset-4">← Applications</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/loan-applications" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">← Applications</Link>
       <div>
-        <h1 className="text-lg font-semibold">Loan Offers</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Loan Offers</h1>
+        <p className="text-muted mt-1 text-sm">
           Compute eligibility, generate offers, and accept/reject to seed an application.
         </p>
       </div>

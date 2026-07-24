@@ -2,7 +2,7 @@
 import { useActionState } from "react";
 import type { LoanApplicationsFormState } from "../controllers/loanApplicationsFormState";
 const initialState: LoanApplicationsFormState = {};
-const inputClass = "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm outline-none dark:border-white/15";
+const inputClass = "mx-input";
 type FormAction = (s: LoanApplicationsFormState | undefined, fd: FormData) => Promise<LoanApplicationsFormState>;
 
 export function DecideApplicationForm({ action }: { action: FormAction }) {

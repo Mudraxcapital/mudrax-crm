@@ -18,24 +18,24 @@ export default async function ReportExecutionPage({
   });
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-6 py-12">
-      <Link href="/reports" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/reports" className="text-sm text-accent hover:underline underline-offset-4">
         ← Analytics Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Report Execution</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Report Execution</h1>
+        <p className="text-muted mt-1 text-sm">
           {execution.reportType ?? "Report"} · {execution.status}
         </p>
       </div>
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <dt className="text-foreground/60">Trigger</dt>
+        <dt className="text-muted">Trigger</dt>
         <dd>{execution.triggerType}</dd>
-        <dt className="text-foreground/60">Started</dt>
+        <dt className="text-muted">Started</dt>
         <dd>{execution.startedAt ? new Date(execution.startedAt).toLocaleString() : "—"}</dd>
-        <dt className="text-foreground/60">Completed</dt>
+        <dt className="text-muted">Completed</dt>
         <dd>{execution.completedAt ? new Date(execution.completedAt).toLocaleString() : "—"}</dd>
       </dl>
 
@@ -44,9 +44,9 @@ export default async function ReportExecutionPage({
       ) : null}
 
       {execution.result ? (
-        <section className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/15">
+        <section className="overflow-x-auto mx-card overflow-hidden">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-black/10 dark:border-white/15">
+            <thead className="border-b border-border">
               <tr>
                 {execution.result.columns.map((column) => (
                   <th key={column} className="px-3 py-2 font-medium">
@@ -60,7 +60,7 @@ export default async function ReportExecutionPage({
                 <tr>
                   <td
                     colSpan={execution.result.columns.length}
-                    className="text-foreground/60 px-3 py-6 text-center"
+                    className="text-muted px-3 py-6 text-center"
                   >
                     No rows matched the filter.
                   </td>
@@ -69,7 +69,7 @@ export default async function ReportExecutionPage({
                 execution.result.rows.map((row, index) => (
                   <tr
                     key={index}
-                    className="border-b border-black/5 last:border-0 dark:border-white/10"
+                    className="border-b border-border last:border-0"
                   >
                     {execution.result!.columns.map((column) => (
                       <td key={column} className="px-3 py-2 whitespace-nowrap">

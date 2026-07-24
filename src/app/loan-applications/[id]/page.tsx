@@ -24,23 +24,23 @@ export default async function LoanApplicationDetailPage({ params }: { params: Pr
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/loan-applications" className="text-sm underline underline-offset-4">← Applications</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/loan-applications" className="text-sm text-accent hover:underline underline-offset-4">← Applications</Link>
       <div>
-        <h1 className="text-lg font-semibold">Application</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Application</h1>
+        <p className="text-muted mt-1 text-sm">
           {app.applicationStatusName} · {app.requestedAmount} · {app.requestedTenureMonths} months
         </p>
-        <p className="text-foreground/50 mt-1 font-mono text-xs">Officer: {app.createdByUserId}</p>
+        <p className="text-muted-foreground mt-1 font-mono text-xs">Officer: {app.createdByUserId}</p>
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Timeline</h2>
         <ul className="mt-4 flex flex-col gap-2 text-sm">
           {app.timeline.map((t) => (
             <li key={t.label} className="flex justify-between">
               <span>{t.label}</span>
-              <span className="text-foreground/60">{t.at ? new Date(t.at).toLocaleString() : "—"}</span>
+              <span className="text-muted">{t.at ? new Date(t.at).toLocaleString() : "—"}</span>
             </li>
           ))}
         </ul>
@@ -51,7 +51,7 @@ export default async function LoanApplicationDetailPage({ params }: { params: Pr
       ) : null}
 
       {canDecide && (app.applicationStatusBucket === "SUBMITTED" || app.applicationStatusBucket === "UNDER_BANK_REVIEW") ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Decision</h2>
           <div className="mt-4">
             <DecideApplicationForm action={decideLoanApplicationAction.bind(null, app.id)} />

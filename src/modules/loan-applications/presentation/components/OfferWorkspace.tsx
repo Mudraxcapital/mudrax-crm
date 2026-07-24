@@ -12,8 +12,7 @@ import {
 import { decideLoanOfferAction } from "../controllers/decideLoanOffer.action";
 import type { LoanApplicationsFormState } from "../controllers/loanApplicationsFormState";
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm outline-none focus:border-black/30 dark:border-white/15";
+const inputClass = "mx-input";
 
 export function OfferWorkspace({
   banks,
@@ -51,7 +50,7 @@ export function OfferWorkspace({
   return (
     <div className="flex flex-col gap-8">
       {canEligibility ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="rounded-xl border border-border p-6">
           <h2 className="text-sm font-medium">1. Eligibility Snapshot</h2>
           <form action={eligAction} className="mt-4 flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -97,7 +96,7 @@ export function OfferWorkspace({
 
       {canManage ? (
         <>
-          <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+          <section className="rounded-xl border border-border p-6">
             <h2 className="text-sm font-medium">2. Generate Offer</h2>
             <form action={offerAction} className="mt-4 flex flex-col gap-4">
               <input name="leadId" placeholder="Lead ID" required className={inputClass} />
@@ -163,7 +162,7 @@ export function OfferWorkspace({
             </form>
           </section>
 
-          <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+          <section className="rounded-xl border border-border p-6">
             <h2 className="text-sm font-medium">3. Accept / Reject Offer</h2>
             <form action={decideAction} className="mt-4 flex flex-col gap-4">
               <input

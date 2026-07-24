@@ -17,8 +17,7 @@ import type {
 
 const initialState: CustomerFormState = {};
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
@@ -26,7 +25,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="fullName" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="fullName" className="mx-label">
           Full name
         </label>
         <input
@@ -41,19 +40,19 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="dob" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="dob" className="mx-label">
           Date of birth
         </label>
         <input id="dob" name="dob" type="date" className={inputClass} />
       </div>
 
-      <p className="text-foreground/60 text-xs">
+      <p className="text-muted text-xs">
         Provide at least one identifier. PAN and Aadhaar must be unique across the Customer base.
       </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="pan" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="pan" className="mx-label">
             PAN
           </label>
           <input
@@ -67,7 +66,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="aadhaar" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="aadhaar" className="mx-label">
             Aadhaar
           </label>
           <input
@@ -81,7 +80,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="phone" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="phone" className="mx-label">
             Phone
           </label>
           <input
@@ -94,7 +93,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-foreground/80 text-sm font-medium">
+          <label htmlFor="email" className="mx-label">
             Email
           </label>
           <input
@@ -108,7 +107,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}
@@ -116,7 +115,7 @@ export function CustomerForm({ action }: { action: CreateCustomerFormAction }) {
       <button
         type="submit"
         disabled={isPending}
-        className="bg-foreground text-background mt-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        className="mx-btn mx-btn-primary mt-1"
       >
         {isPending ? "Saving…" : "Create Customer"}
       </button>

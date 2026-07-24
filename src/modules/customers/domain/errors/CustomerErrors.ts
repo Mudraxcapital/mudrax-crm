@@ -36,3 +36,17 @@ export class InvalidCustomerStateError extends Error {
     this.name = "InvalidCustomerStateError";
   }
 }
+
+export class DuplicateCandidateNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Duplicate Candidate ${id} was not found.`);
+    this.name = "DuplicateCandidateNotFoundError";
+  }
+}
+
+export class CustomerMergeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CustomerMergeError";
+  }
+}

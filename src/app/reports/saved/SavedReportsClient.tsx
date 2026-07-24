@@ -24,7 +24,7 @@ export function SavedReportsClient({
   const [deleteState, deleteFormAction, isDeleting] = useActionState(deleteAction, initialState);
 
   if (savedReports.length === 0) {
-    return <p className="text-foreground/60 text-sm">No saved reports yet.</p>;
+    return <p className="text-muted text-sm">No saved reports yet.</p>;
   }
 
   return (
@@ -34,7 +34,7 @@ export function SavedReportsClient({
       {deleteState.success ? (
         <p className="text-sm text-green-700">{deleteState.success}</p>
       ) : null}
-      <ul className="rounded-xl border border-black/10 dark:border-white/15">
+      <ul className="rounded-xl border border-border">
         {savedReports.map((report) => (
           <li
             key={report.id}
@@ -42,7 +42,7 @@ export function SavedReportsClient({
           >
             <div>
               <p className="text-sm font-medium">{report.name}</p>
-              <p className="text-foreground/60 text-xs">
+              <p className="text-muted text-xs">
                 {report.reportType ?? "—"} · {report.templateName ?? "Template"}
               </p>
             </div>

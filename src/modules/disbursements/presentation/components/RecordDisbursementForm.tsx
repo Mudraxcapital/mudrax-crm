@@ -2,7 +2,7 @@
 import { useActionState } from "react";
 import type { DisbursementsFormState } from "../controllers/disbursementsFormState";
 const initialState: DisbursementsFormState = {};
-const inputClass = "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm outline-none dark:border-white/15";
+const inputClass = "mx-input";
 type FormAction = (s: DisbursementsFormState | undefined, fd: FormData) => Promise<DisbursementsFormState>;
 
 export function RecordDisbursementForm({ action }: { action: FormAction }) {

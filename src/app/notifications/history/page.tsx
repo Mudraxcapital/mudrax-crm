@@ -7,36 +7,36 @@ export default async function NotificationHistoryPage() {
   const history = await listNotificationHistory(authContext.organizationId, undefined, 100);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/notifications" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/notifications" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Notifications
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Notification History</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Notification History</h1>
+        <p className="text-muted mt-1 text-sm">
           Append-only Communication Log of every notification attempt.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <ul className="flex flex-col">
           {history.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No history yet.</li>
+            <li className="text-muted px-4 py-6 text-center text-sm">No history yet.</li>
           ) : (
             history.map((entry) => (
               <li
                 key={`${entry.id}-${entry.occurredAt}`}
-                className="border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+                className="border-b border-border px-4 py-3 text-sm last:border-0 "
               >
                 <div className="flex items-center justify-between gap-4">
                   <Link
                     href={`/notifications/${entry.notificationId}`}
-                    className="underline underline-offset-4"
+                    className="text-accent hover:text-accent hover:underline underline-offset-4"
                   >
                     {entry.eventType}
                   </Link>
-                  <span className="text-foreground/60">
+                  <span className="text-muted">
                     {new Date(entry.occurredAt).toLocaleString()}
                   </span>
                 </div>

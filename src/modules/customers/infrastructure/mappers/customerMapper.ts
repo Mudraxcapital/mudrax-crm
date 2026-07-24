@@ -10,10 +10,16 @@ import type {
   Customer as PrismaCustomer,
   CustomerIdentifier as PrismaCustomerIdentifier,
   CustomerAuditLog as PrismaCustomerAuditLog,
+  CustomerDuplicateCandidate as PrismaDuplicateCandidate,
+  CustomerMerge as PrismaCustomerMerge,
 } from "@prisma/client";
 import type { Customer } from "../../domain/entities/Customer";
 import type { CustomerIdentifier } from "../../domain/entities/CustomerIdentifier";
 import type { CustomerAuditRecord } from "../../domain/entities/CustomerAuditRecord";
+import type {
+  CustomerDuplicateCandidate,
+  CustomerMerge,
+} from "../../domain/entities/CustomerDuplicateCandidate";
 
 export function toCustomer(row: PrismaCustomer): Customer {
   return {
@@ -61,5 +67,32 @@ export function toCustomerAuditRecord(row: PrismaCustomerAuditLog): CustomerAudi
     afterState: row.afterState as Record<string, unknown> | null,
     recordHash: row.recordHash,
     previousRecordHash: row.previousRecordHash,
+  };
+}
+
+export function toDuplicateCandidate(row: PrismaDuplicateCandidate): CustomerDuplicateCandidate {
+  return {
+    id: row.id,
+    customerAId: row.customerAId,
+    customerBId: row.customerBId,
+    matchType: row.matchType,
+    matchScore: row.matchScore === null ? null : Number(row.matchScore),
+    status: row.status,
+    reviewedByUserId: row.reviewedByUserId,
+    reviewedAt: row.reviewedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function toCustomerMerge(row: PrismaCustomerMerge): CustomerMerge {
+  return {
+    id: row.id,
+    survivingCustomerId: row.survivingCustomerId,
+    mergedAwayCustomerId: row.mergedAwayCustomerId,
+    duplicateCandidateId: row.duplicateCandidateId,
+    mergedByUserId: row.mergedByUserId,
+    reason: row.reason,
+    mergedAt: row.mergedAt,
   };
 }

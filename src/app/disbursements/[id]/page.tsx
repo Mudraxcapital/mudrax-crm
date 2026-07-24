@@ -20,26 +20,26 @@ export default async function DisbursementDetailPage({ params }: { params: Promi
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/disbursements" className="text-sm underline underline-offset-4">← Disbursements</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/disbursements" className="text-sm text-accent hover:underline underline-offset-4">← Disbursements</Link>
       <div>
-        <h1 className="text-lg font-semibold">Disbursement</h1>
-        <p className="text-foreground/60 mt-1 text-sm font-mono">{d.bankReferenceNumber}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Disbursement</h1>
+        <p className="text-muted mt-1 text-sm font-mono">{d.bankReferenceNumber}</p>
         <p className="mt-2 text-sm">{d.amount} · tranche {d.trancheNumber} · {d.status}</p>
         {d.loanAccountId ? (
           <p className="mt-2 text-sm">
             Loan Account:{" "}
-            <Link href={`/loan-accounts/${d.loanAccountId}`} className="underline underline-offset-4">{d.loanAccountId}</Link>
+            <Link href={`/loan-accounts/${d.loanAccountId}`} className="text-accent hover:underline underline-offset-4">{d.loanAccountId}</Link>
           </p>
         ) : null}
       </div>
       {d.commission ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Commission</h2>
           <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
-            <dt className="text-foreground/60">Expected</dt><dd>{d.commission.expectedAmount}</dd>
-            <dt className="text-foreground/60">Received</dt><dd>{d.commission.receivedAmount ?? "—"}</dd>
-            <dt className="text-foreground/60">Status</dt><dd>{d.commission.status}</dd>
+            <dt className="text-muted">Expected</dt><dd>{d.commission.expectedAmount}</dd>
+            <dt className="text-muted">Received</dt><dd>{d.commission.receivedAmount ?? "—"}</dd>
+            <dt className="text-muted">Status</dt><dd>{d.commission.status}</dd>
           </dl>
           {canReconcile ? (
             <div className="mt-6">

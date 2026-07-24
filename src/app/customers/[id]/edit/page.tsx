@@ -22,14 +22,14 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
   const boundAction = updateCustomerAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href={`/customers/${id}`} className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href={`/customers/${id}`} className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Customer
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Customer</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{customer.fullName}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Customer</h1>
+        <p className="text-muted mt-1 text-sm">{customer.fullName}</p>
       </div>
 
       <EditCustomerForm action={boundAction} customer={customer} />

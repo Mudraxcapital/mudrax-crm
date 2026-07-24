@@ -1,9 +1,17 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
 import { listLeadsByCustomer } from "@/modules/leads";
+import { listLoanApplications } from "@/modules/loan-applications";
+import { listDocumentsByCustomer } from "@/modules/documents";
+import { listCallHistoryByCustomer } from "@/modules/telephony";
+import { listNotifications } from "@/modules/notifications";
+import { listFollowUps } from "@/modules/follow-ups";
+import { listCustomerTimeline } from "@/modules/activity-timeline";
+import { MergeCustomersForm } from "@/modules/customers/presentation/components/MergeCustomersForm";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { authContext } = await requirePermission("customer.view");
@@ -19,41 +27,96 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     throw error;
   }
 
-  const leads = await listLeadsByCustomer(id);
+  if (customer.mergedIntoCustomerId) {
+    // Permanent redirect tombstone — send operators to the survivor.
+  }
+
   const canUpdate = hasPermission(authContext, "customer.update");
+  const canMerge = hasPermission(authContext, "customer.merge");
+  const canViewLoans = hasPermission(authContext, "loan_application.view");
+  const canViewDocs = hasPermission(authContext, "document.view");
+  const canViewCalls = hasPermission(authContext, "call.view");
+  const canViewNotifications = hasPermission(authContext, "notification.view");
+  const canViewFollowUps = hasPermission(authContext, "follow_up.view");
+
+  const [leads, loanApps, documents, calls, notifications, allFollowUps, timeline] =
+    await Promise.all([
+      listLeadsByCustomer(id),
+      canViewLoans
+        ? listLoanApplications(authContext.organizationId, { customerId: id, limit: 50 })
+        : Promise.resolve([]),
+      canViewDocs ? listDocumentsByCustomer(id) : Promise.resolve([]),
+      canViewCalls ? listCallHistoryByCustomer(id) : Promise.resolve([]),
+      canViewNotifications
+        ? listNotifications(authContext.organizationId, {
+            recipientType: "CUSTOMER",
+            recipientId: id,
+            limit: 50,
+          })
+        : Promise.resolve([]),
+      canViewFollowUps
+        ? listFollowUps(authContext.organizationId, { limit: 200 })
+        : Promise.resolve([]),
+      listCustomerTimeline(id, authContext.organizationId, 40),
+    ]);
+
+  const leadIds = new Set(leads.map((lead) => lead.id));
+  const followUps = allFollowUps.filter((item) => leadIds.has(item.leadId));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/customers" className="text-sm underline underline-offset-4">
-        ← Back to Customers
-      </Link>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">{customer.fullName}</h1>
-          <p className="text-foreground/60 mt-1 text-sm">
-            {customer.identityConfidence} · {customer.status}
+    <div className="mx-page flex flex-col gap-6">
+      <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <nav aria-label="Breadcrumb" className="text-muted flex flex-wrap items-center gap-1.5 text-xs">
+            <Link href="/customers" className="hover:text-foreground">
+              Customers
+            </Link>
+            <span>/</span>
+            <span className="text-foreground font-medium">{customer.fullName}</span>
+          </nav>
+          <h1 className="text-2xl font-semibold tracking-tight">{customer.fullName}</h1>
+          <p className="text-muted text-sm">
+            Customer 360 · {customer.identityConfidence} · {customer.status}
           </p>
+          {customer.mergedIntoCustomerId ? (
+            <p className="text-sm">
+              Merged into{" "}
+              <Link
+                href={`/customers/${customer.mergedIntoCustomerId}`}
+                className="text-accent hover:underline underline-offset-4"
+              >
+                surviving customer
+              </Link>
+            </p>
+          ) : null}
         </div>
-        {canUpdate ? (
-          <Link
-            href={`/customers/${customer.id}/edit`}
-            className="text-sm underline underline-offset-4"
-          >
-            Edit
-          </Link>
-        ) : null}
-      </div>
+        <div className="flex flex-wrap gap-2">
+          {canMerge ? (
+            <Link href="/customers/duplicates" className="mx-btn mx-btn-secondary mx-btn-sm">
+              Duplicates
+            </Link>
+          ) : null}
+          {canUpdate ? (
+            <Link href={`/customers/${customer.id}/edit`} className="mx-btn mx-btn-primary mx-btn-sm">
+              Edit
+            </Link>
+          ) : null}
+        </div>
+      </header>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
-        <h2 className="text-sm font-medium">Identifiers</h2>
+      <section className="mx-card p-5">
+        <h2 className="text-sm font-medium">Customer Details</h2>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
+          <dt className="text-muted">Date of birth</dt>
+          <dd>{customer.dob ?? "—"}</dd>
+          <dt className="text-muted">Created</dt>
+          <dd>{new Date(customer.createdAt).toLocaleString()}</dd>
           {customer.identifiers.length === 0 ? (
-            <p className="text-foreground/60 col-span-2">No identifiers on file.</p>
+            <p className="text-muted col-span-2">No identifiers on file.</p>
           ) : (
             customer.identifiers.map((identifier) => (
               <div key={identifier.id} className="col-span-2 grid grid-cols-2">
-                <dt className="text-foreground/60">{identifier.type}</dt>
+                <dt className="text-muted">{identifier.type}</dt>
                 <dd className="font-mono text-xs">{identifier.valueMasked}</dd>
               </div>
             ))
@@ -61,38 +124,172 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         </dl>
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
-          <h2 className="text-sm font-medium">Leads ({leads.length})</h2>
-        </div>
-        <table className="w-full text-left text-sm">
-          <tbody>
-            {leads.length === 0 ? (
-              <tr>
-                <td className="text-foreground/60 px-4 py-6 text-center">No Leads yet.</td>
-              </tr>
-            ) : (
-              leads.map((lead) => (
-                <tr
-                  key={lead.id}
-                  className="border-b border-black/5 last:border-0 dark:border-white/10"
-                >
-                  <td className="px-4 py-3">{lead.fullNameSnapshot}</td>
-                  <td className="px-4 py-3">{lead.currentStageName}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/leads/${lead.id}`}
-                      className="text-sm underline underline-offset-4"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </section>
+      <ProfileSection title={`Leads (${leads.length})`}>
+        {leads.length === 0 ? (
+          <Empty>No Leads yet.</Empty>
+        ) : (
+          leads.map((lead) => (
+            <Row
+              key={lead.id}
+              href={`/leads/${lead.id}`}
+              primary={lead.fullNameSnapshot}
+              secondary={lead.currentStageName}
+            />
+          ))
+        )}
+      </ProfileSection>
+
+      {canViewLoans ? (
+        <ProfileSection title={`Loan Applications (${loanApps.length})`}>
+          {loanApps.length === 0 ? (
+            <Empty>No loan applications.</Empty>
+          ) : (
+            loanApps.map((app) => (
+              <Row
+                key={app.id}
+                href={`/loan-applications/${app.id}`}
+                primary={`₹${app.requestedAmount}`}
+                secondary={app.applicationStatusName ?? app.applicationStatusBucket ?? "—"}
+              />
+            ))
+          )}
+        </ProfileSection>
+      ) : null}
+
+      {canViewDocs ? (
+        <ProfileSection title={`Documents (${documents.length})`}>
+          {documents.length === 0 ? (
+            <Empty>No documents.</Empty>
+          ) : (
+            documents.map((doc) => (
+              <Row
+                key={doc.id}
+                href={`/documents/${doc.id}`}
+                primary={doc.documentTypeName ?? "Document"}
+                secondary={doc.status}
+              />
+            ))
+          )}
+        </ProfileSection>
+      ) : null}
+
+      {canViewCalls ? (
+        <ProfileSection title={`Calls (${calls.length})`}>
+          {calls.length === 0 ? (
+            <Empty>No calls.</Empty>
+          ) : (
+            calls.map((call) => (
+              <Row
+                key={call.id}
+                href={`/telephony/calls/${call.id}`}
+                primary={`${call.direction} · ${call.status}`}
+                secondary={new Date(call.initiatedAt).toLocaleString()}
+              />
+            ))
+          )}
+        </ProfileSection>
+      ) : null}
+
+      {canViewNotifications ? (
+        <ProfileSection title={`Notifications (${notifications.length})`}>
+          {notifications.length === 0 ? (
+            <Empty>No notifications.</Empty>
+          ) : (
+            notifications.map((notification) => (
+              <Row
+                key={notification.id}
+                href={`/notifications/${notification.id}`}
+                primary={notification.category}
+                secondary={notification.status}
+              />
+            ))
+          )}
+        </ProfileSection>
+      ) : null}
+
+      {canViewFollowUps ? (
+        <ProfileSection title={`Follow-ups (${followUps.length})`}>
+          {followUps.length === 0 ? (
+            <Empty>No follow-ups.</Empty>
+          ) : (
+            followUps.map((followUp) => (
+              <Row
+                key={followUp.id}
+                href="/follow-ups"
+                primary={`${followUp.triggerType} · ${followUp.status}`}
+                secondary={new Date(followUp.scheduledFor).toLocaleString()}
+              />
+            ))
+          )}
+        </ProfileSection>
+      ) : null}
+
+      <ProfileSection title="Timeline">
+        {timeline.length === 0 ? (
+          <Empty>No timeline activity.</Empty>
+        ) : (
+          timeline.map((entry) => (
+            <li
+              key={entry.id}
+              className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 text-sm last:border-0 "
+            >
+              <span>
+                <span className="text-muted-foreground mr-2 text-xs">{entry.source}</span>
+                {entry.label}
+              </span>
+              <span className="text-muted whitespace-nowrap text-xs">
+                {entry.occurredAt.toLocaleString()}
+              </span>
+            </li>
+          ))
+        )}
+      </ProfileSection>
+
+      {canMerge && customer.status === "ACTIVE" ? (
+        <section className="mx-card p-5">
+          <h2 className="text-sm font-medium">Merge into this Customer</h2>
+          <p className="text-muted mt-1 text-xs">
+            Provide the duplicate Customer ID to merge away (audited, irreversible).
+          </p>
+          <div className="mt-4">
+            <MergeCustomersForm survivingCustomerId={customer.id} />
+          </div>
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function ProfileSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mx-card overflow-hidden">
+      <div className="border-b border-border px-4 py-3 ">
+        <h2 className="text-sm font-medium">{title}</h2>
+      </div>
+      <ul className="flex flex-col">{children}</ul>
+    </section>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return <li className="text-muted px-4 py-6 text-center text-sm">{children}</li>;
+}
+
+function Row({
+  href,
+  primary,
+  secondary,
+}: {
+  href: string;
+  primary: string;
+  secondary: string;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 text-sm last:border-0 ">
+      <Link href={href} className="text-accent hover:underline underline-offset-4">
+        {primary}
+      </Link>
+      <span className="text-muted">{secondary}</span>
+    </li>
   );
 }

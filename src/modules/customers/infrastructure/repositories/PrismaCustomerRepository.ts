@@ -11,9 +11,11 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   CreateCustomerData,
+  CreateDuplicateCandidateData,
   CustomerRepository,
   CustomerWithIdentifiers,
   ListCustomersOptions,
+  MergeCustomersData,
   UpdateCustomerData,
 } from "../../domain/repositories/CustomerRepository";
 import type { Customer } from "../../domain/entities/Customer";
@@ -22,8 +24,19 @@ import type {
   CustomerAuditActor,
   CustomerAuditRecord,
 } from "../../domain/entities/CustomerAuditRecord";
+import type {
+  CustomerDuplicateCandidate,
+  CustomerMerge,
+  DuplicateCandidateStatus,
+} from "../../domain/entities/CustomerDuplicateCandidate";
 import { isStrongIdentifierType } from "../../domain/entities/CustomerIdentifier";
-import { toCustomer, toCustomerAuditRecord, toCustomerIdentifier } from "../mappers/customerMapper";
+import {
+  toCustomer,
+  toCustomerAuditRecord,
+  toCustomerIdentifier,
+  toCustomerMerge,
+  toDuplicateCandidate,
+} from "../mappers/customerMapper";
 
 const TARGET_TYPE_CUSTOMER = "Customer";
 
@@ -65,8 +78,35 @@ export class PrismaCustomerRepository implements CustomerRepository {
     return identifier ? toCustomer(identifier.customer) : null;
   }
 
+  async listByNormalizedIdentifier(
+    organizationId: string,
+    type: IdentifierType,
+    valueNormalized: string,
+  ): Promise<CustomerWithIdentifiers[]> {
+    const identifiers = await this.prisma.customerIdentifier.findMany({
+      where: {
+        type,
+        valueNormalized,
+        status: "ACTIVE",
+        customer: { organizationId, status: "ACTIVE" },
+      },
+      include: { customer: { include: { identifiers: { orderBy: { createdAt: "asc" } } } } },
+    });
+    const byCustomer = new Map<string, CustomerWithIdentifiers>();
+    for (const identifier of identifiers) {
+      byCustomer.set(identifier.customerId, {
+        customer: toCustomer(identifier.customer),
+        identifiers: identifier.customer.identifiers.map(toCustomerIdentifier),
+      });
+    }
+    return [...byCustomer.values()];
+  }
+
   async list(organizationId: string, options?: ListCustomersOptions): Promise<Customer[]> {
-    const where: Prisma.CustomerWhereInput = { organizationId };
+    const where: Prisma.CustomerWhereInput = {
+      organizationId,
+      status: { not: "MERGED" },
+    };
     if (options?.search) {
       where.fullName = { contains: options.search, mode: "insensitive" };
     }
@@ -80,8 +120,35 @@ export class PrismaCustomerRepository implements CustomerRepository {
     return rows.map(toCustomer);
   }
 
+  async listWithIdentifiers(
+    organizationId: string,
+    options?: ListCustomersOptions,
+  ): Promise<CustomerWithIdentifiers[]> {
+    const where: Prisma.CustomerWhereInput = {
+      organizationId,
+      status: { not: "MERGED" },
+    };
+    if (options?.search) {
+      where.fullName = { contains: options.search, mode: "insensitive" };
+    }
+
+    const rows = await this.prisma.customer.findMany({
+      where,
+      include: { identifiers: { orderBy: { createdAt: "asc" } } },
+      orderBy: { createdAt: "desc" },
+      take: options?.limit ?? 200,
+      skip: options?.offset ?? 0,
+    });
+    return rows.map((row) => ({
+      customer: toCustomer(row),
+      identifiers: row.identifiers.map(toCustomerIdentifier),
+    }));
+  }
+
   async count(organizationId: string): Promise<number> {
-    return this.prisma.customer.count({ where: { organizationId } });
+    return this.prisma.customer.count({
+      where: { organizationId, status: { not: "MERGED" } },
+    });
   }
 
   async createWithAudit(
@@ -182,6 +249,177 @@ export class PrismaCustomerRepository implements CustomerRepository {
       });
 
       return { customer: after, identifiers: afterRow.identifiers.map(toCustomerIdentifier) };
+    });
+  }
+
+  async findDuplicateCandidate(id: string): Promise<CustomerDuplicateCandidate | null> {
+    const row = await this.prisma.customerDuplicateCandidate.findUnique({ where: { id } });
+    return row ? toDuplicateCandidate(row) : null;
+  }
+
+  async listDuplicateCandidates(
+    organizationId: string,
+    status?: DuplicateCandidateStatus,
+  ): Promise<CustomerDuplicateCandidate[]> {
+    const rows = await this.prisma.customerDuplicateCandidate.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        customerA: { organizationId },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toDuplicateCandidate);
+  }
+
+  async findDuplicatePair(
+    customerAId: string,
+    customerBId: string,
+  ): Promise<CustomerDuplicateCandidate | null> {
+    const [a, b] = customerAId < customerBId ? [customerAId, customerBId] : [customerBId, customerAId];
+    const row = await this.prisma.customerDuplicateCandidate.findUnique({
+      where: { customerAId_customerBId: { customerAId: a, customerBId: b } },
+    });
+    return row ? toDuplicateCandidate(row) : null;
+  }
+
+  async createDuplicateCandidate(
+    data: CreateDuplicateCandidateData,
+  ): Promise<CustomerDuplicateCandidate> {
+    const [a, b] =
+      data.customerAId < data.customerBId
+        ? [data.customerAId, data.customerBId]
+        : [data.customerBId, data.customerAId];
+    const row = await this.prisma.customerDuplicateCandidate.create({
+      data: {
+        customerAId: a,
+        customerBId: b,
+        matchType: data.matchType,
+        matchScore: data.matchScore ?? null,
+      },
+    });
+    return toDuplicateCandidate(row);
+  }
+
+  async updateDuplicateCandidateStatus(
+    id: string,
+    status: DuplicateCandidateStatus,
+    reviewedByUserId: string | null,
+  ): Promise<CustomerDuplicateCandidate> {
+    const row = await this.prisma.customerDuplicateCandidate.update({
+      where: { id },
+      data: {
+        status,
+        reviewedByUserId,
+        reviewedAt: new Date(),
+      },
+    });
+    return toDuplicateCandidate(row);
+  }
+
+  async mergeWithAudit(
+    data: MergeCustomersData,
+    actor: CustomerAuditActor,
+    correlationId?: string | null,
+  ): Promise<{ survivor: CustomerWithIdentifiers; merge: CustomerMerge }> {
+    return this.prisma.$transaction(async (tx) => {
+      const survivorRow = await tx.customer.findUniqueOrThrow({
+        where: { id: data.survivingCustomerId },
+        include: { identifiers: { orderBy: { createdAt: "asc" } } },
+      });
+      const mergedAwayRow = await tx.customer.findUniqueOrThrow({
+        where: { id: data.mergedAwayCustomerId },
+        include: { identifiers: { orderBy: { createdAt: "asc" } } },
+      });
+
+      const beforeSurvivor = toCustomer(survivorRow);
+      const beforeMergedAway = toCustomer(mergedAwayRow);
+
+      for (const identifier of mergedAwayRow.identifiers) {
+        if (identifier.status !== "ACTIVE") continue;
+        const already = survivorRow.identifiers.some(
+          (existing) =>
+            existing.type === identifier.type &&
+            ((identifier.valueHash && existing.valueHash === identifier.valueHash) ||
+              (identifier.valueNormalized &&
+                existing.valueNormalized === identifier.valueNormalized)),
+        );
+        if (already) {
+          await tx.customerIdentifier.update({
+            where: { id: identifier.id },
+            data: { status: "SUPERSEDED" },
+          });
+          continue;
+        }
+        await tx.customerIdentifier.update({
+          where: { id: identifier.id },
+          data: { customerId: data.survivingCustomerId },
+        });
+      }
+
+      await tx.customer.update({
+        where: { id: data.mergedAwayCustomerId },
+        data: {
+          status: "MERGED",
+          mergedIntoCustomerId: data.survivingCustomerId,
+        },
+      });
+
+      const mergeRow = await tx.customerMerge.create({
+        data: {
+          survivingCustomerId: data.survivingCustomerId,
+          mergedAwayCustomerId: data.mergedAwayCustomerId,
+          duplicateCandidateId: data.duplicateCandidateId ?? null,
+          mergedByUserId: data.mergedByUserId,
+          reason: data.reason ?? null,
+        },
+      });
+
+      if (data.duplicateCandidateId) {
+        await tx.customerDuplicateCandidate.update({
+          where: { id: data.duplicateCandidateId },
+          data: {
+            status: "MERGED",
+            reviewedByUserId: data.mergedByUserId,
+            reviewedAt: new Date(),
+          },
+        });
+      }
+
+      const survivorAfter = await tx.customer.findUniqueOrThrow({
+        where: { id: data.survivingCustomerId },
+        include: { identifiers: { orderBy: { createdAt: "asc" } } },
+      });
+      const survivor = toCustomer(survivorAfter);
+
+      await tx.customerAuditLog.create({
+        data: {
+          organizationId: survivor.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "CustomerMerged",
+          targetType: TARGET_TYPE_CUSTOMER,
+          targetId: survivor.id,
+          correlationId: correlationId ?? data.mergedAwayCustomerId,
+          beforeState: {
+            survivor: toAuditJson(beforeSurvivor),
+            mergedAway: toAuditJson(beforeMergedAway),
+          },
+          afterState: {
+            survivor: toAuditJson(survivor),
+            mergedAwayCustomerId: data.mergedAwayCustomerId,
+            mergeId: mergeRow.id,
+          },
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return {
+        survivor: {
+          customer: survivor,
+          identifiers: survivorAfter.identifiers.map(toCustomerIdentifier),
+        },
+        merge: toCustomerMerge(mergeRow),
+      };
     });
   }
 

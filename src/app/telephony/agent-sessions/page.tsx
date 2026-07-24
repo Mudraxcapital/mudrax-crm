@@ -27,20 +27,20 @@ export default async function TelephonyAgentSessionsPage() {
   const userNameById = new Map(users.map((user) => [user.id, user.fullName]));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/telephony" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/telephony" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Telephony Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Agent Sessions</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Agent Sessions</h1>
+        <p className="text-muted mt-1 text-sm">
           Login/logout and availability tracking for Agents.
         </p>
       </div>
 
       {canSelf ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">My Session</h2>
           <div className="mt-4">
             {activeSession ? (
@@ -63,13 +63,13 @@ export default async function TelephonyAgentSessionsPage() {
       ) : null}
 
       {canManage ? (
-        <section className="rounded-xl border border-black/10 dark:border-white/15">
-          <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+        <section className="mx-card overflow-hidden">
+          <div className="border-b border-border px-4 py-3 ">
             <h2 className="text-sm font-medium">All Agent Sessions</h2>
           </div>
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="text-foreground/60 border-b border-black/10 dark:border-white/15">
+              <tr className="text-muted border-b border-border">
                 <th className="px-4 py-3 font-medium">Agent</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Login</th>
@@ -79,7 +79,7 @@ export default async function TelephonyAgentSessionsPage() {
             <tbody>
               {allSessions.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-foreground/60 px-4 py-6 text-center">
+                  <td colSpan={4} className="text-muted px-4 py-6 text-center">
                     No Agent Sessions yet.
                   </td>
                 </tr>
@@ -87,7 +87,7 @@ export default async function TelephonyAgentSessionsPage() {
                 allSessions.map((agentSession) => (
                   <tr
                     key={agentSession.id}
-                    className="border-b border-black/5 last:border-0 dark:border-white/10"
+                    className="border-b border-border last:border-0"
                   >
                     <td className="px-4 py-3">
                       {userNameById.get(agentSession.userId) ?? agentSession.userId}

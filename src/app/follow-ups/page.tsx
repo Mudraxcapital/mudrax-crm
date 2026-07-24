@@ -20,39 +20,35 @@ export default async function FollowUpsPage() {
   const leadNameById = new Map(leads.map((lead) => [lead.id, lead.fullNameSnapshot]));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/" className="text-sm underline underline-offset-4">
-        ← Home
-      </Link>
-
-      <div>
-        <h1 className="text-lg font-semibold">Follow-ups</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+    <div className="mx-page flex flex-col gap-6">
+<div>
+        <h1 className="text-xl font-semibold tracking-tight">Follow-ups</h1>
+        <p className="text-muted mt-1 text-sm">
           Scheduled callback/reminder tasks across your portfolio of Leads.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <ul>
           {followUps.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No Follow-ups yet.</li>
+            <li className="text-muted px-4 py-6 text-center text-sm">No Follow-ups yet.</li>
           ) : (
             followUps.map((followUp) => {
               const boundComplete = completeFollowUpAction.bind(null, followUp.leadId, followUp.id);
               return (
                 <li
                   key={followUp.id}
-                  className="flex flex-col gap-3 border-b border-black/5 px-4 py-4 last:border-0 dark:border-white/10"
+                  className="flex flex-col gap-3 border-b border-border px-4 py-4 last:border-0 "
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <Link
                         href={`/leads/${followUp.leadId}`}
-                        className="text-sm font-medium underline underline-offset-4"
+                        className="text-sm font-medium text-accent hover:text-accent hover:underline underline-offset-4"
                       >
                         {leadNameById.get(followUp.leadId) ?? followUp.leadId}
                       </Link>
-                      <p className="text-foreground/60 mt-0.5 text-xs">
+                      <p className="text-muted mt-0.5 text-xs">
                         {followUp.triggerType === "CALL_LATER" ? "Call Later" : "Follow-up"} ·{" "}
                         {new Date(followUp.scheduledFor).toLocaleString()} · {followUp.status}
                       </p>
@@ -63,7 +59,7 @@ export default async function FollowUpsPage() {
                   followUp.status !== "CANCELLED" ? (
                     <CompleteFollowUpForm action={boundComplete} />
                   ) : followUp.outcomeNotes ? (
-                    <p className="text-foreground/60 text-xs">{followUp.outcomeNotes}</p>
+                    <p className="text-muted text-xs">{followUp.outcomeNotes}</p>
                   ) : null}
                 </li>
               );
@@ -73,10 +69,10 @@ export default async function FollowUpsPage() {
       </section>
 
       <nav className="flex flex-wrap gap-4 text-sm">
-        <Link href="/leads" className="underline underline-offset-4">
+        <Link href="/leads" className="text-accent hover:text-accent hover:underline underline-offset-4">
           Leads →
         </Link>
-        <Link href="/crm" className="underline underline-offset-4">
+        <Link href="/crm" className="text-accent hover:text-accent hover:underline underline-offset-4">
           CRM Dashboard →
         </Link>
       </nav>

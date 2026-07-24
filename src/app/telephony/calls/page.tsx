@@ -23,20 +23,20 @@ export default async function TelephonyCallsPage() {
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/telephony" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/telephony" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Telephony Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Calls</h1>
-        <p className="text-foreground/60 mt-1 text-sm">Call Logs and Call History.</p>
+        <h1 className="text-xl font-semibold tracking-tight">Calls</h1>
+        <p className="text-muted mt-1 text-sm">Call Logs and Call History.</p>
       </div>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="text-foreground/60 border-b border-black/10 dark:border-white/15">
+            <tr className="text-muted border-b border-border">
               <th className="px-4 py-3 font-medium">Direction</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Outcome</th>
@@ -47,7 +47,7 @@ export default async function TelephonyCallsPage() {
           <tbody>
             {calls.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-foreground/60 px-4 py-6 text-center">
+                <td colSpan={5} className="text-muted px-4 py-6 text-center">
                   No Calls yet.
                 </td>
               </tr>
@@ -55,7 +55,7 @@ export default async function TelephonyCallsPage() {
               calls.map((call) => (
                 <tr
                   key={call.id}
-                  className="border-b border-black/5 last:border-0 dark:border-white/10"
+                  className="border-b border-border last:border-0"
                 >
                   <td className="px-4 py-3">{call.direction}</td>
                   <td className="px-4 py-3">{call.status}</td>
@@ -64,7 +64,7 @@ export default async function TelephonyCallsPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/telephony/calls/${call.id}`}
-                      className="text-sm underline underline-offset-4"
+                      className="text-sm text-accent hover:text-accent hover:underline underline-offset-4"
                     >
                       View
                     </Link>
@@ -77,7 +77,7 @@ export default async function TelephonyCallsPage() {
       </section>
 
       {canInitiate ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Click to Call</h2>
           <div className="mt-4">
             <ClickToCallForm
@@ -94,7 +94,7 @@ export default async function TelephonyCallsPage() {
       ) : null}
 
       <nav className="flex flex-wrap gap-4 text-sm">
-        <Link href="/telephony/missed-calls" className="underline underline-offset-4">
+        <Link href="/telephony/missed-calls" className="text-accent hover:text-accent hover:underline underline-offset-4">
           Missed Calls →
         </Link>
       </nav>

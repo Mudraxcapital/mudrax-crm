@@ -65,42 +65,42 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const boundCreateFollowUp = createFollowUpAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/leads" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/leads" className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Leads
       </Link>
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">{lead.fullNameSnapshot}</h1>
-          <p className="text-foreground/60 mt-1 text-sm">
+          <h1 className="text-xl font-semibold tracking-tight">{lead.fullNameSnapshot}</h1>
+          <p className="text-muted mt-1 text-sm">
             {lead.currentStageName} · {lead.leadSourceName}
           </p>
         </div>
         {canUpdate ? (
-          <Link href={`/leads/${lead.id}/edit`} className="text-sm underline underline-offset-4">
+          <Link href={`/leads/${lead.id}/edit`} className="text-sm text-accent hover:underline underline-offset-4">
             Edit
           </Link>
         ) : null}
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Details</h2>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-foreground/60">Phone</dt>
+          <dt className="text-muted">Phone</dt>
           <dd>{lead.phoneSnapshot ?? "—"}</dd>
-          <dt className="text-foreground/60">Email</dt>
+          <dt className="text-muted">Email</dt>
           <dd>{lead.emailSnapshot ?? "—"}</dd>
-          <dt className="text-foreground/60">Current assignee</dt>
+          <dt className="text-muted">Current assignee</dt>
           <dd>
             {lead.currentAssigneeUserId
               ? (assigneeNameById.get(lead.currentAssigneeUserId) ?? lead.currentAssigneeUserId)
               : "Unassigned"}
           </dd>
-          <dt className="text-foreground/60">Lost reason</dt>
+          <dt className="text-muted">Lost reason</dt>
           <dd>{lead.lostReasonName ?? "—"}</dd>
-          <dt className="text-foreground/60">
-            <Link href={`/customers/${lead.customerId}`} className="underline underline-offset-4">
+          <dt className="text-muted">
+            <Link href={`/customers/${lead.customerId}`} className="text-accent hover:underline underline-offset-4">
               View Customer
             </Link>
           </dt>
@@ -108,7 +108,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       </section>
 
       {canUpdate ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Change Stage</h2>
           <div className="mt-4">
             <LeadStageForm
@@ -122,7 +122,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       ) : null}
 
       {canReassign ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Assignment</h2>
           <div className="mt-4">
             <LeadAssignForm
@@ -132,21 +132,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             />
           </div>
           <div className="mt-6">
-            <h3 className="text-foreground/60 text-xs font-medium tracking-wide uppercase">
+            <h3 className="text-muted text-xs font-medium tracking-wide uppercase">
               Assignment History
             </h3>
             <ul className="mt-2 flex flex-col gap-2 text-sm">
               {assignments.length === 0 ? (
-                <li className="text-foreground/60">No assignments yet.</li>
+                <li className="text-muted">No assignments yet.</li>
               ) : (
                 assignments.map((assignment) => (
                   <li key={assignment.id} className="flex justify-between">
                     <span>
                       {assigneeNameById.get(assignment.assignedToUserId) ??
                         assignment.assignedToUserId}{" "}
-                      <span className="text-foreground/60">({assignment.assignmentType})</span>
+                      <span className="text-muted">({assignment.assignmentType})</span>
                     </span>
-                    <span className="text-foreground/60">
+                    <span className="text-muted">
                       {new Date(assignment.assignedAt).toLocaleString()}
                     </span>
                   </li>
@@ -158,23 +158,23 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       ) : null}
 
       {canUpdate ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Notes</h2>
           <div className="mt-4">
             <LeadNoteForm action={boundAddNote} submitLabel="Add Note" />
           </div>
           <ul className="mt-6 flex flex-col gap-4">
             {notes.length === 0 ? (
-              <li className="text-foreground/60 text-sm">No notes yet.</li>
+              <li className="text-muted text-sm">No notes yet.</li>
             ) : (
               notes.map((note) => {
                 const boundUpdateNote = updateLeadNoteAction.bind(null, id, note.id);
                 return (
                   <li
                     key={note.id}
-                    className="border-t border-black/5 pt-4 first:border-0 first:pt-0 dark:border-white/10"
+                    className="border-t border-border pt-4 first:border-0 first:pt-0 "
                   >
-                    <p className="text-foreground/60 text-xs">
+                    <p className="text-muted text-xs">
                       {new Date(note.createdAt).toLocaleString()}
                     </p>
                     <div className="mt-2">
@@ -193,7 +193,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       ) : null}
 
       {canCreateFollowUp || followUps.length > 0 ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Follow-ups</h2>
           {canCreateFollowUp ? (
             <div className="mt-4">
@@ -202,7 +202,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           ) : null}
           <ul className="mt-6 flex flex-col gap-4">
             {followUps.length === 0 ? (
-              <li className="text-foreground/60 text-sm">No Follow-ups yet.</li>
+              <li className="text-muted text-sm">No Follow-ups yet.</li>
             ) : (
               followUps.map((followUp) => {
                 const boundComplete = completeFollowUpAction.bind(null, id, followUp.id);
@@ -211,16 +211,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 return (
                   <li
                     key={followUp.id}
-                    className="border-t border-black/5 pt-4 first:border-0 first:pt-0 dark:border-white/10"
+                    className="border-t border-border pt-4 first:border-0 first:pt-0 "
                   >
                     <div className="flex items-center justify-between text-sm">
                       <span>
                         {followUp.triggerType === "CALL_LATER" ? "Call Later" : "Follow-up"} ·{" "}
                         {new Date(followUp.scheduledFor).toLocaleString()}
                       </span>
-                      <span className="text-foreground/60">{followUp.status}</span>
+                      <span className="text-muted">{followUp.status}</span>
                     </div>
-                    <p className="text-foreground/60 mt-1 text-xs">
+                    <p className="text-muted mt-1 text-xs">
                       Assigned to{" "}
                       {assigneeNameById.get(followUp.currentAssigneeUserId) ??
                         followUp.currentAssigneeUserId}
@@ -249,21 +249,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 ">
           <h2 className="text-sm font-medium">Activity</h2>
         </div>
         <ul className="flex flex-col">
           {auditLog.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">No activity yet.</li>
+            <li className="text-muted px-4 py-6 text-center text-sm">No activity yet.</li>
           ) : (
             auditLog.map((record) => (
               <li
                 key={record.id}
-                className="flex justify-between border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+                className="flex justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
               >
                 <span>{record.action}</span>
-                <span className="text-foreground/60">
+                <span className="text-muted">
                   {new Date(record.occurredAt).toLocaleString()}
                 </span>
               </li>

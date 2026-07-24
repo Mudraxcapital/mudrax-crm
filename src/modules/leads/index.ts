@@ -7,6 +7,8 @@ import { prisma } from "@/infra/db/client";
 import { PrismaLeadRepository } from "./infrastructure/repositories/PrismaLeadRepository";
 import { PrismaLeadNoteRepository } from "./infrastructure/repositories/PrismaLeadNoteRepository";
 import { PrismaLeadCatalogRepository } from "./infrastructure/repositories/PrismaLeadCatalogRepository";
+import { PrismaSavedViewRepository } from "./infrastructure/repositories/PrismaSavedViewRepository";
+import { PrismaImportBatchRepository } from "./infrastructure/repositories/PrismaImportBatchRepository";
 import { CustomersModuleLookupAdapter } from "./infrastructure/adapters/CustomersModuleLookupAdapter";
 import { UsersModuleLookupAdapter } from "./infrastructure/adapters/UsersModuleLookupAdapter";
 import { makeCreateLead } from "./application/use-cases/createLead";
@@ -32,6 +34,26 @@ import { makeAddLeadNote } from "./application/use-cases/addLeadNote";
 import { makeUpdateLeadNote } from "./application/use-cases/updateLeadNote";
 import { makeListLeadNotes } from "./application/use-cases/listLeadNotes";
 import { makeUpdateLeadNextAction } from "./application/use-cases/updateLeadNextAction";
+import {
+  makeCreateSavedView,
+  makeDeleteSavedView,
+  makeListSavedViews,
+  makeUpdateSavedView,
+} from "./application/use-cases/savedViews";
+import { makeExportLeadsCsv } from "./application/use-cases/exportLeadsCsv";
+import {
+  makeGetImportBatch,
+  makeImportLeadsCsv,
+  makeListImportBatches,
+} from "./application/use-cases/importLeadsCsv";
+import {
+  makeBulkAssignLeads,
+  makeBulkChangeLeadStage,
+  makeBulkCloseLeads,
+} from "./application/use-cases/bulkLeadOperations";
+import { makeMergeLeads } from "./application/use-cases/mergeLeads";
+import { makeGetKanbanBoard } from "./application/use-cases/getKanbanBoard";
+import { makeRepointLeadsCustomer } from "./application/use-cases/repointLeadsCustomer";
 
 export type { Lead } from "./domain/entities/Lead";
 export type { LeadAssignment, AssignmentType } from "./domain/entities/LeadAssignment";
@@ -51,6 +73,8 @@ export type {
   LeadAuditRecord,
 } from "./domain/entities/LeadAuditRecord";
 export { LEAD_ACTOR_TYPES } from "./domain/entities/LeadAuditRecord";
+export type { SavedView, LeadFilterConfig } from "./domain/entities/SavedView";
+export type { ImportBatch, ImportRow } from "./domain/entities/ImportBatch";
 export {
   LeadNotFoundError,
   InvalidCustomerReferenceError,
@@ -61,11 +85,19 @@ export {
   LeadAlreadyClosedError,
   InvalidAssigneeReferenceError,
   LeadNoteNotFoundError,
+  SavedViewNotFoundError,
+  ImportBatchNotFoundError,
+  LeadMergeError,
+  BulkOperationError,
 } from "./domain/errors/LeadErrors";
 export type { ListLeadsFilter } from "./domain/repositories/LeadRepository";
 export type { LeadDto, LeadCatalogLookups } from "./application/dto/LeadDto";
 export type { LeadAssignmentDto } from "./application/dto/LeadAssignmentDto";
 export type { LeadNoteDto } from "./application/dto/LeadNoteDto";
+export type { SavedViewDto } from "./application/dto/SavedViewDto";
+export type { ImportBatchDto, ImportRowDto } from "./application/dto/ImportBatchDto";
+export type { KanbanColumn } from "./application/use-cases/getKanbanBoard";
+export type { BulkResult } from "./application/use-cases/bulkLeadOperations";
 export type {
   LeadsByStageEntry,
   LeadsBySourceEntry,
@@ -84,6 +116,25 @@ export {
   type CreateLeadNoteInput,
   type UpdateLeadNoteInput,
 } from "./application/validators/leadSchemas";
+export {
+  createSavedViewSchema,
+  updateSavedViewSchema,
+  advancedLeadSearchSchema,
+  importLeadsCsvSchema,
+  bulkAssignLeadsSchema,
+  bulkChangeLeadStageSchema,
+  bulkCloseLeadsSchema,
+  mergeLeadsSchema,
+  leadFilterConfigSchema,
+  type CreateSavedViewInput,
+  type UpdateSavedViewInput,
+  type AdvancedLeadSearchInput,
+  type ImportLeadsCsvInput,
+  type BulkAssignLeadsInput,
+  type BulkChangeLeadStageInput,
+  type BulkCloseLeadsInput,
+  type MergeLeadsInput,
+} from "./application/validators/productivitySchemas";
 export type { CreateLeadCommand } from "./application/use-cases/createLead";
 export type { UpdateLeadCommand } from "./application/use-cases/updateLead";
 export type { ChangeLeadStageCommand } from "./application/use-cases/changeLeadStage";
@@ -94,6 +145,8 @@ export type { UpdateLeadNoteCommand } from "./application/use-cases/updateLeadNo
 const leadRepository = new PrismaLeadRepository(prisma);
 const leadNoteRepository = new PrismaLeadNoteRepository(prisma);
 const leadCatalogRepository = new PrismaLeadCatalogRepository(prisma);
+const savedViewRepository = new PrismaSavedViewRepository(prisma);
+const importBatchRepository = new PrismaImportBatchRepository(prisma);
 const customerLookup = new CustomersModuleLookupAdapter();
 const userLookup = new UsersModuleLookupAdapter();
 
@@ -119,6 +172,30 @@ export const addLeadNote = makeAddLeadNote(leadRepository, leadNoteRepository);
 export const updateLeadNote = makeUpdateLeadNote(leadNoteRepository);
 export const listLeadNotes = makeListLeadNotes(leadNoteRepository);
 export const updateLeadNextAction = makeUpdateLeadNextAction(leadRepository);
+
+export const listSavedViews = makeListSavedViews(savedViewRepository);
+export const createSavedView = makeCreateSavedView(savedViewRepository);
+export const updateSavedView = makeUpdateSavedView(savedViewRepository);
+export const deleteSavedView = makeDeleteSavedView(savedViewRepository);
+export const exportLeadsCsv = makeExportLeadsCsv(leadRepository, leadCatalogRepository);
+export const importLeadsCsv = makeImportLeadsCsv(
+  importBatchRepository,
+  leadRepository,
+  leadCatalogRepository,
+  customerLookup,
+);
+export const listImportBatches = makeListImportBatches(importBatchRepository);
+export const getImportBatch = makeGetImportBatch(importBatchRepository);
+export const bulkAssignLeads = makeBulkAssignLeads(
+  leadRepository,
+  leadCatalogRepository,
+  userLookup,
+);
+export const bulkChangeLeadStage = makeBulkChangeLeadStage(leadRepository, leadCatalogRepository);
+export const bulkCloseLeads = makeBulkCloseLeads(leadRepository, leadCatalogRepository);
+export const mergeLeads = makeMergeLeads(leadRepository, leadCatalogRepository);
+export const getKanbanBoard = makeGetKanbanBoard(leadRepository, leadCatalogRepository);
+export const repointLeadsCustomer = makeRepointLeadsCustomer(leadRepository);
 
 export const leadCatalogs = {
   listStages: (organizationId: string) => leadCatalogRepository.listStages(organizationId),

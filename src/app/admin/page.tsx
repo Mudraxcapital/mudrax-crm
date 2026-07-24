@@ -1,5 +1,7 @@
-import Link from "next/link";
 import { requireRole } from "@/infra/auth/session";
+import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { Card, CardBody } from "@/shared/ui/Card";
+import { Badge } from "@/shared/ui/Badge";
 
 // Demonstrates middleware's admin-route protection requirement. Full Admin
 // configuration screens (Role/Permission management, etc.) are CRM-feature
@@ -9,16 +11,24 @@ export default async function AdminPage() {
   const { session } = await requireRole("Admin");
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
-      <Link href="/" className="text-sm underline underline-offset-4">
-        ← Back
-      </Link>
-      <div>
-        <h1 className="text-lg font-semibold">Admin area</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
-          Only Users holding the Admin Role can reach this page — welcome, {session.user.fullName}.
-        </p>
-      </div>
-    </div>
+    <PageSection>
+      <PageHeader
+        title="Admin"
+        description="Restricted area for organization administrators."
+        meta={
+          <Badge tone="accent" dot>
+            Admin role required
+          </Badge>
+        }
+      />
+      <Card>
+        <CardBody>
+          <p className="text-sm leading-relaxed">
+            Welcome, <span className="font-medium">{session.user.fullName}</span>. Role and
+            permission management screens will live here as admin configuration expands.
+          </p>
+        </CardBody>
+      </Card>
+    </PageSection>
   );
 }

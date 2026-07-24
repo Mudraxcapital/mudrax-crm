@@ -19,8 +19,7 @@ type AssignLeadsFormAction = (
   formData: FormData,
 ) => Promise<CampaignFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function AssignCampaignLeadsForm({
   action,
@@ -36,33 +35,33 @@ export function AssignCampaignLeadsForm({
 
   if (leads.length === 0) {
     return (
-      <p className="text-foreground/60 text-sm">No unassigned Leads are available to allocate.</p>
+      <p className="text-muted text-sm">No unassigned Leads are available to allocate.</p>
     );
   }
 
   if (members.length === 0) {
     return (
-      <p className="text-foreground/60 text-sm">Add an active member before assigning Leads.</p>
+      <p className="text-muted text-sm">Add an active member before assigning Leads.</p>
     );
   }
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-foreground/80 text-sm font-medium">Leads to assign</span>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-black/10 p-3 dark:border-white/15">
+        <span className="mx-label">Leads to assign</span>
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-3">
           {leads.map((lead) => (
             <label key={lead.id} className="flex items-center gap-2 py-1 text-sm">
               <input type="checkbox" name="leadIds" value={lead.id} />
               {lead.fullNameSnapshot}{" "}
-              <span className="text-foreground/60">({lead.currentStageName})</span>
+              <span className="text-muted">({lead.currentStageName})</span>
             </label>
           ))}
         </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-foreground/80 text-sm font-medium">Allocation method</span>
+        <span className="mx-label">Allocation method</span>
         <div className="flex gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input
@@ -89,7 +88,7 @@ export function AssignCampaignLeadsForm({
 
       {allocationMethod === "PERCENTAGE" ? (
         <div className="flex flex-col gap-2">
-          <span className="text-foreground/80 text-sm font-medium">
+          <span className="mx-label">
             Percentages (must sum to 100)
           </span>
           {members.map((member) => (
@@ -103,14 +102,14 @@ export function AssignCampaignLeadsForm({
                 step={1}
                 className={`${inputClass} w-24`}
               />
-              <span className="text-foreground/60 text-sm">%</span>
+              <span className="text-muted text-sm">%</span>
             </div>
           ))}
         </div>
       ) : null}
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}

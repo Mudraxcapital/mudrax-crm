@@ -19,8 +19,7 @@ type EditCustomerFormAction = (
   formData: FormData,
 ) => Promise<CustomerFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function EditCustomerForm({
   action,
@@ -34,7 +33,7 @@ export function EditCustomerForm({
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="fullName" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="fullName" className="mx-label">
           Full name
         </label>
         <input
@@ -49,7 +48,7 @@ export function EditCustomerForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="dob" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="dob" className="mx-label">
           Date of birth
         </label>
         <input
@@ -62,7 +61,7 @@ export function EditCustomerForm({
       </div>
 
       {state.error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mx-error">
           {state.error}
         </p>
       ) : null}
@@ -70,7 +69,7 @@ export function EditCustomerForm({
       <button
         type="submit"
         disabled={isPending}
-        className="bg-foreground text-background mt-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        className="mx-btn mx-btn-primary mt-1"
       >
         {isPending ? "Saving…" : "Save changes"}
       </button>

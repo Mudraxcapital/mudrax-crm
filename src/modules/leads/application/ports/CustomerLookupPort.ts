@@ -13,6 +13,16 @@ export interface CustomerLookupSummary {
   fullName: string;
 }
 
+export interface ResolveOrCreateCustomerInput {
+  organizationId: string;
+  fullName: string;
+  phone?: string | null;
+  email?: string | null;
+  actorUserId: string;
+}
+
 export interface CustomerLookupPort {
   findById(customerId: string): Promise<CustomerLookupSummary | null>;
+  /** Import path: find by phone/email when possible, otherwise create a Customer. */
+  resolveOrCreate?(input: ResolveOrCreateCustomerInput): Promise<CustomerLookupSummary>;
 }

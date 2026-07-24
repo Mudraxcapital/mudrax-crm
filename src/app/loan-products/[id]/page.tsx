@@ -30,14 +30,14 @@ export default async function LoanProductDetailPage({ params }: { params: Promis
   ]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/loan-products" className="text-sm underline underline-offset-4">← Loan Products</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/loan-products" className="text-sm text-accent hover:underline underline-offset-4">← Loan Products</Link>
       <div>
-        <h1 className="text-lg font-semibold">{product.name}</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{product.status} · {product.variant}</p>
+        <h1 className="text-xl font-semibold tracking-tight">{product.name}</h1>
+        <p className="text-muted mt-1 text-sm">{product.status} · {product.variant}</p>
       </div>
       {canManage ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Update product</h2>
           <div className="mt-4">
             <LoanProductForm

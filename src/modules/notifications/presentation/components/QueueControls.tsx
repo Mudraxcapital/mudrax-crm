@@ -25,7 +25,7 @@ export function QueueControls({
         type="button"
         disabled={isPending}
         onClick={() => startTransition(() => void retryAction())}
-        className="rounded-lg border border-black/10 px-4 py-2.5 text-sm font-medium disabled:opacity-60 dark:border-white/15"
+        className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium disabled:opacity-60"
       >
         Retry Failed
       </button>

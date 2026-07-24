@@ -22,14 +22,14 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
   const boundAction = updateLeadAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
-      <Link href={`/leads/${id}`} className="text-sm underline underline-offset-4">
+    <div className="mx-page flex max-w-xl flex-col gap-6">
+      <Link href={`/leads/${id}`} className="text-sm text-accent hover:underline underline-offset-4">
         ← Back to Lead
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Edit Lead</h1>
-        <p className="text-foreground/60 mt-1 text-sm">{lead.fullNameSnapshot}</p>
+        <h1 className="text-xl font-semibold tracking-tight">Edit Lead</h1>
+        <p className="text-muted mt-1 text-sm">{lead.fullNameSnapshot}</p>
       </div>
 
       <EditLeadForm action={boundAction} lead={lead} />

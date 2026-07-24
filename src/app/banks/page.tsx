@@ -11,16 +11,16 @@ export default async function BanksPage() {
   const banks = await listBanks(authContext.organizationId);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/loans" className="text-sm underline underline-offset-4">← Loan Dashboard</Link>
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/loans" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">← Loan Dashboard</Link>
       <div>
-        <h1 className="text-lg font-semibold">Banks</h1>
-        <p className="text-foreground/60 mt-1 text-sm">Lending partners and NBFC master data.</p>
+        <h1 className="text-xl font-semibold tracking-tight">Banks</h1>
+        <p className="text-muted mt-1 text-sm">Lending partners and NBFC master data.</p>
       </div>
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="text-foreground/60 border-b border-black/10 dark:border-white/15">
+            <tr className="text-muted border-b border-border">
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Code</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -29,14 +29,14 @@ export default async function BanksPage() {
           </thead>
           <tbody>
             {banks.length === 0 ? (
-              <tr><td colSpan={4} className="text-foreground/60 px-4 py-6 text-center">No Banks yet.</td></tr>
+              <tr><td colSpan={4} className="text-muted px-4 py-6 text-center">No Banks yet.</td></tr>
             ) : banks.map((bank) => (
-              <tr key={bank.id} className="border-b border-black/5 last:border-0 dark:border-white/10">
+              <tr key={bank.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-3">{bank.name}</td>
                 <td className="px-4 py-3 font-mono text-xs">{bank.code}</td>
                 <td className="px-4 py-3">{bank.status}</td>
                 <td className="px-4 py-3 text-right">
-                  <Link href={`/banks/${bank.id}`} className="underline underline-offset-4">View</Link>
+                  <Link href={`/banks/${bank.id}`} className="text-accent hover:text-accent hover:underline underline-offset-4">View</Link>
                 </td>
               </tr>
             ))}
@@ -44,7 +44,7 @@ export default async function BanksPage() {
         </table>
       </section>
       {canManage ? (
-        <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+        <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Create Bank</h2>
           <div className="mt-4"><BankForm action={createBankAction} /></div>
         </section>

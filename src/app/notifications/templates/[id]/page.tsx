@@ -30,15 +30,15 @@ export default async function NotificationTemplateDetailPage({
   const versionAction = createTemplateVersionAction.bind(null, id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/notifications/templates" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/notifications/templates" className="text-sm text-accent hover:underline underline-offset-4">
         ← Templates
       </Link>
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">{template.code}</h1>
-          <p className="text-foreground/60 mt-1 text-sm">
+          <h1 className="text-xl font-semibold tracking-tight">{template.code}</h1>
+          <p className="text-muted mt-1 text-sm">
             {template.channelType} · {template.status}
           </p>
         </div>
@@ -46,7 +46,7 @@ export default async function NotificationTemplateDetailPage({
           <form action={archiveNotificationTemplateAction.bind(null, id)}>
             <button
               type="submit"
-              className="rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/15"
+              className="rounded-lg border border-border px-3 py-2 text-sm "
             >
               Archive
             </button>
@@ -54,31 +54,31 @@ export default async function NotificationTemplateDetailPage({
         ) : null}
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="mb-4 text-sm font-medium">New Version</h2>
         <TemplateVersionForm action={versionAction} />
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
-        <div className="border-b border-black/10 px-4 py-3 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3 ">
           <h2 className="text-sm font-medium">Versions</h2>
         </div>
         <ul className="flex flex-col">
           {versions.map((version) => (
             <li
               key={version.id}
-              className="border-b border-black/5 px-4 py-3 text-sm last:border-0 dark:border-white/10"
+              className="border-b border-border px-4 py-3 text-sm last:border-0 "
             >
               <div className="flex items-center justify-between">
                 <span>
                   v{version.versionNumber} · {version.status}
                 </span>
-                <span className="text-foreground/60">
+                <span className="text-muted">
                   {new Date(version.createdAt).toLocaleString()}
                 </span>
               </div>
               {version.subject ? (
-                <p className="text-foreground/60 mt-1 text-xs">Subject: {version.subject}</p>
+                <p className="text-muted mt-1 text-xs">Subject: {version.subject}</p>
               ) : null}
               <p className="mt-1 text-xs whitespace-pre-wrap">{version.body}</p>
             </li>

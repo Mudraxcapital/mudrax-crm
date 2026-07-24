@@ -11,29 +11,29 @@ export default async function TelephonyOutcomesPage() {
   const outcomes = await listCallOutcomes(authContext.organizationId);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
-      <Link href="/telephony" className="text-sm underline underline-offset-4">
+    <div className="mx-page flex flex-col gap-6">
+      <Link href="/telephony" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
         ← Telephony Dashboard
       </Link>
 
       <div>
-        <h1 className="text-lg font-semibold">Call Outcomes</h1>
-        <p className="text-foreground/60 mt-1 text-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Call Outcomes</h1>
+        <p className="text-muted mt-1 text-sm">
           The configurable business outcomes Agents record against a Call.
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 p-6 dark:border-white/15">
+      <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Add Outcome</h2>
         <div className="mt-4">
           <CallOutcomeForm action={createCallOutcomeAction} />
         </div>
       </section>
 
-      <section className="rounded-xl border border-black/10 dark:border-white/15">
+      <section className="mx-card overflow-hidden">
         <ul className="flex flex-col">
           {outcomes.length === 0 ? (
-            <li className="text-foreground/60 px-4 py-6 text-center text-sm">
+            <li className="text-muted px-4 py-6 text-center text-sm">
               No Call Outcomes configured yet.
             </li>
           ) : (
@@ -42,7 +42,7 @@ export default async function TelephonyOutcomesPage() {
               return (
                 <li
                   key={outcome.id}
-                  className="border-b border-black/5 px-4 py-4 last:border-0 dark:border-white/10"
+                  className="border-b border-border px-4 py-4 last:border-0 "
                 >
                   <CallOutcomeForm action={boundUpdate} outcome={outcome} />
                 </li>

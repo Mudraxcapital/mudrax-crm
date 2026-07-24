@@ -10,8 +10,7 @@ type FormAction = (
   formData: FormData,
 ) => Promise<ReportsFormState>;
 
-const inputClass =
-  "rounded-lg border border-black/10 bg-transparent px-3.5 py-2.5 text-sm transition-colors outline-none focus:border-black/30 dark:border-white/15 dark:focus:border-white/40";
+const inputClass = "mx-input";
 
 export function DashboardForm({
   action,
@@ -25,13 +24,13 @@ export function DashboardForm({
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="name" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="name" className="mx-label">
           Dashboard name
         </label>
         <input id="name" name="name" required className={inputClass} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="audience" className="text-foreground/80 text-sm font-medium">
+        <label htmlFor="audience" className="mx-label">
           Audience
         </label>
         <select id="audience" name="audience" required className={inputClass} defaultValue="EXECUTIVE">
@@ -42,7 +41,7 @@ export function DashboardForm({
         </select>
       </div>
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-foreground/80 text-sm font-medium">KPI widgets</legend>
+        <legend className="mx-label">KPI widgets</legend>
         {kpiNames.map((name) => (
           <label key={name} className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="kpiName" value={name} defaultChecked />
