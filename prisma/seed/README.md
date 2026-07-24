@@ -1,3 +1,111 @@
-# prisma/seed
+# Development seed data
 
-Seed scripts for local/dev environments. Never seed real customer/loan PII here.
+Populates a freshly migrated database with production-quality development
+seed data: lookup/catalog tables, the Organization structure, RBAC, one
+bootstrap Administrator, and realistic demo data. Nothing here changes the
+Prisma schema or adds a backend API — it only inserts rows through the
+existing generated Prisma Client.
+
+## Running it
+
+```bash
+npm run db:seed
+```
+
+This runs `prisma db seed`, which Prisma resolves to the `migrations.seed`
+command configured in `prisma.config.ts` (`tsx prisma/seed/index.ts`). It
+also runs automatically after `prisma migrate dev` / `prisma migrate reset`.
+
+Prerequisite: `DATABASE_URL` must be set (copy `.env.example` to `.env` —
+see `docs/setup/windows-development-setup.md`) and all migrations must
+already be applied.
+
+## Idempotency
+
+Every step **upserts**. Re-running `npm run db:seed` any number of times
+converges to the same rows — it never creates duplicates and never errors
+on a second run:
+
+- Rows with a real business unique key already declared in the accepted
+  schema (e.g. `Organization.code`, `Branch{organizationId, code}`,
+  `Role{organizationId, name}`, `Permission.code`,
+  `LeadSource{organizationId, name}`, ...) upsert on that key.
+- The handful of demo rows with no natural unique key at all (`Customer`,
+  `CustomerIdentifier`, `Lead`, `FollowUp`, `LoanApplication`) get a
+  deterministic UUIDv5 id from `lib/determinism.ts`'s `seedId()`, keyed off
+  a stable human-readable name (e.g. `"lead:rahul-sharma"`). Same input,
+  same id, every run — so `upsert({ where: { id: seedId(...) }, ... })`
+  is a safe no-op on re-runs.
+
+## What gets seeded, and why
+
+Steps run in this order (`index.ts`), each explained on the console as it
+runs:
+
+| # | Step | What | Why |
+|---|------|------|-----|
+| 1 | `01-organization.ts` | 1 Organization, 2 Regions, 3 Branches, 5 Departments, 4 Teams | Requirement #2. The single canonical company scope (`platform-contracts.md` §5) everything else's `organizationId` points at. |
+| 2 | `02-rbac.ts` | 4 Roles, ~70 Permissions, Role→Permission grants | Requirement #3. Canonical Caller/Team Leader/Manager/Admin hierarchy from ADR 0002, with Data Scopes (Self/Team/Branch/Organization/System) per `platform-contracts.md` §2. See `lib/rbac-catalog.ts` for the full catalog and the `minRole`/`systemOnly` grant-computation rules. |
+| 3 | `03-admin-user.ts` | 1 User (`admin@mudraxcapital.com`), granted the Admin Role | Requirement #4. The single bootstrap account. |
+| 4 | `04-lead-catalogs.ts` | Lead Source, Lead Stage, Lost Reason, Call Feedback Status, Tag, 2 Custom Field Definitions | Requirement #1. Every one of these is documented in `prisma/models/leads.prisma` as an admin-configurable catalog, never a hardcoded enum. |
+| 5 | `05-loan-catalogs.ts` | Loan Product Type, Application Status, Loan Status, EMI Pay Status | Requirement #1. The loan-lifecycle status vocabulary, spanning `loan_products`, `loan_applications`, and `loan_accounts` — three catalogs the schema keeps "permanently distinct" by design. |
+| 6 | `06-banks.ts` | 3 Banks, 3 Bank Branches, 3 Commission Policy Versions | Requirement #1 / lending-partner master data `loan_applications`/`loan_accounts` reference by id. |
+| 7 | `07-loan-products.ts` | 6 Loan Products | Requirement #5. Concrete products (HDFC/ICICI/SBI × Personal/Home/Car/LAP/Business) so demo Loan Applications have something real to reference. |
+| 8 | `08-document-catalogs.ts` | 6 Document Categories, 15 Document Types | Requirement #1. The closed KYC/Income/Collateral/Loan-Execution/Compliance/Other catalog. |
+| 9 | `09-customers.ts` | 8 Customers, 24 Customer Identifiers | Requirement #5. Demo identities anchored on a masked/hashed PAN (never the raw value) plus Phone/Email, per `customers.md`'s identity model. |
+| 10 | `10-leads.ts` | 8 Leads (one per Customer), Lead Assignments, some Call Feedback/Notes/Tags | Requirement #5. Spread across every Lead Stage, Fresh through both terminal Closed outcomes. |
+| 11 | `11-follow-ups.ts` | 4 Follow-ups/Call Later tasks | Requirement #5. Three Scheduled, one Completed. |
+| 12 | `12-loan-applications.ts` | 4 Loan Applications | Requirement #5. Draft → Submitted → Under Bank Review → Approved, tracing Customer → Lead → Loan Product. |
+
+### Deliberately out of scope for this pass
+
+Telephony, Campaigns, Disbursements/Commissions, Loan Accounts/EMI
+schedules, Notifications, Reports/Dashboards, and every `ai_*` module are
+**not** seeded. Each is a large, independent operational module in its own
+right; seeding them realistically (call recordings, dialer campaigns,
+EMI amortization, AI audit trails, ...) is a separate, explicitly-scoped
+task, not an extension of "seed the catalogs and a demo pipeline."
+
+## Bootstrap Administrator credentials (DEV-ONLY)
+
+```
+Email:    admin@mudraxcapital.com
+Password: Mudrax@Admin2026!
+```
+
+This password is hashed with `lib/security.ts`'s `hashSeedPassword` — a
+minimal `scrypt`-based stand-in built only on Node's built-in `crypto`
+module, **not** a production authentication implementation. Authentication
+itself is explicitly out of scope for this seed pass pending separate
+approval (see the top-level task instructions). The moment real
+Authentication ships:
+
+1. Treat every password seeded this way as compromised/disposable.
+2. Force a reset (or re-seed with the real hashing scheme) before any
+   non-local environment ever runs this seed script.
+
+## Files
+
+```
+prisma/seed/
+├── index.ts                  # Orchestrator — run order lives here
+├── lib/
+│   ├── client.ts              # Standalone PrismaClient for the seed CLI only
+│   ├── determinism.ts         # seedId() — deterministic UUIDv5 for idempotent demo rows
+│   ├── logger.ts              # section()/explain()/summary() console output helpers
+│   ├── rbac-catalog.ts         # Role/Permission catalog + grant computation (step 2's data)
+│   └── security.ts            # DEV-ONLY password hash + PAN/phone hashing & masking helpers
+└── steps/
+    ├── 01-organization.ts
+    ├── 02-rbac.ts
+    ├── 03-admin-user.ts
+    ├── 04-lead-catalogs.ts
+    ├── 05-loan-catalogs.ts
+    ├── 06-banks.ts
+    ├── 07-loan-products.ts
+    ├── 08-document-catalogs.ts
+    ├── 09-customers.ts
+    ├── 10-leads.ts
+    ├── 11-follow-ups.ts
+    └── 12-loan-applications.ts
+```

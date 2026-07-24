@@ -9,6 +9,9 @@ export default defineConfig({
   schema: path.join("prisma"),
   migrations: {
     path: path.join("prisma", "migrations"),
+    // Runs automatically after `prisma migrate dev`/`migrate reset`, and on
+    // demand via `prisma db seed` / `npm run db:seed`. See prisma/seed/README.md.
+    seed: "tsx prisma/seed/index.ts",
   },
   datasource: {
     // Read directly from process.env (not the throwing `env()` helper) so
