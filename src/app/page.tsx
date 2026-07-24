@@ -62,6 +62,27 @@ export default async function Home() {
           Go to admin-only page →
         </Link>
       </nav>
+
+      <nav className="flex flex-wrap gap-4 border-t border-black/10 pt-6 dark:border-white/15">
+        <Link href="/customers" className="text-sm underline underline-offset-4">
+          Customers →
+        </Link>
+        <Link href="/leads" className="text-sm underline underline-offset-4">
+          Leads →
+        </Link>
+        <Link href="/follow-ups" className="text-sm underline underline-offset-4">
+          Follow-ups →
+        </Link>
+        <Link href="/campaigns" className="text-sm underline underline-offset-4">
+          Campaigns →
+        </Link>
+        <Link href="/activity" className="text-sm underline underline-offset-4">
+          Activity Timeline →
+        </Link>
+        <Link href="/crm" className="text-sm underline underline-offset-4">
+          CRM Dashboard →
+        </Link>
+      </nav>
     </div>
   );
 }

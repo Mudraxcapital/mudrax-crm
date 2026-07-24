@@ -10,8 +10,12 @@ import type {
   RecordLoginAttemptInput,
   UserRepository,
 } from "../../domain/repositories/UserRepository";
-import type { UserAuthProfile, UserScopeContext } from "../../domain/entities/UserAuthProfile";
-import { toUserAuthProfile, toUserScopeContext } from "../mappers/userMapper";
+import type {
+  UserAuthProfile,
+  UserScopeContext,
+  UserSummary,
+} from "../../domain/entities/UserAuthProfile";
+import { toUserAuthProfile, toUserScopeContext, toUserSummary } from "../mappers/userMapper";
 
 export class PrismaUserRepository implements UserRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -54,5 +58,18 @@ export class PrismaUserRepository implements UserRepository {
       where: { id: userId },
       data: { lastLoginAt: new Date() },
     });
+  }
+
+  async findSummaryById(id: string): Promise<UserSummary | null> {
+    const row = await this.prisma.user.findUnique({ where: { id } });
+    return row ? toUserSummary(row) : null;
+  }
+
+  async listSummariesByOrganization(organizationId: string): Promise<UserSummary[]> {
+    const rows = await this.prisma.user.findMany({
+      where: { organizationId, status: "ACTIVE" },
+      orderBy: { fullName: "asc" },
+    });
+    return rows.map(toUserSummary);
   }
 }

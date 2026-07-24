@@ -112,3 +112,45 @@ model CampaignAssignmentAllocation {
   @@map("campaign_assignment_allocations")
   @@schema("campaigns")
 }
+
+/// Aggregate Root, module-level; immutable, append-only record of every
+/// significant action against this module's aggregates (Campaign,
+/// CampaignMembership, CampaignAssignment). Follows the one canonical Audit
+/// Record shape platform-contracts.md §4 requires of every module-owned
+/// audit record — the same shape used by `organization.OrganizationAuditLog`.
+/// No update/delete use-case is exposed at the domain layer.
+model CampaignAuditLog {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  occurredAt     DateTime          @default(now())
+  actorType      CampaignActorType
+  actorId        String?           @db.Uuid
+  action         String            @db.VarChar(200)
+  targetType     String            @db.VarChar(100)
+  targetId       String            @db.Uuid
+  correlationId  String?           @db.Uuid
+  beforeState    Json?             @db.JsonB
+  afterState     Json?             @db.JsonB
+
+  /// Tamper-evidence hash chain (platform-contracts.md §4) — see the
+  /// identical comment on OrganizationAuditLog.
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only —
+  //   REVOKE UPDATE, DELETE ON campaigns.campaign_audit_log FROM application_role;
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("campaign_audit_log")
+  @@schema("campaigns")
+}
+
+enum CampaignActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("campaign_actor_type")
+  @@schema("campaigns")
+}

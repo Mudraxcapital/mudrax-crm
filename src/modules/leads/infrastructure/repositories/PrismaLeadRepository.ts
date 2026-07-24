@@ -1,0 +1,322 @@
+// ============================================================================
+// src/modules/leads/infrastructure/repositories/PrismaLeadRepository.ts
+//
+// Prisma-backed implementation of LeadRepository. Every write method wraps
+// the Lead row (and, where relevant, its LeadAssignment row) plus its Audit
+// Record in one `$transaction`. Audit Records live in
+// `leads.lead_audit_log`, distinguished by `targetType = "Lead"` — see
+// organization's PrismaTeamRepository.ts's identical pattern.
+// ============================================================================
+
+import type { Prisma, PrismaClient } from "@prisma/client";
+import type {
+  AssignLeadData,
+  ChangeLeadStageData,
+  CreateLeadData,
+  LeadRepository,
+  ListLeadsFilter,
+  UpdateLeadData,
+} from "../../domain/repositories/LeadRepository";
+import type { Lead } from "../../domain/entities/Lead";
+import type { LeadAssignment } from "../../domain/entities/LeadAssignment";
+import type { LeadAuditActor, LeadAuditRecord } from "../../domain/entities/LeadAuditRecord";
+import { toLead, toLeadAssignment, toLeadAuditRecord } from "../mappers/leadMapper";
+
+const TARGET_TYPE_LEAD = "Lead";
+
+/** Always overwritten by the database's BEFORE INSERT hash-chain trigger — see the identical comment in organization's PrismaTeamRepository.ts. */
+const PLACEHOLDER_RECORD_HASH = "pending-hash-chain-trigger";
+
+function toAuditJson(lead: Lead): Prisma.InputJsonValue {
+  return {
+    id: lead.id,
+    organizationId: lead.organizationId,
+    customerId: lead.customerId,
+    leadSourceId: lead.leadSourceId,
+    currentStageId: lead.currentStageId,
+    lostReasonId: lead.lostReasonId,
+    currentAssigneeUserId: lead.currentAssigneeUserId,
+    fullNameSnapshot: lead.fullNameSnapshot,
+    phoneSnapshot: lead.phoneSnapshot,
+    emailSnapshot: lead.emailSnapshot,
+    wonAt: lead.wonAt,
+    lostAt: lead.lostAt,
+  };
+}
+
+export class PrismaLeadRepository implements LeadRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async findById(id: string): Promise<Lead | null> {
+    const row = await this.prisma.lead.findUnique({ where: { id } });
+    return row ? toLead(row) : null;
+  }
+
+  async list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]> {
+    const where = this.buildWhere(organizationId, filter);
+    const rows = await this.prisma.lead.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: filter?.limit ?? 50,
+      skip: filter?.offset ?? 0,
+    });
+    return rows.map(toLead);
+  }
+
+  async listByCustomer(customerId: string): Promise<Lead[]> {
+    const rows = await this.prisma.lead.findMany({
+      where: { customerId },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toLead);
+  }
+
+  async count(organizationId: string, filter?: ListLeadsFilter): Promise<number> {
+    return this.prisma.lead.count({ where: this.buildWhere(organizationId, filter) });
+  }
+
+  async countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["currentStageId"],
+      where: { organizationId },
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({ stageId: group.currentStageId, count: group._count._all }));
+  }
+
+  async countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["leadSourceId"],
+      where: { organizationId },
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({ sourceId: group.leadSourceId, count: group._count._all }));
+  }
+
+  private buildWhere(organizationId: string, filter?: ListLeadsFilter): Prisma.LeadWhereInput {
+    const where: Prisma.LeadWhereInput = { organizationId };
+    if (filter?.customerId) where.customerId = filter.customerId;
+    if (filter?.currentStageId) where.currentStageId = filter.currentStageId;
+    if (filter?.leadSourceId) where.leadSourceId = filter.leadSourceId;
+    if (filter?.campaignId) where.campaignId = filter.campaignId;
+    if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
+    return where;
+  }
+
+  async createWithAudit(
+    data: CreateLeadData,
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.lead.create({
+        data: {
+          organizationId: data.organizationId,
+          customerId: data.customerId,
+          leadSourceId: data.leadSourceId,
+          currentStageId: data.currentStageId,
+          campaignId: data.campaignId ?? null,
+          fullNameSnapshot: data.fullNameSnapshot,
+          phoneSnapshot: data.phoneSnapshot ?? null,
+          emailSnapshot: data.emailSnapshot ?? null,
+          currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
+        },
+      });
+      const lead = toLead(row);
+
+      if (data.initialAssignment) {
+        await tx.leadAssignment.create({
+          data: {
+            leadId: lead.id,
+            assignedToUserId: data.initialAssignment.assignedToUserId,
+            assignedByUserId: data.initialAssignment.assignedByUserId,
+            assignmentType: data.initialAssignment.assignmentType,
+          },
+        });
+      }
+
+      await tx.leadAuditLog.create({
+        data: {
+          organizationId: lead.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "LeadCreated",
+          targetType: TARGET_TYPE_LEAD,
+          targetId: lead.id,
+          correlationId: correlationId ?? null,
+          beforeState: undefined,
+          afterState: toAuditJson(lead),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return lead;
+    });
+  }
+
+  async updateWithAudit(
+    id: string,
+    data: UpdateLeadData,
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.lead.findUniqueOrThrow({ where: { id } });
+      const before = toLead(beforeRow);
+
+      const afterRow = await tx.lead.update({
+        where: { id },
+        data: {
+          leadSourceId: data.leadSourceId,
+          fullNameSnapshot: data.fullNameSnapshot,
+          phoneSnapshot: data.phoneSnapshot,
+          emailSnapshot: data.emailSnapshot,
+        },
+      });
+      const after = toLead(afterRow);
+
+      await tx.leadAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "LeadUpdated",
+          targetType: TARGET_TYPE_LEAD,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async changeStageWithAudit(
+    id: string,
+    data: ChangeLeadStageData,
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.lead.findUniqueOrThrow({ where: { id } });
+      const before = toLead(beforeRow);
+
+      const afterRow = await tx.lead.update({
+        where: { id },
+        data: {
+          currentStageId: data.currentStageId,
+          lostReasonId: data.lostReasonId,
+          wonAt: data.wonAt,
+          lostAt: data.lostAt,
+        },
+      });
+      const after = toLead(afterRow);
+
+      await tx.leadAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "LeadStageChanged",
+          targetType: TARGET_TYPE_LEAD,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async assignWithAudit(
+    id: string,
+    data: AssignLeadData,
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.lead.findUniqueOrThrow({ where: { id } });
+      const before = toLead(beforeRow);
+
+      await tx.leadAssignment.updateMany({
+        where: { leadId: id, unassignedAt: null },
+        data: { unassignedAt: new Date() },
+      });
+
+      await tx.leadAssignment.create({
+        data: {
+          leadId: id,
+          assignedToUserId: data.assignedToUserId,
+          assignedByUserId: data.assignedByUserId,
+          assignmentType: data.assignmentType,
+          campaignAssignmentId: data.campaignAssignmentId ?? null,
+        },
+      });
+
+      const afterRow = await tx.lead.update({
+        where: { id },
+        data: { currentAssigneeUserId: data.assignedToUserId },
+      });
+      const after = toLead(afterRow);
+
+      await tx.leadAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: data.assignmentType === "INITIAL" ? "LeadAssigned" : "LeadReassigned",
+          targetType: TARGET_TYPE_LEAD,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async listAssignmentHistory(leadId: string): Promise<LeadAssignment[]> {
+    const rows = await this.prisma.leadAssignment.findMany({
+      where: { leadId },
+      orderBy: { assignedAt: "desc" },
+    });
+    return rows.map(toLeadAssignment);
+  }
+
+  async updateNextAction(
+    leadId: string,
+    nextActionAt: Date | null,
+    nextActionType: string | null,
+  ): Promise<void> {
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: { nextActionAt, nextActionType },
+    });
+  }
+
+  async listAuditLog(leadId: string): Promise<LeadAuditRecord[]> {
+    const rows = await this.prisma.leadAuditLog.findMany({
+      where: { targetType: TARGET_TYPE_LEAD, targetId: leadId },
+      orderBy: { occurredAt: "desc" },
+    });
+    return rows.map(toLeadAuditRecord);
+  }
+
+  async listRecentAuditLog(organizationId: string, limit: number): Promise<LeadAuditRecord[]> {
+    const rows = await this.prisma.leadAuditLog.findMany({
+      where: { organizationId },
+      orderBy: { occurredAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toLeadAuditRecord);
+  }
+}

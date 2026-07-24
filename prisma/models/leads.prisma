@@ -469,3 +469,47 @@ model DuplicateMatchExistingLead {
   @@map("duplicate_match_existing_leads")
   @@schema("leads")
 }
+
+/// Aggregate Root, module-level; immutable, append-only record of every
+/// significant action against this module's aggregates (Lead, LeadAssignment,
+/// LeadNote). Follows the one canonical Audit Record shape
+/// platform-contracts.md §4 requires of every module-owned audit record —
+/// the same shape used by `organization.OrganizationAuditLog`. No
+/// update/delete use-case is exposed at the domain layer. Doubles as the
+/// backing read model for `activity-timeline`'s chronological Lead history
+/// (Lead Created/Updated, Assignment Changed, Status Changed, Note Added).
+model LeadAuditLog {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  occurredAt     DateTime      @default(now())
+  actorType      LeadActorType
+  actorId        String?       @db.Uuid
+  action         String        @db.VarChar(200)
+  targetType     String        @db.VarChar(100)
+  targetId       String        @db.Uuid
+  correlationId  String?       @db.Uuid
+  beforeState    Json?         @db.JsonB
+  afterState     Json?         @db.JsonB
+
+  /// Tamper-evidence hash chain (platform-contracts.md §4) — see the
+  /// identical comment on OrganizationAuditLog.
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only —
+  //   REVOKE UPDATE, DELETE ON leads.lead_audit_log FROM application_role;
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("lead_audit_log")
+  @@schema("leads")
+}
+
+enum LeadActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("lead_actor_type")
+  @@schema("leads")
+}

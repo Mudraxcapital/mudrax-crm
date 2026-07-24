@@ -6,7 +6,11 @@
 // ============================================================================
 
 import type { User as PrismaUser } from "@prisma/client";
-import type { UserAuthProfile, UserScopeContext } from "../../domain/entities/UserAuthProfile";
+import type {
+  UserAuthProfile,
+  UserScopeContext,
+  UserSummary,
+} from "../../domain/entities/UserAuthProfile";
 
 export function toUserAuthProfile(row: PrismaUser): UserAuthProfile {
   return {
@@ -28,5 +32,18 @@ export function toUserScopeContext(row: PrismaUser): UserScopeContext {
     currentTeamId: row.currentTeamId,
     currentBranchId: row.currentBranchId,
     currentDepartmentId: row.currentDepartmentId,
+  };
+}
+
+export function toUserSummary(row: PrismaUser): UserSummary {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    employeeCode: row.employeeCode,
+    fullName: row.fullName,
+    email: row.email,
+    status: row.status,
+    currentTeamId: row.currentTeamId,
+    currentBranchId: row.currentBranchId,
   };
 }

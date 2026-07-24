@@ -11,6 +11,7 @@ export type {
   UserAuthProfile,
   UserScopeContext,
   UserStatus,
+  UserSummary,
 } from "./domain/entities/UserAuthProfile";
 export type { RecordLoginAttemptInput } from "./domain/repositories/UserRepository";
 
@@ -21,3 +22,5 @@ export const getUserScopeContext = userAuthUseCases.getUserScopeContext;
 export const countRecentFailedLoginAttempts = userAuthUseCases.countRecentFailedLoginAttempts;
 export const recordLoginAttempt = userAuthUseCases.recordLoginAttempt;
 export const touchLastLogin = userAuthUseCases.touchLastLogin;
+export const getUserSummary = userAuthUseCases.getUserSummary;
+export const listUserSummaries = userAuthUseCases.listUserSummaries;

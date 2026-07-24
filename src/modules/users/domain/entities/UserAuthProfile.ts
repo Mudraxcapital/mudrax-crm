@@ -28,3 +28,15 @@ export interface UserScopeContext {
   currentBranchId: string | null;
   currentDepartmentId: string | null;
 }
+
+/** Lightweight, non-sensitive projection of a User for other modules' assignment/ownership pickers (CRM Lead/Follow-up/Campaign assignment) — never includes `passwordHash`. */
+export interface UserSummary {
+  id: string;
+  organizationId: string;
+  employeeCode: string;
+  fullName: string;
+  email: string;
+  status: UserStatus;
+  currentTeamId: string | null;
+  currentBranchId: string | null;
+}

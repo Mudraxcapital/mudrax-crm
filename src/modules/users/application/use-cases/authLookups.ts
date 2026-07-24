@@ -10,7 +10,11 @@ import type {
   RecordLoginAttemptInput,
   UserRepository,
 } from "../../domain/repositories/UserRepository";
-import type { UserAuthProfile, UserScopeContext } from "../../domain/entities/UserAuthProfile";
+import type {
+  UserAuthProfile,
+  UserScopeContext,
+  UserSummary,
+} from "../../domain/entities/UserAuthProfile";
 
 const RECENT_FAILURE_WINDOW_MINUTES = 15;
 
@@ -36,6 +40,14 @@ export function makeUserAuthUseCases(repository: UserRepository) {
 
     async touchLastLogin(userId: string): Promise<void> {
       return repository.touchLastLogin(userId);
+    },
+
+    async getUserSummary(userId: string): Promise<UserSummary | null> {
+      return repository.findSummaryById(userId);
+    },
+
+    async listUserSummaries(organizationId: string): Promise<UserSummary[]> {
+      return repository.listSummariesByOrganization(organizationId);
     },
   };
 }
