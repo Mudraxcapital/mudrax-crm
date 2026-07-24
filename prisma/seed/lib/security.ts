@@ -1,17 +1,17 @@
 // ============================================================================
 // prisma/seed/lib/security.ts
 //
-// Seed-only, deliberately minimal stand-ins for two pieces of sensitive-data
-// handling this schema requires non-null columns for, but that this task
-// explicitly does not implement:
+// Seed-only helpers for two pieces of sensitive-data handling this schema
+// requires non-null columns for:
 //
-//   1. Password hashing — Authentication is out of scope for this task ("wait
-//      for approval before implementing Authentication"). `users.User.
-//      passwordHash` is a required column, so the bootstrap Administrator
-//      row needs *some* value; `hashSeedPassword` produces one using only
-//      Node's built-in `crypto` (no bcrypt/argon2 dependency pulled in on
-//      the strength of a seed script), clearly namespaced so it is
-//      unmistakably not a production authentication implementation.
+//   1. Password hashing — now that Authentication is implemented
+//      (src/modules/auth), the bootstrap Administrator's passwordHash is
+//      produced with the exact same strategy the application verifies
+//      against (bcrypt via `bcryptjs` — see
+//      src/modules/auth/infrastructure/adapters/BcryptPasswordHasher.ts),
+//      so the seeded credential documented in README.md actually
+//      authenticates. It is still a DEV-ONLY, publicly-documented fixed
+//      password — never use this seed against a non-local environment.
 //   2. PAN hashing/masking — platform-contracts.md §3 requires "an
 //      irreversible lookup hash for deduplication" for PAN/Aadhaar, backed
 //      in production by a real KMS/HSM-backed utility owned by the
@@ -19,26 +19,26 @@
 //      seed-only approximation good enough to make demo PAN values behave
 //      like real ones (masked by default, deterministically de-duplicable).
 //
-// Neither helper is imported by anything under src/ — they exist only to
-// satisfy this database layer's NOT NULL constraints with realistic-looking
-// values, never as production security infrastructure.
+// `hashSeedPassword` intentionally duplicates BcryptPasswordHasher's cost
+// factor instead of importing from src/ — the seed CLI is a separate
+// entrypoint (see lib/client.ts's note) and must not depend on application
+// runtime code.
 // ============================================================================
 
-import { createHash, randomBytes, scryptSync } from "node:crypto";
+import { createHash } from "node:crypto";
+import bcrypt from "bcryptjs";
+
+const BCRYPT_COST_FACTOR = 12;
 
 /**
- * DEV-ONLY password hash for the bootstrap Administrator seed row.
- *
- * Format: `scrypt$<saltHex>$<derivedKeyHex>` — self-describing so a future,
- * separately-approved Authentication implementation can detect and migrate
- * (or simply discard) any row still carrying this format. Every seeded
- * value must be treated as disposable and rotated the moment real
- * Authentication ships.
+ * DEV-ONLY password hash for the bootstrap Administrator seed row, hashed
+ * with the same bcrypt strategy `src/modules/auth` verifies against. The
+ * plaintext (`ADMIN_DEV_PASSWORD` in steps/03-admin-user.ts) is publicly
+ * documented in README.md — treat it as disposable in any shared
+ * environment.
  */
 export function hashSeedPassword(plainTextPassword: string): string {
-  const salt = randomBytes(16);
-  const derivedKey = scryptSync(plainTextPassword, salt, 64);
-  return `scrypt$${salt.toString("hex")}$${derivedKey.toString("hex")}`;
+  return bcrypt.hashSync(plainTextPassword, BCRYPT_COST_FACTOR);
 }
 
 /**

@@ -32,13 +32,14 @@ export async function seedAdminUser(
     `One User (${ADMIN_EMAIL}), employeeCode EMP-0001, based at Mumbai Head Office / Operations.`,
   );
   explain(
-    "passwordHash is a DEV-ONLY placeholder (see prisma/seed/README.md) — Authentication itself is out of scope for this seed pass, pending separate approval.",
+    "passwordHash is a DEV-ONLY fixed credential (see prisma/seed/README.md), hashed with the same bcrypt strategy src/modules/auth verifies against — reset on every reseed so it never drifts from the documented password.",
   );
 
   const passwordHash = hashSeedPassword(ADMIN_DEV_PASSWORD);
   const admin = await prisma.user.upsert({
     where: { email: ADMIN_EMAIL },
     update: {
+      passwordHash,
       currentBranchId: org.branchIds["MUM-HO"],
       currentDepartmentId: org.departmentIds["OPS"],
     },

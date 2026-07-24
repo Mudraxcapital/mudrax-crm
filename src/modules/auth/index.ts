@@ -2,4 +2,16 @@
 //
 // Every export another module is allowed to depend on must be re-exported from here.
 // No other module may import from this module's internal folders directly.
-export {};
+
+import { BcryptPasswordHasher } from "./infrastructure/adapters/BcryptPasswordHasher";
+import { makeAuthenticateUser } from "./application/use-cases/authenticateUser";
+
+export type { AuthenticatedUser } from "./application/dto/AuthenticatedUser";
+export type { AuthenticateUserInput } from "./application/use-cases/authenticateUser";
+export {
+  InvalidCredentialsError,
+  AccountLockedError,
+  AccountNotActiveError,
+} from "./domain/errors/AuthErrors";
+
+export const authenticateUser = makeAuthenticateUser(new BcryptPasswordHasher());

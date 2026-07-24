@@ -73,16 +73,16 @@ Email:    admin@mudraxcapital.com
 Password: Mudrax@Admin2026!
 ```
 
-This password is hashed with `lib/security.ts`'s `hashSeedPassword` — a
-minimal `scrypt`-based stand-in built only on Node's built-in `crypto`
-module, **not** a production authentication implementation. Authentication
-itself is explicitly out of scope for this seed pass pending separate
-approval (see the top-level task instructions). The moment real
-Authentication ships:
+This password is hashed with `lib/security.ts`'s `hashSeedPassword`, which
+uses the same bcrypt strategy `src/modules/auth`
+(`BcryptPasswordHasher`) verifies against — so this account can actually
+sign in once the app is running (see `docs/adr/0002-users-and-enterprise-rbac.md`
+and `src/modules/auth/README.md`). It remains a **DEV-ONLY, publicly
+documented, fixed credential**:
 
-1. Treat every password seeded this way as compromised/disposable.
-2. Force a reset (or re-seed with the real hashing scheme) before any
-   non-local environment ever runs this seed script.
+1. Never run this seed script against a non-local/shared environment.
+2. Treat this password as compromised by definition (it is committed to
+   git) and rotate it immediately in any environment where it matters.
 
 ## Files
 
