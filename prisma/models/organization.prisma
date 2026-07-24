@@ -307,3 +307,50 @@ enum EscalationScope {
   @@map("escalation_scope")
   @@schema("organization")
 }
+
+/// Aggregate Root, module-level; immutable, append-only record of every
+/// significant action against this module's aggregates (starting with
+/// Organization itself). Follows the one canonical Audit Record shape
+/// platform-contracts.md §4 requires of every module-owned audit record —
+/// the same shape already used by `documents.AuditTrail`,
+/// `notifications.CommunicationLog`, and `ai_core.AiAuditLog`. No
+/// update/delete use-case is exposed at the domain layer.
+model OrganizationAuditLog {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  occurredAt     DateTime             @default(now())
+  actorType      OrganizationActorType
+  actorId        String?              @db.Uuid
+  action         String               @db.VarChar(200)
+  targetType     String               @db.VarChar(100)
+  targetId       String               @db.Uuid
+  correlationId  String?              @db.Uuid
+  beforeState    Json?                @db.JsonB
+  afterState     Json?                @db.JsonB
+
+  /// Tamper-evidence hash chain (platform-contracts.md §4): each record
+  /// hashes its own content plus the previous record's hash. Computing and
+  /// verifying the chain is application/trigger logic, not a Prisma
+  /// concern — Prisma only preserves the two columns.
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  // MANUAL SQL FOLLOW-UP: structurally append-only — enforce "no
+  // UPDATE/DELETE, ever" at the database level, the same treatment as
+  // documents.audit_trail:
+  //   REVOKE UPDATE, DELETE ON organization.organization_audit_log FROM application_role;
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("organization_audit_log")
+  @@schema("organization")
+}
+
+enum OrganizationActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("organization_actor_type")
+  @@schema("organization")
+}

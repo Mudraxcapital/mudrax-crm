@@ -77,6 +77,14 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     minRole: "Caller",
   },
   {
+    code: "organization.manage",
+    module: "organization",
+    description:
+      "Create or update the Organization record itself (name, code, status, timezone) — platform/root-scope configuration, distinct from managing Regions/Branches/Departments/Teams within an existing Organization.",
+    minRole: "Admin",
+    systemOnly: true,
+  },
+  {
     code: "team.manage",
     module: "organization",
     description: "Create, update, or archive Teams.",

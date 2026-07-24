@@ -80,5 +80,34 @@ Call Later tasks, and future SLA breaches.
 - Regional calendars and local working-hour policies.
 - Multi-step escalation chains and SLA policies.
 
-This module currently contains architecture documentation only. No database
-schema, Prisma models, APIs, UI, or business logic have been created.
+## Implementation Status
+
+The **Organization** aggregate root itself is implemented end-to-end:
+
+- `domain/` — `Organization` entity, `OrganizationAuditRecord`, repository
+  interface, domain errors.
+- `application/` — `createOrganization`/`updateOrganization`/
+  `getOrganization`/`listOrganizations`/`listOrganizationAuditLog` use-cases,
+  Zod validators, DTOs.
+- `infrastructure/` — `PrismaOrganizationRepository` (writes the
+  Organization row and its Audit Record atomically in one `$transaction`).
+- `presentation/` — Server Actions + `OrganizationForm`, consumed by
+  `src/app/organizations/page.tsx` (list + create) and
+  `src/app/organizations/[id]/edit/page.tsx` (edit).
+- `src/app/api/organizations` — REST API (`GET`/`POST`/`GET :id`/`PATCH :id`).
+- RBAC: `organization.view` (read, Caller+) and `organization.manage`
+  (create/update, Admin-only, SYSTEM scope) — see
+  `prisma/seed/lib/rbac-catalog.ts`.
+- Audit logging: every create/update writes an append-only, hash-chained
+  `organization.organization_audit_log` row (migrations `...add_organization_audit_log`
+  and `..._organization_audit_log_protections`), the same canonical shape
+  platform-contracts.md §4 already uses for `documents.AuditTrail` /
+  `notifications.CommunicationLog` / `ai_core.AiAuditLog`.
+- Tests: `src/modules/organization/__tests__` (unit tests against a fake
+  repository, plus one integration test against the real database).
+
+Team, Branch, Region, Department, Holiday Calendar, Working Hours, and
+Escalation Rule remain architecture documentation only — their Prisma
+models exist, but no repository, use-case, API, or UI has been built for
+them. This was an explicit scope boundary: only the Organization aggregate
+itself was implemented in this pass.

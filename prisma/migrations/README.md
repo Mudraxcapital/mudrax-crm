@@ -50,6 +50,30 @@ for how the same phases apply differently once real data exists.
 | 10 | `20260724000900_manual_deferred_constraints` | MIGRATE (4) | 1 | `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` for the two documented cross-row, end-of-transaction invariants (disbursements tranche/account linkage; AI experiment variant allocation sum). |
 | 11 | `20260724001000_manual_trigger_validation` | MIGRATE (4) | 1 | The one documented plain (non-deferred) `BEFORE` trigger: a Lead may not enter a Closed-Lost stage without a Lost Reason. |
 | 12 | `20260724001200_manual_generated_columns_audit` | — (no DDL) | — | Documents the audit of every model/doc file for a "generated column" requirement (none found) and why the one plausible candidate was rejected. Kept in sequence so the ten requested categories are all traceable to a migration, not silently dropped. |
+| 13 | `20260724184312_add_organization_audit_log` | EXPAND | 1 | Prisma-generated (hand-trimmed): adds `organization.organization_audit_log` + `organization_actor_type` enum for the Organization aggregate's Audit Log (platform-contracts.md §4's canonical shape). The raw generator output also included drift-"correction" DDL for four unrelated already-partitioned tables (see the migration's own header comment); that part was removed before applying. |
+| 14 | `20260724184500_manual_organization_audit_log_protections` | EXPAND/CONTRACT | 13 | Hash-chain `BEFORE INSERT` trigger + `REVOKE UPDATE, DELETE` for `organization.organization_audit_log`, mirroring migrations 0005/0006's treatment of the other three Audit Record tables. |
+
+### A note on migrations 13–14 and future schema changes to this project
+
+Migrations 3–10 manually diverge the *physical* shape of four tables
+(`documents.audit_trail`, `notifications.communication_log`,
+`ai_core.ai_audit_log`, `reports.analytics_snapshots`) and several
+cross-schema foreign keys away from what the Prisma model layer alone would
+generate (composite partition-key primary keys; FKs Prisma cannot express
+across `@@schema`s). Because of this, **`prisma migrate dev` run without
+`--create-only`, or any invocation that lets Prisma's diff engine write SQL,
+will regenerate DDL that tries to "correct" those four tables' primary keys
+back to a single column** — which fails outright against a `PARTITION BY`
+table (Postgres requires the full partition key in every unique
+constraint) — and will also try to drop the manually-added cross-schema
+FKs. This is expected, not a bug: it is the permanent cost of intentionally
+diverging physical schema from the declared Prisma model for those specific
+tables. **Every future migration must be created with `--create-only`,
+reviewed, and hand-trimmed to keep only the intended change** (exactly as
+migration 13 was), or written by hand entirely and applied via
+`prisma db execute` + `prisma migrate resolve --applied <name>` (as
+migration 14 was) — never applied via a plain, un-reviewed `prisma migrate
+dev`.
 
 Migrations 7–11 (CHECK constraints, partial unique indexes, exclusion
 constraints, deferred constraints, trigger validation) have no dependencies

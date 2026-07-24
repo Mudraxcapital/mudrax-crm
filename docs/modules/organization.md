@@ -36,5 +36,14 @@ hours, and escalation policies without duplicating User identity or RBAC.
 
 ## Implementation Status
 
-Architecture documentation only. No schema, Prisma models, APIs, UI, or
-business logic exist.
+The **Organization** aggregate (the root entity itself — name, code, status,
+timezone) is implemented: repository, application use-cases (create/update/
+read/list), validation, DTOs, a dedicated `organization.manage` Permission,
+`/organizations` + `/organizations/[id]/edit` pages, a REST API
+(`/api/organizations`), and an append-only, hash-chained Audit Log
+(`organization.organization_audit_log`) recording every create/update.
+
+Team, Branch, Region, Department, Holiday Calendar, Working Hours, and
+Escalation Rule remain architecture documentation only — no repository, API,
+UI, or business logic exists for them yet. Their Prisma models exist (from
+the earlier schema-only pass) but are not wired to any application code.
