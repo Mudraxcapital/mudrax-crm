@@ -527,7 +527,7 @@ model QueueMembership {
   //     ADD CONSTRAINT queue_memberships_no_overlap
   //     EXCLUDE USING gist (
   //       call_queue_id WITH =, user_id WITH =,
-  //       tstzrange(effective_from, COALESCE(effective_to, 'infinity')) WITH &&
+  //       tsrange(effective_from, COALESCE(effective_to, 'infinity')) WITH &&
   //     );
   @@index([callQueueId])
   @@index([userId])
