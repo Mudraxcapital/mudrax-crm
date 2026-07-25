@@ -16,7 +16,10 @@ import {
   InvalidCustomerReferenceError,
   InvalidLeadSourceReferenceError,
   InvalidLeadStageReferenceError,
+  LeadFieldValidationError,
+  listActiveLeadFields,
 } from "@/modules/leads";
+import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
 
 export interface LeadFormState {
   error?: string;
@@ -33,13 +36,21 @@ export async function createLeadAction(
 ): Promise<LeadFormState> {
   const { session, authContext } = await requirePermission("lead.create");
 
+  const fieldValues = extractFieldValuesFromFormData(formData);
+  const activeFields = await listActiveLeadFields(authContext.organizationId);
+  for (const field of activeFields) {
+    if (
+      (field.fieldType === "BOOLEAN" || field.fieldType === "CHECKBOX") &&
+      fieldValues[field.internalKey] === undefined
+    ) {
+      fieldValues[field.internalKey] = "false";
+    }
+  }
   const parsed = createLeadSchema.safeParse({
     customerId: formData.get("customerId"),
     leadSourceId: formData.get("leadSourceId"),
     currentAssigneeUserId: formData.get("currentAssigneeUserId") || undefined,
-    fullNameSnapshot: formData.get("fullNameSnapshot"),
-    phoneSnapshot: formData.get("phoneSnapshot") || undefined,
-    emailSnapshot: formData.get("emailSnapshot") || undefined,
+    fieldValues,
   });
 
   if (!parsed.success) {
@@ -59,7 +70,8 @@ export async function createLeadAction(
       error instanceof InvalidCustomerReferenceError ||
       error instanceof InvalidLeadSourceReferenceError ||
       error instanceof InvalidLeadStageReferenceError ||
-      error instanceof InvalidAssigneeReferenceError
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof LeadFieldValidationError
     ) {
       return { error: error.message };
     }

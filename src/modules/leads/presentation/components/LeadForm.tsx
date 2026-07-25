@@ -3,14 +3,14 @@
 // ============================================================================
 // src/modules/leads/presentation/components/LeadForm.tsx
 //
-// Create form for the Lead aggregate. `customers`, `sources`, and `assignees`
-// are fetched by the page (this module has no authority to list Customers or
-// Users itself) and rendered as selects.
+// Create form for the Lead aggregate. Field inputs are driven by Field Settings.
 // ============================================================================
 
 import { useActionState } from "react";
 import type { LeadSource } from "../../domain/entities/LeadCatalogs";
+import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
 import type { LeadFormState } from "../controllers/createLead.action";
+import { DynamicLeadFields } from "./DynamicLeadFields";
 
 const initialState: LeadFormState = {};
 
@@ -26,11 +26,13 @@ export function LeadForm({
   customers,
   sources,
   assignees,
+  fields,
 }: {
   action: CreateLeadFormAction;
   customers: { id: string; fullName: string }[];
   sources: LeadSource[];
   assignees: { id: string; fullName: string }[];
+  fields: LeadFieldDefinitionDto[];
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
 
@@ -50,47 +52,7 @@ export function LeadForm({
         </select>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="fullNameSnapshot" className="mx-label">
-          Lead name
-        </label>
-        <input
-          id="fullNameSnapshot"
-          name="fullNameSnapshot"
-          type="text"
-          required
-          maxLength={200}
-          placeholder="Rahul Sharma"
-          className={inputClass}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="phoneSnapshot" className="mx-label">
-            Phone
-          </label>
-          <input
-            id="phoneSnapshot"
-            name="phoneSnapshot"
-            type="tel"
-            placeholder="+919876543210"
-            className={inputClass}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="emailSnapshot" className="mx-label">
-            Email
-          </label>
-          <input
-            id="emailSnapshot"
-            name="emailSnapshot"
-            type="email"
-            placeholder="rahul.sharma@example.com"
-            className={inputClass}
-          />
-        </div>
-      </div>
+      <DynamicLeadFields fields={fields} />
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="leadSourceId" className="mx-label">
@@ -126,11 +88,7 @@ export function LeadForm({
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="mx-btn mx-btn-primary mt-1"
-      >
+      <button type="submit" disabled={isPending} className="mx-btn mx-btn-primary mt-1">
         {isPending ? "Saving…" : "Create Lead"}
       </button>
     </form>

@@ -55,6 +55,21 @@ describe("assignCampaignLeadsSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts ROUND_ROBIN and RANDOM strategies", () => {
+    expect(
+      assignCampaignLeadsSchema.safeParse({
+        leadIds: [VALID_UUID],
+        allocationMethod: "ROUND_ROBIN",
+      }).success,
+    ).toBe(true);
+    expect(
+      assignCampaignLeadsSchema.safeParse({
+        leadIds: [VALID_UUID],
+        allocationMethod: "RANDOM",
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires at least one Lead", () => {
     expect(
       assignCampaignLeadsSchema.safeParse({ leadIds: [], allocationMethod: "EQUAL" }).success,
@@ -76,5 +91,21 @@ describe("assignCampaignLeadsSchema", () => {
       percentages: { [VALID_UUID]: 60, [VALID_UUID_2]: 40 },
     });
     expect(result.success).toBe(true);
+  });
+
+  it("requires an assignee for MANUAL allocation", () => {
+    expect(
+      assignCampaignLeadsSchema.safeParse({
+        leadIds: [VALID_UUID],
+        allocationMethod: "MANUAL",
+      }).success,
+    ).toBe(false);
+    expect(
+      assignCampaignLeadsSchema.safeParse({
+        leadIds: [VALID_UUID],
+        allocationMethod: "MANUAL",
+        manualAssigneeUserId: VALID_UUID,
+      }).success,
+    ).toBe(true);
   });
 });

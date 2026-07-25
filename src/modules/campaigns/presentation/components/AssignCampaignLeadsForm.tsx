@@ -3,12 +3,12 @@
 // ============================================================================
 // src/modules/campaigns/presentation/components/AssignCampaignLeadsForm.tsx
 //
-// Triggers a Campaign Assignment allocation run: pick unassigned Leads and
-// an allocation method (EQUAL splits by member weight; PERCENTAGE lets the
-// operator set each active member's share explicitly).
+// Triggers a Campaign Assignment allocation run with Equal, Round Robin,
+// Random, Percentage, or Manual strategies. Supports redistribution of
+// already-assigned Leads.
 // ============================================================================
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import type { CampaignFormState } from "../controllers/createCampaign.action";
 import type { AllocationMethod } from "../../domain/entities/CampaignAssignment";
 
@@ -19,23 +19,62 @@ type AssignLeadsFormAction = (
   formData: FormData,
 ) => Promise<CampaignFormState>;
 
-const inputClass = "mx-input";
+const METHODS: Array<{ value: AllocationMethod; label: string; help: string }> = [
+  {
+    value: "ROUND_ROBIN",
+    label: "Round Robin",
+    help: "Lead1 → Agent A, Lead2 → Agent B, Lead3 → Agent C, then repeat.",
+  },
+  {
+    value: "EQUAL",
+    label: "Equal Distribution",
+    help: "Split leads as evenly as possible (respects member weights).",
+  },
+  {
+    value: "RANDOM",
+    label: "Random Distribution",
+    help: "Random order, then balanced round-robin so counts stay even.",
+  },
+  {
+    value: "PERCENTAGE",
+    label: "Percentage",
+    help: "Set an explicit percentage share per agent (must sum to 100).",
+  },
+  {
+    value: "MANUAL",
+    label: "Manual Assignment",
+    help: "Assign all selected leads to one agent.",
+  },
+];
 
 export function AssignCampaignLeadsForm({
   action,
   leads,
   members,
+  allowRedistribution = true,
 }: {
   action: AssignLeadsFormAction;
-  leads: { id: string; fullNameSnapshot: string; currentStageName: string }[];
+  leads: {
+    id: string;
+    fullNameSnapshot: string;
+    currentStageName: string;
+    assigned: boolean;
+  }[];
   members: { userId: string; fullName: string }[];
+  allowRedistribution?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
-  const [allocationMethod, setAllocationMethod] = useState<AllocationMethod>("EQUAL");
+  const [allocationMethod, setAllocationMethod] = useState<AllocationMethod>("ROUND_ROBIN");
+  const [includeAssigned, setIncludeAssigned] = useState(false);
+
+  const visibleLeads = useMemo(
+    () => (includeAssigned || !allowRedistribution ? leads : leads.filter((lead) => !lead.assigned)),
+    [allowRedistribution, includeAssigned, leads],
+  );
 
   if (leads.length === 0) {
     return (
-      <p className="text-muted text-sm">No unassigned Leads are available to allocate.</p>
+      <p className="text-muted text-sm">No Leads are available on this Campaign to allocate.</p>
     );
   }
 
@@ -47,50 +86,67 @@ export function AssignCampaignLeadsForm({
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
+      {allowRedistribution ? (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includeAssigned}
+            onChange={(event) => setIncludeAssigned(event.target.checked)}
+          />
+          Include already-assigned Leads (redistribute)
+        </label>
+      ) : null}
+
       <div className="flex flex-col gap-1.5">
         <span className="mx-label">Leads to assign</span>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-3">
-          {leads.map((lead) => (
-            <label key={lead.id} className="flex items-center gap-2 py-1 text-sm">
-              <input type="checkbox" name="leadIds" value={lead.id} />
-              {lead.fullNameSnapshot}{" "}
-              <span className="text-muted">({lead.currentStageName})</span>
+        {visibleLeads.length === 0 ? (
+          <p className="text-muted text-sm">
+            No unassigned Leads. Enable redistribution to reassign existing ones.
+          </p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-3">
+            {visibleLeads.map((lead) => (
+              <label key={lead.id} className="flex items-center gap-2 py-1 text-sm">
+                <input type="checkbox" name="leadIds" value={lead.id} defaultChecked={!lead.assigned} />
+                {lead.fullNameSnapshot}{" "}
+                <span className="text-muted">
+                  ({lead.currentStageName}
+                  {lead.assigned ? " · assigned" : ""})
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="mx-label">Distribution strategy</span>
+        <div className="flex flex-col gap-2 text-sm">
+          {METHODS.map((method) => (
+            <label
+              key={method.value}
+              className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3"
+            >
+              <input
+                type="radio"
+                name="allocationMethod"
+                value={method.value}
+                checked={allocationMethod === method.value}
+                onChange={() => setAllocationMethod(method.value)}
+                className="mt-1"
+              />
+              <span>
+                <span className="font-medium">{method.label}</span>
+                <span className="text-muted mt-0.5 block text-xs">{method.help}</span>
+              </span>
             </label>
           ))}
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="mx-label">Allocation method</span>
-        <div className="flex gap-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="allocationMethod"
-              value="EQUAL"
-              checked={allocationMethod === "EQUAL"}
-              onChange={() => setAllocationMethod("EQUAL")}
-            />
-            Equal (by member weight)
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="allocationMethod"
-              value="PERCENTAGE"
-              checked={allocationMethod === "PERCENTAGE"}
-              onChange={() => setAllocationMethod("PERCENTAGE")}
-            />
-            Percentage
-          </label>
-        </div>
-      </div>
-
       {allocationMethod === "PERCENTAGE" ? (
         <div className="flex flex-col gap-2">
-          <span className="mx-label">
-            Percentages (must sum to 100)
-          </span>
+          <span className="mx-label">Percentages (must sum to 100)</span>
           {members.map((member) => (
             <div key={member.userId} className="flex items-center gap-3">
               <span className="w-40 text-sm">{member.fullName}</span>
@@ -100,12 +156,26 @@ export function AssignCampaignLeadsForm({
                 min={0}
                 max={100}
                 step={1}
-                className={`${inputClass} w-24`}
+                className="mx-input w-24"
               />
               <span className="text-muted text-sm">%</span>
             </div>
           ))}
         </div>
+      ) : null}
+
+      {allocationMethod === "MANUAL" ? (
+        <label className="text-sm">
+          Assign selected Leads to
+          <select name="manualAssigneeUserId" required className="mx-input mt-1 w-full">
+            <option value="">Select agent…</option>
+            {members.map((member) => (
+              <option key={member.userId} value={member.userId}>
+                {member.fullName}
+              </option>
+            ))}
+          </select>
+        </label>
       ) : null}
 
       {state.error ? (
@@ -116,10 +186,10 @@ export function AssignCampaignLeadsForm({
 
       <button
         type="submit"
-        disabled={isPending}
-        className="bg-foreground text-background self-start rounded-lg px-4 py-2 text-sm font-medium transition-opacity disabled:opacity-60"
+        disabled={isPending || visibleLeads.length === 0}
+        className="mx-btn mx-btn-primary self-start"
       >
-        {isPending ? "Assigning…" : "Run Assignment"}
+        {isPending ? "Assigning…" : includeAssigned ? "Redistribute Leads" : "Run Assignment"}
       </button>
     </form>
   );

@@ -40,6 +40,16 @@ export function hasRole(context: AuthorizationContext, roleName: string): boolea
   return context.roles.some((role) => role.name === roleName);
 }
 
+/** Canonical internal staff Roles (ADR 0002). Customer / external identities must never hold these. */
+export const INTERNAL_STAFF_ROLES = ["Admin", "Manager", "Team Leader", "Caller"] as const;
+
+/** True when the User holds at least one internal CRM staff Role. */
+export function isInternalStaff(context: AuthorizationContext): boolean {
+  return context.roles.some((role) =>
+    (INTERNAL_STAFF_ROLES as readonly string[]).includes(role.name),
+  );
+}
+
 export function getPermissionScope(
   context: AuthorizationContext,
   permissionCode: string,

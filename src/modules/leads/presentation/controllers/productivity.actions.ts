@@ -17,16 +17,36 @@ import {
   deleteSavedView,
   importLeadsCsv,
   importLeadsCsvSchema,
+  previewImportDuplicates,
+  previewImportDuplicatesSchema,
+  buildDuplicateReportCsv,
   mergeLeads,
   mergeLeadsSchema,
   SavedViewNotFoundError,
   LeadMergeError,
   LeadNotFoundError,
   BulkOperationError,
+  type DuplicateDetectionSummary,
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
 
-export type ProductivityFormState = { error?: string; success?: string };
+export type ProductivityFormState = {
+  error?: string;
+  success?: string;
+  summary?: {
+    created: number;
+    duplicates: number;
+    invalid: number;
+    updated: number;
+    failed: number;
+    total: number;
+    campaignId: string | null;
+    assignedAgentIds: string[];
+    distributionStrategy: string | null;
+    auditNotes: string[];
+    sampleErrors: Array<{ rowNumber: number; message: string }>;
+  };
+};
 
 export async function createSavedViewAction(
   _prev: ProductivityFormState | undefined,
@@ -82,16 +102,201 @@ export async function importLeadsCsvAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const batch = await importLeadsCsv({
-    organizationId: authContext.organizationId,
-    input: parsed.data,
-    actor: { actorType: "USER", actorId: session.user.id },
-  });
-  revalidatePath("/leads");
-  revalidatePath("/leads/import");
-  return {
-    success: `Imported ${batch.createdRowCount} Lead(s); ${batch.duplicateRowCount} duplicate match(es).`,
+  try {
+    const batch = await importLeadsCsv({
+      organizationId: authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/import");
+    return {
+      success: `Imported ${batch.createdRowCount} Lead(s); ${batch.duplicateRowCount} duplicate match(es).`,
+      summary: {
+        created: batch.createdRowCount,
+        duplicates: batch.skippedDuplicateCount,
+        invalid: batch.skippedInvalidCount,
+        updated: batch.updatedCount,
+        failed: batch.failedCount,
+        total: batch.totalRowCount,
+        campaignId: batch.campaignId,
+        assignedAgentIds: batch.assignedAgentIds,
+        distributionStrategy: batch.distributionStrategy,
+        auditNotes: batch.auditNotes,
+        sampleErrors: batch.errors.slice(0, 8),
+      },
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Import failed." };
+  }
+}
+
+export async function importLeadsFileAction(input: {
+  leadSourceId: string;
+  campaignId?: string;
+  sourceFileName: string;
+  sheetName?: string;
+  rows: Record<string, string>[];
+  columnMapping: {
+    name: string;
+    phone?: string;
+    email?: string;
+    city?: string;
+    state?: string;
+    source?: string;
+    campaign?: string;
+    assignedAgent?: string;
+    notes?: string;
   };
+  skipDuplicates?: boolean;
+  duplicateMatchMode?: "phone" | "email" | "phone_name" | "phone_or_email";
+  duplicateResolution?: "import_all" | "skip_duplicates" | "merge" | "update_existing";
+  agentUserIds?: string[];
+  distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
+  manualAssigneeUserId?: string;
+}): Promise<ProductivityFormState> {
+  const { session, authContext } = await requirePermission("lead.import");
+  const { listCampaigns } = await import("@/modules/campaigns");
+
+  const parsed = importLeadsCsvSchema.safeParse({
+    leadSourceId: input.leadSourceId,
+    campaignId: input.campaignId,
+    sourceFileName: input.sourceFileName,
+    sheetName: input.sheetName,
+    rows: input.rows,
+    columnMapping: input.columnMapping,
+    skipDuplicates: input.skipDuplicates ?? true,
+    duplicateMatchMode: input.duplicateMatchMode,
+    duplicateResolution: input.duplicateResolution,
+    agentUserIds: input.agentUserIds,
+    distributionStrategy: input.distributionStrategy,
+    manualAssigneeUserId: input.manualAssigneeUserId,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const campaigns = await listCampaigns(authContext.organizationId);
+  const campaignNameToId: Record<string, string> = {};
+  for (const campaign of campaigns) {
+    campaignNameToId[campaign.name] = campaign.id;
+    campaignNameToId[campaign.name.toLowerCase()] = campaign.id;
+  }
+
+  try {
+    const batch = await importLeadsCsv({
+      organizationId: authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: session.user.id },
+      campaignNameToId,
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/import");
+    if (batch.campaignId) {
+      revalidatePath(`/campaigns/${batch.campaignId}`);
+    }
+    revalidatePath("/campaigns");
+    return {
+      success: `Imported ${batch.createdRowCount} Lead(s). ${batch.updatedCount} updated, ${batch.skippedDuplicateCount} duplicate(s) skipped, ${batch.failedCount} failed.`,
+      summary: {
+        created: batch.createdRowCount,
+        duplicates: batch.skippedDuplicateCount,
+        invalid: batch.skippedInvalidCount,
+        updated: batch.updatedCount,
+        failed: batch.failedCount,
+        total: batch.totalRowCount,
+        campaignId: batch.campaignId,
+        assignedAgentIds: batch.assignedAgentIds,
+        distributionStrategy: batch.distributionStrategy,
+        auditNotes: batch.auditNotes,
+        sampleErrors: batch.errors.slice(0, 8),
+      },
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Import failed." };
+  }
+}
+
+export async function previewImportDuplicatesAction(input: {
+  rows: Record<string, string>[];
+  columnMapping: {
+    name: string;
+    phone?: string;
+    email?: string;
+    city?: string;
+    state?: string;
+    source?: string;
+    campaign?: string;
+    assignedAgent?: string;
+    notes?: string;
+  };
+  matchMode: "phone" | "email" | "phone_name" | "phone_or_email";
+}): Promise<{ error?: string; summary?: DuplicateDetectionSummary; reportCsv?: string }> {
+  const { authContext } = await requirePermission("lead.import");
+  const parsed = previewImportDuplicatesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+  const summary = await previewImportDuplicates({
+    organizationId: authContext.organizationId,
+    rows: parsed.data.rows,
+    columnMapping: parsed.data.columnMapping,
+    matchMode: parsed.data.matchMode,
+  });
+  return { summary, reportCsv: buildDuplicateReportCsv(summary) };
+}
+
+export async function createCampaignForImportAction(input: {
+  name: string;
+  description?: string;
+  sourceLabel?: string;
+  priority?: string;
+  memberUserIds?: string[];
+  distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
+}): Promise<{ error?: string; campaignId?: string }> {
+  const { session, authContext } = await requirePermission("campaign.manage");
+  const { createCampaign, createCampaignSchema, addCampaignMember } = await import(
+    "@/modules/campaigns"
+  );
+
+  const descriptionParts = [
+    input.description?.trim(),
+    input.sourceLabel ? `Source: ${input.sourceLabel}` : null,
+    input.priority ? `Priority: ${input.priority}` : null,
+  ].filter(Boolean);
+
+  const parsed = createCampaignSchema.safeParse({
+    name: input.name,
+    description: descriptionParts.length > 0 ? descriptionParts.join("\n") : undefined,
+    memberUserIds: input.memberUserIds,
+    distributionStrategy: input.distributionStrategy,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid campaign." };
+  }
+
+  try {
+    const campaign = await createCampaign({
+      organizationId: authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+    for (const userId of input.memberUserIds ?? []) {
+      try {
+        await addCampaignMember({
+          campaignId: campaign.id,
+          input: { userId },
+          actor: { actorType: "USER", actorId: session.user.id },
+        });
+      } catch {
+        // Member may already exist or be invalid — continue.
+      }
+    }
+    revalidatePath("/campaigns");
+    return { campaignId: campaign.id };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to create campaign." };
+  }
 }
 
 export async function bulkAssignLeadsAction(

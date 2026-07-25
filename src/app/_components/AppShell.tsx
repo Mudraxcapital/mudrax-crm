@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/shared/ui/cn";
 import { ThemeToggle } from "@/shared/ui/ThemeProvider";
 import { LogoutButton } from "@/modules/auth/presentation/components/LogoutButton";
 import { OPEN_COMMAND_PALETTE } from "./CommandPalette";
-import { isNavActive, NAV_GROUPS } from "./nav";
+import { filterNavGroups, isNavActive, NAV_GROUPS } from "./nav";
 import { NavIconSvg } from "./NavIcons";
 
 const BARE_PREFIXES = ["/login", "/session-expired", "/unauthorized"];
@@ -16,6 +16,8 @@ export interface AppShellUser {
   fullName: string;
   email: string;
   roles: string[];
+  permissions: string[];
+  isStaff: boolean;
 }
 
 export function AppShell({
@@ -30,7 +32,8 @@ export function AppShell({
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 
-  if (bare || !user) {
+  // Customers / non-staff identities never receive the CRM shell.
+  if (bare || !user || !user.isStaff) {
     return <>{children}</>;
   }
 
@@ -52,6 +55,10 @@ function ShellFrame({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navGroups = useMemo(
+    () => filterNavGroups(NAV_GROUPS, user.permissions),
+    [user.permissions],
+  );
 
   useEffect(() => {
     setMobileOpen(false);
@@ -72,7 +79,6 @@ function ShellFrame({
 
   return (
     <div className="bg-background text-foreground flex min-h-screen">
-      {/* Mobile overlay */}
       {mobileOpen ? (
         <button
           type="button"
@@ -107,7 +113,7 @@ function ShellFrame({
         </div>
 
         <nav className="mx-scroll flex-1 space-y-5 overflow-y-auto px-2 py-4" aria-label="Main">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.id}>
               {!collapsed ? (
                 <p className="text-sidebar-muted mb-1.5 px-2 text-[10px] font-semibold tracking-[0.08em] uppercase">

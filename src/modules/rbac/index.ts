@@ -11,7 +11,13 @@ export type {
   AuthorizationContext,
   AuthorizationRole,
 } from "./domain/entities/AuthorizationContext";
-export { hasPermission, hasRole, getPermissionScope } from "./domain/entities/AuthorizationContext";
+export {
+  hasPermission,
+  hasRole,
+  getPermissionScope,
+  isInternalStaff,
+  INTERNAL_STAFF_ROLES,
+} from "./domain/entities/AuthorizationContext";
 export {
   DATA_SCOPES,
   widerScope,

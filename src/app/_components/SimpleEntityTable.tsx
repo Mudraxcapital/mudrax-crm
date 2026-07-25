@@ -49,12 +49,13 @@ const baseColumns: DataColumn<SimpleEntityRow>[] = [
 
 export function SimpleEntityTable({
   rows,
-  onOpenHref,
+  editHrefPrefix,
   searchPlaceholder,
   emptyTitle,
 }: {
   rows: SimpleEntityRow[];
-  onOpenHref?: (id: string) => string;
+  /** Serializable path prefix for row open, e.g. `/departments` → `/departments/{id}/edit`. */
+  editHrefPrefix?: string;
   searchPlaceholder?: string;
   emptyTitle?: string;
 }) {
@@ -76,7 +77,14 @@ export function SimpleEntityTable({
       rowKey={(r) => r.id}
       searchPlaceholder={searchPlaceholder}
       emptyTitle={emptyTitle}
-      onRowOpen={onOpenHref ? (row) => router.push(onOpenHref(row.id)) : undefined}
+      emptyDescription={
+        rows.length === 0 ? "Create the first record to get started." : "Try adjusting search."
+      }
+      onRowOpen={
+        editHrefPrefix
+          ? (row) => router.push(`${editHrefPrefix}/${row.id}/edit`)
+          : undefined
+      }
     />
   );
 }

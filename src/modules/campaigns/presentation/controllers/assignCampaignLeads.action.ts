@@ -44,6 +44,10 @@ export async function assignCampaignLeadsAction(
     leadIds,
     allocationMethod,
     percentages: allocationMethod === "PERCENTAGE" ? percentages : undefined,
+    manualAssigneeUserId:
+      allocationMethod === "MANUAL"
+        ? formData.get("manualAssigneeUserId") || undefined
+        : undefined,
   });
 
   if (!parsed.success) {

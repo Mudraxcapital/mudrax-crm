@@ -21,6 +21,12 @@ export const createCampaignSchema = z.object({
   description: z.string().trim().max(4000).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
+  /** Optional agents to enroll as Campaign members on create. */
+  memberUserIds: z.array(uuidSchema).max(200).optional(),
+  /** Preferred distribution strategy shown after create (assignment still runs explicitly). */
+  distributionStrategy: z
+    .enum(["EQUAL", "PERCENTAGE", "ROUND_ROBIN", "RANDOM", "MANUAL"])
+    .optional(),
 });
 
 export const updateCampaignSchema = z.object({
@@ -42,14 +48,23 @@ export const addCampaignMemberSchema = z.object({
 export const assignCampaignLeadsSchema = z
   .object({
     leadIds: z.array(uuidSchema).min(1, "Select at least one Lead to assign."),
-    allocationMethod: z.enum(["EQUAL", "PERCENTAGE"]),
+    allocationMethod: z.enum(["EQUAL", "PERCENTAGE", "ROUND_ROBIN", "RANDOM", "MANUAL"]),
     /** Required, and must sum to 100, only when allocationMethod is PERCENTAGE. */
     percentages: z.record(uuidSchema, z.coerce.number().min(0).max(100)).optional(),
+    /** Required when allocationMethod is MANUAL — all selected Leads go to this agent. */
+    manualAssigneeUserId: uuidSchema.optional(),
   })
   .refine(
     (input) =>
       input.allocationMethod !== "PERCENTAGE" || Object.keys(input.percentages ?? {}).length > 0,
     { message: "Percentages are required for PERCENTAGE allocation.", path: ["percentages"] },
+  )
+  .refine(
+    (input) => input.allocationMethod !== "MANUAL" || Boolean(input.manualAssigneeUserId),
+    {
+      message: "Select an agent for manual assignment.",
+      path: ["manualAssigneeUserId"],
+    },
   );
 
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;

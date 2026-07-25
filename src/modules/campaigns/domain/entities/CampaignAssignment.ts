@@ -7,7 +7,13 @@
 // initiate each per-Lead assignment).
 // ============================================================================
 
-export const ALLOCATION_METHODS = ["EQUAL", "PERCENTAGE"] as const;
+export const ALLOCATION_METHODS = [
+  "EQUAL",
+  "PERCENTAGE",
+  "ROUND_ROBIN",
+  "RANDOM",
+  "MANUAL",
+] as const;
 export type AllocationMethod = (typeof ALLOCATION_METHODS)[number];
 
 export const CAMPAIGN_ASSIGNMENT_STATUSES = [

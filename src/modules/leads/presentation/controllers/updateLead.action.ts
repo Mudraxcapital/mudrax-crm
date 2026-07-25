@@ -11,23 +11,34 @@ import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import {
   InvalidLeadSourceReferenceError,
+  LeadFieldValidationError,
   LeadNotFoundError,
+  listActiveLeadFields,
   updateLead,
   updateLeadSchema,
 } from "@/modules/leads";
 import type { LeadFormState } from "./createLead.action";
+import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
 
 export async function updateLeadAction(
   id: string,
   _previousState: LeadFormState | undefined,
   formData: FormData,
 ): Promise<LeadFormState> {
-  const { session } = await requirePermission("lead.update");
+  const { session, authContext } = await requirePermission("lead.update");
 
+  const fieldValues = extractFieldValuesFromFormData(formData);
+  const activeFields = await listActiveLeadFields(authContext.organizationId);
+  for (const field of activeFields) {
+    if (
+      (field.fieldType === "BOOLEAN" || field.fieldType === "CHECKBOX") &&
+      fieldValues[field.internalKey] === undefined
+    ) {
+      fieldValues[field.internalKey] = "false";
+    }
+  }
   const parsed = updateLeadSchema.safeParse({
-    fullNameSnapshot: formData.get("fullNameSnapshot") || undefined,
-    phoneSnapshot: formData.get("phoneSnapshot") || undefined,
-    emailSnapshot: formData.get("emailSnapshot") || undefined,
+    fieldValues,
   });
 
   if (!parsed.success) {
@@ -41,7 +52,11 @@ export async function updateLeadAction(
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof LeadNotFoundError || error instanceof InvalidLeadSourceReferenceError) {
+    if (
+      error instanceof LeadNotFoundError ||
+      error instanceof InvalidLeadSourceReferenceError ||
+      error instanceof LeadFieldValidationError
+    ) {
       return { error: error.message };
     }
     throw error;

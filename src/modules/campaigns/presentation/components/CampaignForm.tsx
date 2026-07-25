@@ -3,7 +3,8 @@
 // ============================================================================
 // src/modules/campaigns/presentation/components/CampaignForm.tsx
 //
-// Create form for the Campaign aggregate.
+// Create form for the Campaign aggregate — optionally select agents and a
+// preferred distribution strategy for later auto-assignment.
 // ============================================================================
 
 import { useActionState } from "react";
@@ -16,9 +17,13 @@ type CampaignFormAction = (
   formData: FormData,
 ) => Promise<CampaignFormState>;
 
-const inputClass = "mx-input";
-
-export function CampaignForm({ action }: { action: CampaignFormAction }) {
+export function CampaignForm({
+  action,
+  agents = [],
+}: {
+  action: CampaignFormAction;
+  agents?: Array<{ id: string; fullName: string }>;
+}) {
   const [state, formAction, isPending] = useActionState(action, initialState);
 
   return (
@@ -34,8 +39,28 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
           required
           minLength={2}
           maxLength={200}
-          className={inputClass}
+          className="mx-input"
         />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="source" className="mx-label">
+            Source
+          </label>
+          <input id="source" name="source" type="text" maxLength={100} className="mx-input" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="priority" className="mx-label">
+            Priority
+          </label>
+          <select id="priority" name="priority" defaultValue="MEDIUM" className="mx-input">
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="URGENT">Urgent</option>
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -47,7 +72,7 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
           name="description"
           rows={3}
           maxLength={4000}
-          className={inputClass}
+          className="mx-input"
         />
       </div>
 
@@ -56,14 +81,51 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
           <label htmlFor="startDate" className="mx-label">
             Start date (optional)
           </label>
-          <input id="startDate" name="startDate" type="date" className={inputClass} />
+          <input id="startDate" name="startDate" type="date" className="mx-input" />
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="endDate" className="mx-label">
             End date (optional)
           </label>
-          <input id="endDate" name="endDate" type="date" className={inputClass} />
+          <input id="endDate" name="endDate" type="date" className="mx-input" />
         </div>
+      </div>
+
+      {agents.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="mx-label">Agents</span>
+          <p className="text-muted text-xs">
+            Select agents to enroll as campaign members for auto-distribution.
+          </p>
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-border p-3">
+            {agents.map((agent) => (
+              <label key={agent.id} className="flex items-center gap-2 py-1 text-sm">
+                <input type="checkbox" name="memberUserIds" value={agent.id} />
+                {agent.fullName}
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="distributionStrategy" className="mx-label">
+          Distribution strategy
+        </label>
+        <select
+          id="distributionStrategy"
+          name="distributionStrategy"
+          defaultValue="ROUND_ROBIN"
+          className="mx-input"
+        >
+          <option value="ROUND_ROBIN">Round Robin</option>
+          <option value="EQUAL">Equal Distribution</option>
+          <option value="RANDOM">Random Distribution</option>
+          <option value="MANUAL">Manual Assignment</option>
+        </select>
+        <p className="text-muted text-xs">
+          Preferred strategy when you run assignment on the campaign detail page.
+        </p>
       </div>
 
       {state.error ? (
@@ -72,11 +134,7 @@ export function CampaignForm({ action }: { action: CampaignFormAction }) {
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={isPending}
-        className="bg-foreground text-background self-start rounded-lg px-4 py-2 text-sm font-medium transition-opacity disabled:opacity-60"
-      >
+      <button type="submit" disabled={isPending} className="mx-btn mx-btn-primary self-start">
         {isPending ? "Creating…" : "Create Campaign"}
       </button>
     </form>

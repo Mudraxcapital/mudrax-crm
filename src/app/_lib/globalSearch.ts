@@ -7,7 +7,7 @@
 
 import { rankByFuzzy } from "@/shared/search/fuzzy";
 import { listCustomers } from "@/modules/customers";
-import { listLeads } from "@/modules/leads";
+import { listActiveLeadFields, listLeads } from "@/modules/leads";
 import { listCampaigns } from "@/modules/campaigns";
 import { listDocuments } from "@/modules/documents";
 import { listLoanApplications } from "@/modules/loan-applications";
@@ -54,11 +54,24 @@ export async function globalSearch(
     limit = 25,
   } = options;
 
+  const searchableCustomKeys = includeLeads
+    ? (await listActiveLeadFields(organizationId))
+        .filter((field) => field.isSearchable)
+        .map((field) => field.internalKey)
+        .filter((key) => key !== "full_name" && key !== "phone" && key !== "email")
+    : [];
+
   const [customers, leads, campaigns, documents, loanApps] = await Promise.all([
     includeCustomers
       ? listCustomers(organizationId, { search: q, limit: 50 })
       : Promise.resolve([]),
-    includeLeads ? listLeads(organizationId, { search: q, limit: 50 }) : Promise.resolve([]),
+    includeLeads
+      ? listLeads(organizationId, {
+          search: q,
+          limit: 50,
+          searchableCustomKeys,
+        })
+      : Promise.resolve([]),
     includeCampaigns ? listCampaigns(organizationId) : Promise.resolve([]),
     includeDocuments ? listDocuments(organizationId, { limit: 50 }) : Promise.resolve([]),
     includeLoanApplications

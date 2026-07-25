@@ -83,6 +83,9 @@ model CampaignAssignment {
 enum AllocationMethod {
   EQUAL
   PERCENTAGE
+  ROUND_ROBIN
+  RANDOM
+  MANUAL
 
   @@map("allocation_method")
   @@schema("campaigns")

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { getPermissionScope, hasPermission } from "@/modules/rbac";
 import { listCustomers } from "@/modules/customers";
-import { leadCatalogs, listLeads, listSavedViews } from "@/modules/leads";
+import { leadCatalogs, listActiveLeadFields, listLeads, listSavedViews } from "@/modules/leads";
 import { listUserSummaries } from "@/modules/users";
 import { LeadForm } from "@/modules/leads/presentation/components/LeadForm";
 import { createLeadAction } from "@/modules/leads/presentation/controllers/createLead.action";
@@ -36,6 +36,20 @@ export default async function LeadsPage({
   const assignedToUserId =
     typeof params.assignedToUserId === "string" ? params.assignedToUserId : undefined;
 
+  const activeFields = await listActiveLeadFields(authContext.organizationId);
+  const searchableKeys = activeFields
+    .filter((field) => field.isSearchable)
+    .map((field) => field.internalKey)
+    .filter((key) => key !== "full_name" && key !== "phone" && key !== "email");
+
+  const fieldFilters: Record<string, string> = {};
+  for (const field of activeFields.filter((item) => item.isFilterable)) {
+    const raw = params[`ff_${field.internalKey}`];
+    if (typeof raw === "string" && raw.trim()) {
+      fieldFilters[field.internalKey] = raw.trim();
+    }
+  }
+
   const scope = getPermissionScope(authContext, "lead.view");
   const filter = {
     search,
@@ -47,6 +61,8 @@ export default async function LeadsPage({
         : assignedToUserId
           ? [assignedToUserId]
           : undefined,
+    fieldFilters: Object.keys(fieldFilters).length > 0 ? fieldFilters : undefined,
+    searchableCustomKeys: searchableKeys,
   };
 
   const [leads, customers, sources, stages, lostReasons, assignees, savedViews] =
@@ -100,6 +116,7 @@ export default async function LeadsPage({
                   }))}
                   sources={sources}
                   assignees={assignees.map((user) => ({ id: user.id, fullName: user.fullName }))}
+                  fields={activeFields}
                 />
               </CreatePanel>
             ) : null}
@@ -120,14 +137,29 @@ export default async function LeadsPage({
         stages={stages}
         sources={sources}
         savedViews={savedViews}
-        current={{ search, currentStageId, leadSourceId, assignedToUserId }}
+        filterableFields={activeFields.filter((field) => field.isFilterable)}
+        current={{
+          search,
+          currentStageId,
+          leadSourceId,
+          assignedToUserId,
+          fieldFilters,
+        }}
       />
 
       <LeadsTable
         rows={leads.map((lead) => ({
           id: lead.id,
           fullNameSnapshot: lead.fullNameSnapshot,
+          phoneSnapshot: lead.phoneSnapshot,
           currentStageName: lead.currentStageName,
+          assignedAgent: lead.currentAssigneeUserId
+            ? (assignees.find((user) => user.id === lead.currentAssigneeUserId)?.fullName ??
+              lead.currentAssigneeUserId)
+            : "Unassigned",
+          lastCallAt: null,
+          nextActionAt: lead.nextActionAt,
+          priority: "—",
           leadSourceName: lead.leadSourceName,
         }))}
       />

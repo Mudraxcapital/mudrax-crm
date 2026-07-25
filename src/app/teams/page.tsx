@@ -47,7 +47,7 @@ export default async function TeamsPage() {
       <SimpleEntityTable
         searchPlaceholder="Search teams…"
         emptyTitle="No teams yet"
-        onOpenHref={canManage ? (id) => `/teams/${id}/edit` : undefined}
+        editHrefPrefix={canManage ? "/teams" : undefined}
         rows={teams.map((team) => ({
           id: team.id,
           name: team.name,

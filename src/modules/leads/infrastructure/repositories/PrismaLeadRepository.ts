@@ -108,13 +108,70 @@ export class PrismaLeadRepository implements LeadRepository {
     if (filter?.leadSourceId) where.leadSourceId = filter.leadSourceId;
     if (filter?.campaignId) where.campaignId = filter.campaignId;
     if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
+
+    const and: Prisma.LeadWhereInput[] = [];
+
     if (filter?.search) {
       const q = filter.search.trim();
-      where.OR = [
+      const searchOr: Prisma.LeadWhereInput[] = [
         { fullNameSnapshot: { contains: q, mode: "insensitive" } },
         { phoneSnapshot: { contains: q, mode: "insensitive" } },
         { emailSnapshot: { contains: q, mode: "insensitive" } },
       ];
+      if (filter.searchableCustomKeys && filter.searchableCustomKeys.length > 0) {
+        searchOr.push({
+          customFieldValues: {
+            some: {
+              customFieldDefinition: {
+                organizationId,
+                internalKey: { in: filter.searchableCustomKeys },
+                isSearchable: true,
+                status: "ACTIVE",
+              },
+              OR: [
+                { valueText: { contains: q, mode: "insensitive" } },
+                { valueSelectOption: { contains: q, mode: "insensitive" } },
+              ],
+            },
+          },
+        });
+      }
+      and.push({ OR: searchOr });
+    }
+
+    if (filter?.fieldFilters) {
+      for (const [key, raw] of Object.entries(filter.fieldFilters)) {
+        const value = raw.trim();
+        if (!value) continue;
+        if (key === "full_name") {
+          and.push({ fullNameSnapshot: { contains: value, mode: "insensitive" } });
+        } else if (key === "phone") {
+          and.push({ phoneSnapshot: { contains: value, mode: "insensitive" } });
+        } else if (key === "email") {
+          and.push({ emailSnapshot: { contains: value, mode: "insensitive" } });
+        } else {
+          and.push({
+            customFieldValues: {
+              some: {
+                customFieldDefinition: {
+                  organizationId,
+                  internalKey: key,
+                  isFilterable: true,
+                  status: "ACTIVE",
+                },
+                OR: [
+                  { valueText: { contains: value, mode: "insensitive" } },
+                  { valueSelectOption: { contains: value, mode: "insensitive" } },
+                ],
+              },
+            },
+          });
+        }
+      }
+    }
+
+    if (and.length > 0) {
+      where.AND = and;
     }
     return where;
   }

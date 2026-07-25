@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { getCurrentUser } from "@/infra/auth/session";
+import { isInternalStaff } from "@/modules/rbac";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
 import { ToastProvider } from "@/shared/ui/Toast";
 import { AppShell } from "./_components/AppShell";
@@ -31,11 +32,15 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const current = await getCurrentUser();
+  const staff = current ? isInternalStaff(current.authContext) : false;
+  const permissions = current ? Object.keys(current.authContext.permissions) : [];
   const user = current
     ? {
         fullName: current.session.user.fullName,
         email: current.session.user.email ?? "",
         roles: current.authContext.roles.map((role) => role.name),
+        permissions,
+        isStaff: staff,
       }
     : null;
 
@@ -52,7 +57,7 @@ export default async function RootLayout({
         <ThemeProvider>
           <ToastProvider>
             <AppShell user={user}>{children}</AppShell>
-            <CommandPalette />
+            <CommandPalette enabled={staff} permissions={permissions} />
           </ToastProvider>
         </ThemeProvider>
       </body>

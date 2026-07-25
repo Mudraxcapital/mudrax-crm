@@ -17,18 +17,24 @@ const uuidSchema = z
     "Must be a valid id.",
   );
 
+/** Dynamic lead field payload keyed by internalKey (system + custom). */
+export const leadFieldValuesSchema = z.record(z.string(), z.union([z.string(), z.array(z.string()), z.boolean(), z.null()]).optional());
+
 export const createLeadSchema = z.object({
   customerId: uuidSchema,
   leadSourceId: uuidSchema,
   currentStageId: uuidSchema.optional(),
   currentAssigneeUserId: uuidSchema.optional(),
+  /** @deprecated Prefer fieldValues.full_name — kept for backward-compatible callers. */
   fullNameSnapshot: z
     .string()
     .trim()
     .min(2, "Name must be at least 2 characters.")
-    .max(200, "Name must be at most 200 characters."),
+    .max(200, "Name must be at most 200 characters.")
+    .optional(),
   phoneSnapshot: z.string().trim().max(20).optional(),
   emailSnapshot: z.email("Enter a valid email address.").max(320).optional(),
+  fieldValues: leadFieldValuesSchema.optional(),
 });
 
 export const updateLeadSchema = z.object({
@@ -41,6 +47,7 @@ export const updateLeadSchema = z.object({
     .optional(),
   phoneSnapshot: z.string().trim().max(20).nullable().optional(),
   emailSnapshot: z.email("Enter a valid email address.").max(320).nullable().optional(),
+  fieldValues: leadFieldValuesSchema.optional(),
 });
 
 export const changeLeadStageSchema = z.object({

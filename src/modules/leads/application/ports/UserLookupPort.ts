@@ -10,8 +10,12 @@ export interface UserLookupSummary {
   id: string;
   organizationId: string;
   status: "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
+  fullName?: string;
+  email?: string;
 }
 
 export interface UserLookupPort {
   findById(userId: string): Promise<UserLookupSummary | null>;
+  /** Optional directory lookup for CSV/Excel import agent resolution. */
+  listByOrganization?(organizationId: string): Promise<UserLookupSummary[]>;
 }

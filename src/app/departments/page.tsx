@@ -42,7 +42,7 @@ export default async function DepartmentsPage() {
       <SimpleEntityTable
         searchPlaceholder="Search departments…"
         emptyTitle="No departments yet"
-        onOpenHref={canManage ? (id) => `/departments/${id}/edit` : undefined}
+        editHrefPrefix={canManage ? "/departments" : undefined}
         rows={departments.map((department) => ({
           id: department.id,
           name: department.name,

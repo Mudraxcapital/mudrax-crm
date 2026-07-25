@@ -4,10 +4,15 @@
 
 import type { LeadRepository } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
+import type { LeadFieldDefinitionRepository } from "../../domain/repositories/LeadFieldDefinitionRepository";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
 import { InvalidLeadSourceReferenceError, LeadNotFoundError } from "../../domain/errors/LeadErrors";
+import { LeadFieldValidationError } from "../../domain/errors/LeadFieldErrors";
 import type { UpdateLeadInput } from "../validators/leadSchemas";
+import { validateLeadFieldValues } from "../validators/leadFieldSchemas";
+import { partitionSystemAndCustom } from "../services/leadFieldValues";
 import { toLeadDto, type LeadDto } from "../dto/LeadDto";
+import { toLeadFieldValueDto } from "../dto/LeadFieldDefinitionDto";
 import { loadCatalogLookups } from "./catalogLookups";
 
 export interface UpdateLeadCommand {
@@ -17,9 +22,24 @@ export interface UpdateLeadCommand {
   correlationId?: string | null;
 }
 
+function mergeFieldValues(input: UpdateLeadInput): Record<string, unknown> {
+  const values: Record<string, unknown> = { ...(input.fieldValues ?? {}) };
+  if (input.fullNameSnapshot != null && values.full_name == null) {
+    values.full_name = input.fullNameSnapshot;
+  }
+  if (input.phoneSnapshot !== undefined && values.phone == null) {
+    values.phone = input.phoneSnapshot;
+  }
+  if (input.emailSnapshot !== undefined && values.email == null) {
+    values.email = input.emailSnapshot;
+  }
+  return values;
+}
+
 export function makeUpdateLead(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  fieldRepository: LeadFieldDefinitionRepository,
 ) {
   return async function updateLead(command: UpdateLeadCommand): Promise<LeadDto> {
     const { id, input, actor, correlationId } = command;
@@ -36,19 +56,53 @@ export function makeUpdateLead(
       }
     }
 
+    const fields = await fieldRepository.listActive(existing.organizationId);
+    const formFields = fields.filter(
+      (field) => field.isVisible && field.fieldGroup !== "HIDDEN",
+    );
+    const merged = mergeFieldValues(input);
+    const keys = Object.keys(merged);
+    const validated =
+      keys.length > 0
+        ? validateLeadFieldValues(formFields, merged, { onlyKeys: keys })
+        : { ok: true as const, values: {} as Record<string, string | null> };
+
+    if (!validated.ok) {
+      throw new LeadFieldValidationError(validated.error);
+    }
+
+    const { systemUpdates, customValues } = partitionSystemAndCustom(fields, validated.values);
+
     const updated = await repository.updateWithAudit(
       id,
       {
         leadSourceId: input.leadSourceId,
-        fullNameSnapshot: input.fullNameSnapshot,
-        phoneSnapshot: input.phoneSnapshot,
-        emailSnapshot: input.emailSnapshot,
+        fullNameSnapshot:
+          systemUpdates.fullNameSnapshot ?? input.fullNameSnapshot ?? undefined,
+        phoneSnapshot:
+          systemUpdates.phoneSnapshot !== undefined
+            ? systemUpdates.phoneSnapshot
+            : input.phoneSnapshot,
+        emailSnapshot:
+          systemUpdates.emailSnapshot !== undefined
+            ? systemUpdates.emailSnapshot
+            : input.emailSnapshot,
       },
       actor,
       correlationId,
     );
 
-    const catalogs = await loadCatalogLookups(catalogRepository, updated.organizationId);
-    return toLeadDto(updated, catalogs);
+    if (customValues.length > 0) {
+      await fieldRepository.upsertValuesForLead(updated.id, customValues);
+    }
+
+    const [catalogs, fieldValues] = await Promise.all([
+      loadCatalogLookups(catalogRepository, updated.organizationId),
+      fieldRepository.listValuesForLead(updated.id),
+    ]);
+    return {
+      ...toLeadDto(updated, catalogs),
+      fieldValues: fieldValues.map(toLeadFieldValueDto),
+    };
   };
 }

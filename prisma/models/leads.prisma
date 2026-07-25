@@ -288,33 +288,85 @@ model LeadTag {
   @@schema("leads")
 }
 
-/// Admin-configurable extension field, scoped to Lead only. Must declare a
-/// bounded data type — no schema-less/free-form fields.
+/// Master lead field registry (system + custom). Bounded field types only —
+/// no schema-less free-form fields (leads.md). System rows map to Lead
+/// columns via `systemColumn`; custom rows store values in LeadCustomFieldValue.
 model CustomFieldDefinition {
-  id             String          @id @default(uuid()) @db.Uuid
-  organizationId String          @db.Uuid
-  name           String          @db.VarChar(100)
-  dataType       CustomFieldType
-  /// Populated only when `dataType = SINGLE_SELECT`.
-  selectOptions  Json?           @db.JsonB
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id              String              @id @default(uuid()) @db.Uuid
+  organizationId  String              @db.Uuid
+  name            String              @db.VarChar(100)
+  internalKey     String              @db.VarChar(100)
+  dataType        CustomFieldType
+  fieldGroup      LeadFieldGroup      @default(SECONDARY)
+  status          LeadFieldStatus     @default(ACTIVE)
+  isSystem        Boolean             @default(false)
+  isRequired      Boolean             @default(false)
+  isVisible       Boolean             @default(true)
+  isSearchable    Boolean             @default(false)
+  isFilterable    Boolean             @default(false)
+  isImportable    Boolean             @default(true)
+  isExportable    Boolean             @default(true)
+  defaultValue    String?             @db.Text
+  /// Validation config: min/max/minLength/maxLength/pattern/patternMessage/options.
+  validationRules Json?               @db.JsonB
+  /// Options for DROPDOWN / MULTI_SELECT / RADIO.
+  selectOptions   Json?               @db.JsonB
+  displayOrder    Int                 @default(0)
+  /// Lead column for system fields (`fullNameSnapshot`, `phoneSnapshot`, `emailSnapshot`).
+  systemColumn    String?             @db.VarChar(50)
+  createdByUserId String?             @db.Uuid
+  /// @deprecated Prefer `status`. Kept for backward-compatible reads.
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   values LeadCustomFieldValue[]
 
   @@unique([organizationId, name])
+  @@unique([organizationId, internalKey])
+  @@index([organizationId, status, displayOrder])
   @@map("custom_field_definitions")
   @@schema("leads")
 }
 
 enum CustomFieldType {
   TEXT
+  TEXTAREA
   NUMBER
+  CURRENCY
+  PHONE
+  EMAIL
+  DROPDOWN
+  MULTI_SELECT
+  RADIO
+  CHECKBOX
   DATE
+  DATE_TIME
+  BOOLEAN
+  URL
+  FILE
+  /// Legacy alias retained for existing rows; treat as DROPDOWN in application code.
   SINGLE_SELECT
 
   @@map("custom_field_type")
+  @@schema("leads")
+}
+
+enum LeadFieldGroup {
+  PRIMARY
+  SECONDARY
+  HIDDEN
+
+  @@map("lead_field_group")
+  @@schema("leads")
+}
+
+enum LeadFieldStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+
+  @@map("lead_field_status")
   @@schema("leads")
 }
 
@@ -325,7 +377,11 @@ model LeadCustomFieldValue {
   valueText               String?   @db.Text
   valueNumber             Decimal?  @db.Decimal(18, 4)
   valueDate               DateTime? @db.Date
+  valueDateTime           DateTime?
+  valueBoolean            Boolean?
   valueSelectOption       String?   @db.VarChar(150)
+  /// MULTI_SELECT / FILE metadata / other structured payloads.
+  valueJson               Json?     @db.JsonB
   updatedAt               DateTime  @updatedAt
 
   lead                  Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -333,6 +389,7 @@ model LeadCustomFieldValue {
 
   @@unique([leadId, customFieldDefinitionId])
   @@index([customFieldDefinitionId])
+  @@index([leadId])
   @@map("lead_custom_field_values")
   @@schema("leads")
 }

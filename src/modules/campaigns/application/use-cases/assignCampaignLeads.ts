@@ -11,6 +11,7 @@
 import type { CampaignRepository } from "../../domain/repositories/CampaignRepository";
 import type { CampaignAuditActor } from "../../domain/entities/CampaignAuditRecord";
 import type { CampaignMembership } from "../../domain/entities/CampaignMembership";
+import type { AllocationMethod } from "../../domain/entities/CampaignAssignment";
 import {
   CampaignNotFoundError,
   InvalidAllocationError,
@@ -35,7 +36,7 @@ interface PlannedAllocation {
   leadIds: string[];
 }
 
-/** Round-robin by descending share, so weights/percentages are respected without leaving any Lead unassigned. */
+/** Weighted equal split — cumulative-deficit round robin over member weights. */
 function planEqualAllocation(
   members: CampaignMembership[],
   leadIds: string[],
@@ -49,7 +50,6 @@ function planEqualAllocation(
   }));
 
   leadIds.forEach((leadId, index) => {
-    // Weighted round-robin: pick the member whose cumulative share is furthest behind its target.
     let bestIndex = 0;
     let bestDeficit = -Infinity;
     plans.forEach((plan, planIndex) => {
@@ -65,6 +65,42 @@ function planEqualAllocation(
   });
 
   return plans.filter((plan) => plan.allocatedCount > 0);
+}
+
+/** Strict sequential round robin: A → B → C → A … */
+function planRoundRobinAllocation(
+  members: CampaignMembership[],
+  leadIds: string[],
+): PlannedAllocation[] {
+  const plans: PlannedAllocation[] = members.map((member) => ({
+    userId: member.userId,
+    allocatedCount: 0,
+    allocatedPercentage: null,
+    leadIds: [],
+  }));
+
+  leadIds.forEach((leadId, index) => {
+    const plan = plans[index % plans.length]!;
+    plan.leadIds.push(leadId);
+    plan.allocatedCount += 1;
+  });
+
+  return plans.filter((plan) => plan.allocatedCount > 0);
+}
+
+/** Random but balanced — shuffle leads, then equal-weight round robin. */
+function planRandomAllocation(
+  members: CampaignMembership[],
+  leadIds: string[],
+): PlannedAllocation[] {
+  const shuffled = [...leadIds];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = shuffled[i]!;
+    shuffled[i] = shuffled[j]!;
+    shuffled[j] = tmp;
+  }
+  return planRoundRobinAllocation(members, shuffled);
 }
 
 function planPercentageAllocation(
@@ -104,6 +140,54 @@ function planPercentageAllocation(
   return plans.filter((plan) => plan.allocatedCount > 0);
 }
 
+function planManualAllocation(
+  members: CampaignMembership[],
+  leadIds: string[],
+  assigneeUserId: string,
+): PlannedAllocation[] {
+  if (!members.some((member) => member.userId === assigneeUserId)) {
+    throw new InvalidAllocationError(
+      `User ${assigneeUserId} is not an active member of this Campaign.`,
+    );
+  }
+  return [
+    {
+      userId: assigneeUserId,
+      allocatedCount: leadIds.length,
+      allocatedPercentage: 100,
+      leadIds: [...leadIds],
+    },
+  ];
+}
+
+function planAllocations(
+  method: AllocationMethod,
+  members: CampaignMembership[],
+  leadIds: string[],
+  percentages: Record<string, number> | undefined,
+  manualAssigneeUserId: string | undefined,
+): PlannedAllocation[] {
+  switch (method) {
+    case "EQUAL":
+      return planEqualAllocation(members, leadIds);
+    case "ROUND_ROBIN":
+      return planRoundRobinAllocation(members, leadIds);
+    case "RANDOM":
+      return planRandomAllocation(members, leadIds);
+    case "PERCENTAGE":
+      return planPercentageAllocation(members, leadIds, percentages ?? {});
+    case "MANUAL":
+      if (!manualAssigneeUserId) {
+        throw new InvalidAllocationError("Manual assignment requires an assignee.");
+      }
+      return planManualAllocation(members, leadIds, manualAssigneeUserId);
+    default: {
+      const _exhaustive: never = method;
+      return _exhaustive;
+    }
+  }
+}
+
 export function makeAssignCampaignLeads(
   repository: CampaignRepository,
   leadLookup: LeadAssignmentPort,
@@ -131,10 +215,13 @@ export function makeAssignCampaignLeads(
       }
     }
 
-    const plans =
-      input.allocationMethod === "EQUAL"
-        ? planEqualAllocation(activeMembers, input.leadIds)
-        : planPercentageAllocation(activeMembers, input.leadIds, input.percentages ?? {});
+    const plans = planAllocations(
+      input.allocationMethod,
+      activeMembers,
+      input.leadIds,
+      input.percentages,
+      input.manualAssigneeUserId,
+    );
 
     const assignment = await repository.createAssignmentWithAudit(
       {
@@ -152,16 +239,23 @@ export function makeAssignCampaignLeads(
       correlationId,
     );
 
-    let allFailed = true;
+    // Execute in original Lead order so Round Robin / Random sequences are preserved.
+    const assigneeByLeadId = new Map<string, string>();
     for (const plan of plans) {
       for (const leadId of plan.leadIds) {
-        try {
-          await leadLookup.assign(leadId, plan.userId, actor.actorId, assignment.id);
-          allFailed = false;
-        } catch {
-          // A single Lead assignment failure does not abort the batch; the overall
-          // outcome is still recorded so operators can see partial completion.
-        }
+        assigneeByLeadId.set(leadId, plan.userId);
+      }
+    }
+
+    let allFailed = true;
+    for (const leadId of input.leadIds) {
+      const assignee = assigneeByLeadId.get(leadId);
+      if (!assignee) continue;
+      try {
+        await leadLookup.assign(leadId, assignee, actor.actorId, assignment.id);
+        allFailed = false;
+      } catch {
+        // A single Lead assignment failure does not abort the batch.
       }
     }
 

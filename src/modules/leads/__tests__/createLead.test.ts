@@ -13,6 +13,7 @@ import {
   STAGE_NEW,
 } from "./fakeLeadCatalogRepository";
 import { FakeCustomerLookupPort, FakeUserLookupPort } from "./fakeLookupPorts";
+import { FakeLeadFieldDefinitionRepository } from "./fakeLeadFieldDefinitionRepository";
 
 const CUSTOMER_ID = "customer-1";
 const USER_ID = "user-1";
@@ -22,6 +23,7 @@ describe("createLead", () => {
   let catalogRepository: FakeLeadCatalogRepository;
   let customerLookup: FakeCustomerLookupPort;
   let userLookup: FakeUserLookupPort;
+  let fieldRepository: FakeLeadFieldDefinitionRepository;
   let createLead: ReturnType<typeof makeCreateLead>;
 
   beforeEach(() => {
@@ -29,13 +31,20 @@ describe("createLead", () => {
     catalogRepository = new FakeLeadCatalogRepository();
     customerLookup = new FakeCustomerLookupPort();
     userLookup = new FakeUserLookupPort();
+    fieldRepository = new FakeLeadFieldDefinitionRepository();
     customerLookup.customers.set(CUSTOMER_ID, {
       id: CUSTOMER_ID,
       organizationId: ORG_ID,
       fullName: "Rahul Sharma",
     });
     userLookup.users.set(USER_ID, { id: USER_ID, organizationId: ORG_ID, status: "ACTIVE" });
-    createLead = makeCreateLead(repository, catalogRepository, customerLookup, userLookup);
+    createLead = makeCreateLead(
+      repository,
+      catalogRepository,
+      customerLookup,
+      userLookup,
+      fieldRepository,
+    );
   });
 
   it("creates a Lead against an existing Customer, defaulting to the INITIAL Stage", async () => {

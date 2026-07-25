@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, isInternalStaff } from "@/modules/rbac";
 import { globalSearch } from "@/app/_lib/globalSearch";
 
 export async function GET(request: Request) {
   const current = await getCurrentUser();
   if (!current) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Customers / non-staff identities must not search the internal CRM.
+  if (!isInternalStaff(current.authContext)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const url = new URL(request.url);

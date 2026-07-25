@@ -1,19 +1,22 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { getPermissionScope, hasPermission } from "@/modules/rbac";
 import {
   getLead,
   LeadNotFoundError,
   leadCatalogs,
+  listActiveLeadFields,
   listLeadAssignmentHistory,
   listLeadAuditLog,
   listLeadNotes,
 } from "@/modules/leads";
+import { DynamicLeadFields } from "@/modules/leads/presentation/components/DynamicLeadFields";
 import { listUserSummaries } from "@/modules/users";
 import { LeadStageForm } from "@/modules/leads/presentation/components/LeadStageForm";
 import { LeadAssignForm } from "@/modules/leads/presentation/components/LeadAssignForm";
 import { LeadNoteForm } from "@/modules/leads/presentation/components/LeadNoteForm";
+import { LeadClickToCallPanel } from "@/modules/leads/presentation/components/LeadClickToCallPanel";
 import { changeLeadStageAction } from "@/modules/leads/presentation/controllers/changeLeadStage.action";
 import { assignLeadAction } from "@/modules/leads/presentation/controllers/assignLead.action";
 import { addLeadNoteAction } from "@/modules/leads/presentation/controllers/addLeadNote.action";
@@ -27,7 +30,7 @@ import { completeFollowUpAction } from "@/modules/follow-ups/presentation/contro
 import { reassignFollowUpAction } from "@/modules/follow-ups/presentation/controllers/reassignFollowUp.action";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { authContext } = await requirePermission("lead.view");
+  const { session, authContext } = await requirePermission("lead.view");
   const { id } = await params;
 
   let lead;
@@ -40,7 +43,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     throw error;
   }
 
-  const [stages, lostReasons, assignees, assignments, notes, auditLog, followUps] =
+  const leadScope = getPermissionScope(authContext, "lead.view");
+  if (leadScope === "SELF" && lead.currentAssigneeUserId !== session.user.id) {
+    redirect("/unauthorized");
+  }
+
+  const [stages, lostReasons, assignees, assignments, notes, auditLog, followUps, fields] =
     await Promise.all([
       leadCatalogs.listStages(authContext.organizationId),
       leadCatalogs.listLostReasons(authContext.organizationId),
@@ -49,10 +57,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       listLeadNotes(id),
       listLeadAuditLog(id),
       listFollowUpsByLead(id),
+      listActiveLeadFields(authContext.organizationId),
     ]);
+
+  const fieldValues: Record<string, string | undefined> = {
+    full_name: lead.fullNameSnapshot,
+    phone: lead.phoneSnapshot ?? undefined,
+    email: lead.emailSnapshot ?? undefined,
+  };
+  for (const value of lead.fieldValues ?? []) {
+    fieldValues[value.internalKey] = value.displayValue;
+  }
 
   const canUpdate = hasPermission(authContext, "lead.update");
   const canReassign = hasPermission(authContext, "lead.reassign");
+  const canCall = hasPermission(authContext, "call.initiate");
   const canCreateFollowUp = hasPermission(authContext, "follow_up.create");
   const canCompleteFollowUp = hasPermission(authContext, "follow_up.complete");
   const canReassignFollowUp = hasPermission(authContext, "follow_up.reassign");
@@ -84,13 +103,29 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         ) : null}
       </div>
 
+      {canCall ? (
+        <section className="mx-card p-5">
+          <h2 className="text-sm font-medium">Click to Call</h2>
+          <p className="text-muted mt-1 text-xs">
+            Place a call, then log notes, disposition/stage, and schedule a follow-up below.
+          </p>
+          <div className="mt-4">
+            <LeadClickToCallPanel
+              leadId={lead.id}
+              customerId={lead.customerId}
+              phone={lead.phoneSnapshot}
+              agentUserId={session.user.id}
+            />
+          </div>
+        </section>
+      ) : null}
+
       <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Details</h2>
+        <div className="mt-4">
+          <DynamicLeadFields fields={fields} values={fieldValues} readOnly />
+        </div>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-muted">Phone</dt>
-          <dd>{lead.phoneSnapshot ?? "—"}</dd>
-          <dt className="text-muted">Email</dt>
-          <dd>{lead.emailSnapshot ?? "—"}</dd>
           <dt className="text-muted">Current assignee</dt>
           <dd>
             {lead.currentAssigneeUserId

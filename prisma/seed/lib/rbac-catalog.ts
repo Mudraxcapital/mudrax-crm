@@ -234,8 +234,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   {
     code: "custom_field.manage",
     module: "leads",
-    description: "Define Lead custom fields.",
-    minRole: "Admin",
+    description: "Configure Lead field definitions (system + custom) in Field Settings.",
+    minRole: "Manager",
   },
 
   // follow_ups -----------------------------------------------------------------

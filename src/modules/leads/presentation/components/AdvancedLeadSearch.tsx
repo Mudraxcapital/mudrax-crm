@@ -5,7 +5,9 @@
 // ============================================================================
 
 import { useActionState } from "react";
-import type { LeadSource, LeadStage, SavedViewDto } from "@/modules/leads";
+import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
+import type { LeadSource, LeadStage } from "../../domain/entities/LeadCatalogs";
+import type { SavedViewDto } from "../../application/dto/SavedViewDto";
 import {
   createSavedViewAction,
   deleteSavedViewAction,
@@ -20,19 +22,25 @@ export function AdvancedLeadSearch({
   stages,
   sources,
   savedViews,
+  filterableFields = [],
   current,
 }: {
   stages: LeadStage[];
   sources: LeadSource[];
   savedViews: SavedViewDto[];
+  filterableFields?: LeadFieldDefinitionDto[];
   current: {
     search?: string;
     currentStageId?: string;
     leadSourceId?: string;
     assignedToUserId?: string;
+    fieldFilters?: Record<string, string>;
   };
 }) {
   const [saveState, saveAction, saving] = useActionState(createSavedViewAction, initial);
+  const dynamicFilters = filterableFields.filter(
+    (field) => !["full_name", "phone", "email"].includes(field.internalKey),
+  );
 
   return (
     <section className="mx-card sticky top-[calc(var(--topbar-height)+0.25rem)] z-[5] border-border/80 bg-surface/95 p-4 shadow-sm backdrop-blur-md">
@@ -44,7 +52,7 @@ export function AdvancedLeadSearch({
         <Input
           name="search"
           defaultValue={current.search}
-          placeholder="Name, phone, or email"
+          placeholder="Search searchable fields…"
           aria-label="Search leads"
         />
         <Select
@@ -77,6 +85,15 @@ export function AdvancedLeadSearch({
           placeholder="Assignee user id"
           aria-label="Assignee"
         />
+        {dynamicFilters.map((field) => (
+          <Input
+            key={field.id}
+            name={`ff_${field.internalKey}`}
+            defaultValue={current.fieldFilters?.[field.internalKey] ?? ""}
+            placeholder={field.name}
+            aria-label={field.name}
+          />
+        ))}
         <Button type="submit" variant="secondary" className="w-full">
           Apply filters
         </Button>

@@ -45,7 +45,13 @@ import {
   makeGetImportBatch,
   makeImportLeadsCsv,
   makeListImportBatches,
+  makePreviewImportDuplicates,
 } from "./application/use-cases/importLeadsCsv";
+import {
+  buildDuplicateReportCsv,
+  classifyImportDuplicates,
+} from "./application/use-cases/detectImportDuplicates";
+import { previewLeadDistribution } from "./application/use-cases/previewLeadDistribution";
 import {
   makeBulkAssignLeads,
   makeBulkChangeLeadStage,
@@ -54,6 +60,18 @@ import {
 import { makeMergeLeads } from "./application/use-cases/mergeLeads";
 import { makeGetKanbanBoard } from "./application/use-cases/getKanbanBoard";
 import { makeRepointLeadsCustomer } from "./application/use-cases/repointLeadsCustomer";
+import {
+  makeArchiveLeadField,
+  makeCreateLeadField,
+  makeHideLeadField,
+  makeListActiveLeadFields,
+  makeListLeadFields,
+  makeReorderLeadFields,
+  makeRestoreLeadField,
+  makeShowLeadField,
+  makeUpdateLeadField,
+} from "./application/use-cases/manageLeadFields";
+import { PrismaLeadFieldDefinitionRepository } from "./infrastructure/repositories/PrismaLeadFieldDefinitionRepository";
 
 export type { Lead } from "./domain/entities/Lead";
 export type { LeadAssignment, AssignmentType } from "./domain/entities/LeadAssignment";
@@ -90,8 +108,26 @@ export {
   LeadMergeError,
   BulkOperationError,
 } from "./domain/errors/LeadErrors";
+export {
+  LeadFieldNotFoundError,
+  LeadFieldKeyConflictError,
+  LeadFieldNameConflictError,
+  ProtectedLeadFieldError,
+  LeadFieldValidationError,
+} from "./domain/errors/LeadFieldErrors";
 export type { ListLeadsFilter } from "./domain/repositories/LeadRepository";
 export type { LeadDto, LeadCatalogLookups } from "./application/dto/LeadDto";
+export type {
+  LeadFieldDefinitionDto,
+  LeadFieldValueDto,
+} from "./application/dto/LeadFieldDefinitionDto";
+export {
+  visibleFormFields,
+  importableFields,
+  exportableFields,
+  searchableFields,
+  filterableFields,
+} from "./application/dto/LeadFieldDefinitionDto";
 export type { LeadAssignmentDto } from "./application/dto/LeadAssignmentDto";
 export type { LeadNoteDto } from "./application/dto/LeadNoteDto";
 export type { SavedViewDto } from "./application/dto/SavedViewDto";
@@ -102,6 +138,16 @@ export type {
   LeadsByStageEntry,
   LeadsBySourceEntry,
 } from "./application/use-cases/getLeadStatistics";
+export {
+  LEAD_FIELD_TYPES,
+  LEAD_FIELD_GROUPS,
+  LEAD_FIELD_STATUSES,
+  PROTECTED_SYSTEM_KEYS,
+  type LeadFieldDefinition,
+  type LeadFieldType,
+  type LeadFieldGroup,
+  type LeadFieldStatus,
+} from "./domain/entities/LeadFieldDefinition";
 export {
   createLeadSchema,
   updateLeadSchema,
@@ -117,10 +163,23 @@ export {
   type UpdateLeadNoteInput,
 } from "./application/validators/leadSchemas";
 export {
+  createLeadFieldSchema,
+  updateLeadFieldSchema,
+  reorderLeadFieldsSchema,
+  type CreateLeadFieldInput,
+  type UpdateLeadFieldInput,
+  type ReorderLeadFieldsInput,
+} from "./application/validators/leadFieldSchemas";
+export {
   createSavedViewSchema,
   updateSavedViewSchema,
   advancedLeadSearchSchema,
   importLeadsCsvSchema,
+  leadImportColumnMappingSchema,
+  previewImportDuplicatesSchema,
+  duplicateMatchModeSchema,
+  duplicateResolutionModeSchema,
+  importDistributionStrategySchema,
   bulkAssignLeadsSchema,
   bulkChangeLeadStageSchema,
   bulkCloseLeadsSchema,
@@ -130,11 +189,24 @@ export {
   type UpdateSavedViewInput,
   type AdvancedLeadSearchInput,
   type ImportLeadsCsvInput,
+  type PreviewImportDuplicatesInput,
   type BulkAssignLeadsInput,
   type BulkChangeLeadStageInput,
   type BulkCloseLeadsInput,
   type MergeLeadsInput,
 } from "./application/validators/productivitySchemas";
+export type { ImportLeadsSummary } from "./application/use-cases/importLeadsCsv";
+export type {
+  DuplicateMatchMode,
+  DuplicateResolutionMode,
+  DuplicateDetectionSummary,
+  DuplicateClassification,
+} from "./application/use-cases/detectImportDuplicates";
+export type {
+  ImportDistributionStrategy,
+  DistributionPreview,
+} from "./application/use-cases/previewLeadDistribution";
+export { buildDuplicateReportCsv, classifyImportDuplicates, previewLeadDistribution };
 export type { CreateLeadCommand } from "./application/use-cases/createLead";
 export type { UpdateLeadCommand } from "./application/use-cases/updateLead";
 export type { ChangeLeadStageCommand } from "./application/use-cases/changeLeadStage";
@@ -147,6 +219,7 @@ const leadNoteRepository = new PrismaLeadNoteRepository(prisma);
 const leadCatalogRepository = new PrismaLeadCatalogRepository(prisma);
 const savedViewRepository = new PrismaSavedViewRepository(prisma);
 const importBatchRepository = new PrismaImportBatchRepository(prisma);
+const leadFieldRepository = new PrismaLeadFieldDefinitionRepository(prisma);
 const customerLookup = new CustomersModuleLookupAdapter();
 const userLookup = new UsersModuleLookupAdapter();
 
@@ -155,13 +228,18 @@ export const createLead = makeCreateLead(
   leadCatalogRepository,
   customerLookup,
   userLookup,
+  leadFieldRepository,
 );
-export const updateLead = makeUpdateLead(leadRepository, leadCatalogRepository);
+export const updateLead = makeUpdateLead(leadRepository, leadCatalogRepository, leadFieldRepository);
 export const changeLeadStage = makeChangeLeadStage(leadRepository, leadCatalogRepository);
 export const assignLead = makeAssignLead(leadRepository, leadCatalogRepository, userLookup);
-export const getLead = makeGetLead(leadRepository, leadCatalogRepository);
-export const listLeads = makeListLeads(leadRepository, leadCatalogRepository);
-export const listLeadsByCustomer = makeListLeadsByCustomer(leadRepository, leadCatalogRepository);
+export const getLead = makeGetLead(leadRepository, leadCatalogRepository, leadFieldRepository);
+export const listLeads = makeListLeads(leadRepository, leadCatalogRepository, leadFieldRepository);
+export const listLeadsByCustomer = makeListLeadsByCustomer(
+  leadRepository,
+  leadCatalogRepository,
+  leadFieldRepository,
+);
 export const countLeads = makeCountLeads(leadRepository);
 export const listLeadAssignmentHistory = makeListLeadAssignmentHistory(leadRepository);
 export const listLeadAuditLog = makeListLeadAuditLog(leadRepository);
@@ -177,15 +255,35 @@ export const listSavedViews = makeListSavedViews(savedViewRepository);
 export const createSavedView = makeCreateSavedView(savedViewRepository);
 export const updateSavedView = makeUpdateSavedView(savedViewRepository);
 export const deleteSavedView = makeDeleteSavedView(savedViewRepository);
-export const exportLeadsCsv = makeExportLeadsCsv(leadRepository, leadCatalogRepository);
+export const exportLeadsCsv = makeExportLeadsCsv(
+  leadRepository,
+  leadCatalogRepository,
+  leadFieldRepository,
+);
 export const importLeadsCsv = makeImportLeadsCsv(
   importBatchRepository,
   leadRepository,
   leadCatalogRepository,
   customerLookup,
+  userLookup,
+  leadNoteRepository,
+  leadFieldRepository,
 );
+
+export const listLeadFields = makeListLeadFields(leadFieldRepository);
+export const listActiveLeadFields = makeListActiveLeadFields(leadFieldRepository);
+export const createLeadField = makeCreateLeadField(leadFieldRepository);
+export const updateLeadField = makeUpdateLeadField(leadFieldRepository);
+export const hideLeadField = makeHideLeadField(leadFieldRepository);
+export const showLeadField = makeShowLeadField(leadFieldRepository);
+export const archiveLeadField = makeArchiveLeadField(leadFieldRepository);
+export const restoreLeadField = makeRestoreLeadField(leadFieldRepository);
+export const reorderLeadFields = makeReorderLeadFields(leadFieldRepository);
+export const ensureLeadFieldDefaults = (organizationId: string, createdByUserId?: string | null) =>
+  leadFieldRepository.ensureSystemDefaults(organizationId, createdByUserId);
 export const listImportBatches = makeListImportBatches(importBatchRepository);
 export const getImportBatch = makeGetImportBatch(importBatchRepository);
+export const previewImportDuplicates = makePreviewImportDuplicates(leadRepository);
 export const bulkAssignLeads = makeBulkAssignLeads(
   leadRepository,
   leadCatalogRepository,

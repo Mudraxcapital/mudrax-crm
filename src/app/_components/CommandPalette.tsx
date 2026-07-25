@@ -14,38 +14,98 @@ interface SearchHit {
 }
 
 const QUICK_ACTIONS = [
-  { id: "qa-lead", title: "New Lead", subtitle: "Quick action", href: "/leads" },
-  { id: "qa-customer", title: "Customers", subtitle: "Quick action", href: "/customers" },
+  {
+    id: "qa-lead",
+    title: "New Lead",
+    subtitle: "Quick action",
+    href: "/leads",
+    permissions: ["lead.create", "lead.view"],
+  },
+  {
+    id: "qa-customer",
+    title: "Customers",
+    subtitle: "Quick action",
+    href: "/customers",
+    permissions: ["customer.view"],
+  },
   {
     id: "qa-pipeline",
     title: "Lead Pipeline (Kanban)",
     subtitle: "Quick action",
     href: "/leads/pipeline",
+    permissions: ["lead.view"],
   },
-  { id: "qa-import", title: "Bulk Import CSV", subtitle: "Quick action", href: "/leads/import" },
-  { id: "qa-calendar", title: "Calendar", subtitle: "Quick action", href: "/calendar" },
-  { id: "qa-activity", title: "Activity Timeline", subtitle: "Quick action", href: "/activity" },
+  {
+    id: "qa-import",
+    title: "Bulk Import",
+    subtitle: "CSV / Excel",
+    href: "/leads/import",
+    permissions: ["lead.import"],
+  },
+  {
+    id: "qa-calendar",
+    title: "Calendar",
+    subtitle: "Quick action",
+    href: "/calendar",
+    permissions: ["follow_up.view"],
+  },
+  {
+    id: "qa-activity",
+    title: "Activity Timeline",
+    subtitle: "Quick action",
+    href: "/activity",
+    permissions: ["lead.view"],
+  },
   {
     id: "qa-duplicates",
     title: "Duplicate Detection",
     subtitle: "Quick action",
     href: "/customers/duplicates",
+    permissions: ["customer.merge", "customer.view"],
   },
-  { id: "qa-crm", title: "CRM Dashboard", subtitle: "Quick action", href: "/crm" },
-  { id: "qa-search", title: "Advanced Lead Search", subtitle: "Quick action", href: "/leads" },
+  {
+    id: "qa-crm",
+    title: "CRM Dashboard",
+    subtitle: "Quick action",
+    href: "/crm",
+    permissions: ["customer.view", "lead.view", "campaign.view"],
+  },
+  {
+    id: "qa-field-settings",
+    title: "Field Settings",
+    subtitle: "Quick action",
+    href: "/crm/field-settings",
+    permissions: ["custom_field.manage"],
+  },
+  {
+    id: "qa-search",
+    title: "Advanced Lead Search",
+    subtitle: "Quick action",
+    href: "/leads",
+    permissions: ["lead.view"],
+  },
 ] as const;
 
 export const OPEN_COMMAND_PALETTE = "mudrax:open-command-palette";
 
-export function CommandPalette() {
+export function CommandPalette({
+  enabled = false,
+  permissions = [],
+}: {
+  /** Staff-only — customers never receive the command palette. */
+  enabled?: boolean;
+  permissions?: string[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [pending, startTransition] = useTransition();
   const [activeIndex, setActiveIndex] = useState(0);
+  const held = useMemo(() => new Set(permissions), [permissions]);
 
   useEffect(() => {
+    if (!enabled) return;
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -62,10 +122,10 @@ export function CommandPalette() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener(OPEN_COMMAND_PALETTE, onOpen);
     };
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !enabled) return;
     const q = query.trim();
     if (q.length < 1) {
       setHits([]);
@@ -84,7 +144,7 @@ export function CommandPalette() {
       });
     }, 180);
     return () => window.clearTimeout(handle);
-  }, [query, open]);
+  }, [query, open, enabled]);
 
   useEffect(() => {
     if (!open) {
@@ -96,15 +156,19 @@ export function CommandPalette() {
 
   const items = useMemo(() => {
     const quick = QUICK_ACTIONS.filter((action) =>
-      query.trim()
-        ? `${action.title} ${action.subtitle}`.toLowerCase().includes(query.trim().toLowerCase())
-        : true,
-    ).map((action) => ({
-      key: action.id,
-      title: action.title,
-      subtitle: action.subtitle,
-      href: action.href,
-    }));
+      action.permissions.some((code) => held.has(code)),
+    )
+      .filter((action) =>
+        query.trim()
+          ? `${action.title} ${action.subtitle}`.toLowerCase().includes(query.trim().toLowerCase())
+          : true,
+      )
+      .map((action) => ({
+        key: action.id,
+        title: action.title,
+        subtitle: action.subtitle,
+        href: action.href,
+      }));
     const searchItems = hits.map((hit) => ({
       key: `${hit.entity}-${hit.id}`,
       title: hit.title,
@@ -112,9 +176,9 @@ export function CommandPalette() {
       href: hit.href,
     }));
     return [...searchItems, ...quick].slice(0, 20);
-  }, [hits, query]);
+  }, [hits, query, held]);
 
-  if (!open) return null;
+  if (!enabled || !open) return null;
 
   return (
     <div

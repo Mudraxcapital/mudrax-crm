@@ -6,24 +6,37 @@
 
 import type { LeadRepository, ListLeadsFilter } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
+import type { LeadFieldDefinitionRepository } from "../../domain/repositories/LeadFieldDefinitionRepository";
 import { LeadNotFoundError } from "../../domain/errors/LeadErrors";
 import { toLeadDto, type LeadDto } from "../dto/LeadDto";
+import { toLeadFieldValueDto } from "../dto/LeadFieldDefinitionDto";
 import { loadCatalogLookups } from "./catalogLookups";
 
-export function makeGetLead(repository: LeadRepository, catalogRepository: LeadCatalogRepository) {
+export function makeGetLead(
+  repository: LeadRepository,
+  catalogRepository: LeadCatalogRepository,
+  fieldRepository: LeadFieldDefinitionRepository,
+) {
   return async function getLead(id: string): Promise<LeadDto> {
     const lead = await repository.findById(id);
     if (!lead) {
       throw new LeadNotFoundError(id);
     }
-    const catalogs = await loadCatalogLookups(catalogRepository, lead.organizationId);
-    return toLeadDto(lead, catalogs);
+    const [catalogs, fieldValues] = await Promise.all([
+      loadCatalogLookups(catalogRepository, lead.organizationId),
+      fieldRepository.listValuesForLead(lead.id),
+    ]);
+    return {
+      ...toLeadDto(lead, catalogs),
+      fieldValues: fieldValues.map(toLeadFieldValueDto),
+    };
   };
 }
 
 export function makeListLeads(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  fieldRepository?: LeadFieldDefinitionRepository,
 ) {
   return async function listLeads(
     organizationId: string,
@@ -33,19 +46,33 @@ export function makeListLeads(
       repository.list(organizationId, filter),
       loadCatalogLookups(catalogRepository, organizationId),
     ]);
-    return leads.map((lead) => toLeadDto(lead, catalogs));
+    const valuesByLead =
+      fieldRepository && leads.length > 0
+        ? await fieldRepository.listValuesForLeads(leads.map((lead) => lead.id))
+        : new Map();
+    return leads.map((lead) => ({
+      ...toLeadDto(lead, catalogs),
+      fieldValues: (valuesByLead.get(lead.id) ?? []).map(toLeadFieldValueDto),
+    }));
   };
 }
 
 export function makeListLeadsByCustomer(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  fieldRepository?: LeadFieldDefinitionRepository,
 ) {
   return async function listLeadsByCustomer(customerId: string): Promise<LeadDto[]> {
     const leads = await repository.listByCustomer(customerId);
     if (leads.length === 0) return [];
     const catalogs = await loadCatalogLookups(catalogRepository, leads[0]!.organizationId);
-    return leads.map((lead) => toLeadDto(lead, catalogs));
+    const valuesByLead = fieldRepository
+      ? await fieldRepository.listValuesForLeads(leads.map((lead) => lead.id))
+      : new Map();
+    return leads.map((lead) => ({
+      ...toLeadDto(lead, catalogs),
+      fieldValues: (valuesByLead.get(lead.id) ?? []).map(toLeadFieldValueDto),
+    }));
   };
 }
 

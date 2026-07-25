@@ -9,6 +9,7 @@
 
 import type { Lead } from "../../domain/entities/Lead";
 import type { LeadSource, LeadStage, LostReason } from "../../domain/entities/LeadCatalogs";
+import type { LeadFieldValueDto } from "./LeadFieldDefinitionDto";
 
 export interface LeadDto {
   id: string;
@@ -32,6 +33,8 @@ export interface LeadDto {
   lostAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Dynamic custom (+ mirrored system) field values when loaded. */
+  fieldValues?: LeadFieldValueDto[];
 }
 
 export interface LeadCatalogLookups {

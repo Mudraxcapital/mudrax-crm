@@ -20,6 +20,7 @@ export default async function CrmDashboardPage() {
   const canViewLeads = hasPermission(authContext, "lead.view");
   const canViewCampaigns = hasPermission(authContext, "campaign.view");
   const canViewFollowUps = hasPermission(authContext, "follow_up.view");
+  const canManageFields = hasPermission(authContext, "custom_field.manage");
 
   const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns, activity] =
     await Promise.all([
@@ -47,6 +48,11 @@ export default async function CrmDashboardPage() {
         description="Operational overview of customers, leads, and campaigns."
         actions={
           <>
+            {canManageFields ? (
+              <Link href="/crm/field-settings">
+                <Button variant="secondary">Field Settings</Button>
+              </Link>
+            ) : null}
             {canViewLeads ? (
               <Link href="/leads">
                 <Button variant="secondary">Leads</Button>

@@ -98,6 +98,40 @@ describe("assignCampaignLeads", () => {
     expect(countsByUser.get(USER_B)).toBe(2);
   });
 
+  it("distributes Leads in strict round-robin order", async () => {
+    const dto = await assignCampaignLeads({
+      campaignId,
+      input: {
+        leadIds: [leadId(1), leadId(2), leadId(3), leadId(4)],
+        allocationMethod: "ROUND_ROBIN",
+      },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    expect(dto.status).toBe("COMPLETED");
+    expect(leadLookup.assignCalls.map((call) => call.assignedToUserId)).toEqual([
+      USER_A,
+      USER_B,
+      USER_A,
+      USER_B,
+    ]);
+  });
+
+  it("assigns all selected Leads to one agent for MANUAL strategy", async () => {
+    const dto = await assignCampaignLeads({
+      campaignId,
+      input: {
+        leadIds: [leadId(1), leadId(2), leadId(3)],
+        allocationMethod: "MANUAL",
+        manualAssigneeUserId: USER_B,
+      },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    expect(dto.status).toBe("COMPLETED");
+    expect(leadLookup.assignCalls.every((call) => call.assignedToUserId === USER_B)).toBe(true);
+  });
+
   it("distributes Leads by explicit percentage", async () => {
     const dto = await assignCampaignLeads({
       campaignId,

@@ -154,25 +154,125 @@ export async function seedLeadCatalogs(
   }
 
   explain(
-    "Custom Field Definition — two example admin-defined Lead extension fields, each with a bounded data type (leads.md: 'no schema-less/free-form fields').",
+    "Lead Field Definitions — system fields (Lead Name / Phone / Email) plus example custom fields. Field Settings is the master registry for every lead field.",
   );
+
+  const systemFields = [
+    {
+      name: "Lead Name",
+      internalKey: "full_name",
+      dataType: CustomFieldType.TEXT,
+      fieldGroup: "PRIMARY" as const,
+      isRequired: true,
+      isSearchable: true,
+      isFilterable: true,
+      displayOrder: 10,
+      systemColumn: "fullNameSnapshot",
+      validationRules: { minLength: 2, maxLength: 200 },
+    },
+    {
+      name: "Phone",
+      internalKey: "phone",
+      dataType: CustomFieldType.PHONE,
+      fieldGroup: "PRIMARY" as const,
+      isRequired: false,
+      isSearchable: true,
+      isFilterable: true,
+      displayOrder: 20,
+      systemColumn: "phoneSnapshot",
+      validationRules: { maxLength: 20 },
+    },
+    {
+      name: "Email",
+      internalKey: "email",
+      dataType: CustomFieldType.EMAIL,
+      fieldGroup: "PRIMARY" as const,
+      isRequired: false,
+      isSearchable: true,
+      isFilterable: true,
+      displayOrder: 30,
+      systemColumn: "emailSnapshot",
+      validationRules: null,
+    },
+  ];
+
+  for (const field of systemFields) {
+    await prisma.customFieldDefinition.upsert({
+      where: {
+        organizationId_internalKey: { organizationId, internalKey: field.internalKey },
+      },
+      update: {
+        isSystem: true,
+        systemColumn: field.systemColumn,
+        dataType: field.dataType,
+      },
+      create: {
+        organizationId,
+        name: field.name,
+        internalKey: field.internalKey,
+        dataType: field.dataType,
+        fieldGroup: field.fieldGroup,
+        status: "ACTIVE",
+        isActive: true,
+        isSystem: true,
+        isRequired: field.isRequired,
+        isVisible: true,
+        isSearchable: field.isSearchable,
+        isFilterable: field.isFilterable,
+        isImportable: true,
+        isExportable: true,
+        displayOrder: field.displayOrder,
+        systemColumn: field.systemColumn,
+        validationRules: field.validationRules ?? undefined,
+      },
+    });
+  }
+
   await prisma.customFieldDefinition.upsert({
-    where: { organizationId_name: { organizationId, name: "Preferred Contact Time" } },
+    where: {
+      organizationId_internalKey: { organizationId, internalKey: "preferred_contact_time" },
+    },
     update: {},
     create: {
       organizationId,
       name: "Preferred Contact Time",
-      dataType: CustomFieldType.SINGLE_SELECT,
+      internalKey: "preferred_contact_time",
+      dataType: CustomFieldType.DROPDOWN,
+      fieldGroup: "SECONDARY",
+      status: "ACTIVE",
+      isActive: true,
+      isSystem: false,
+      isRequired: false,
+      isVisible: true,
+      isSearchable: true,
+      isFilterable: true,
+      isImportable: true,
+      isExportable: true,
+      displayOrder: 100,
       selectOptions: ["Morning", "Afternoon", "Evening"],
     },
   });
   await prisma.customFieldDefinition.upsert({
-    where: { organizationId_name: { organizationId, name: "Existing Monthly EMI Obligations" } },
+    where: {
+      organizationId_internalKey: { organizationId, internalKey: "existing_monthly_emi" },
+    },
     update: {},
     create: {
       organizationId,
       name: "Existing Monthly EMI Obligations",
-      dataType: CustomFieldType.NUMBER,
+      internalKey: "existing_monthly_emi",
+      dataType: CustomFieldType.CURRENCY,
+      fieldGroup: "SECONDARY",
+      status: "ACTIVE",
+      isActive: true,
+      isSystem: false,
+      isRequired: false,
+      isVisible: true,
+      isSearchable: false,
+      isFilterable: true,
+      isImportable: true,
+      isExportable: true,
+      displayOrder: 110,
     },
   });
 
@@ -181,7 +281,7 @@ export async function seedLeadCatalogs(
   summary("Lost Reasons", LOST_REASONS.length);
   summary("Call Feedback Statuses", CALL_FEEDBACK_STATUSES.length);
   summary("Tags", TAGS.length);
-  summary("Custom Field Definitions", 2);
+  summary("Lead Field Definitions", systemFields.length + 2);
 
   return { leadSourceIds, leadStageIds, lostReasonIds, callFeedbackStatusIds, tagIds };
 }

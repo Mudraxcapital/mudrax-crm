@@ -16,7 +16,12 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { Session } from "next-auth";
 import { auth } from "./index";
-import { getAuthorizationContext, hasPermission, hasRole } from "@/modules/rbac";
+import {
+  getAuthorizationContext,
+  hasPermission,
+  hasRole,
+  isInternalStaff,
+} from "@/modules/rbac";
 import type { AuthorizationContext } from "@/modules/rbac";
 
 export interface CurrentUser {
@@ -59,8 +64,22 @@ export async function requireRole(roleName: string): Promise<CurrentUser> {
 
 /** Redirects to /unauthorized if the current User does not hold `permissionCode`. */
 export async function requirePermission(permissionCode: string): Promise<CurrentUser> {
-  const current = await requireAuth();
+  // CRM permission checks are staff-only — customers / external identities never pass.
+  const current = await requireInternalStaff();
   if (!hasPermission(current.authContext, permissionCode)) {
+    redirect("/unauthorized");
+  }
+  return current;
+}
+
+/**
+ * CRM modules are staff-only. Customers / external identities (no internal
+ * Role) are redirected to /unauthorized. Preserves existing RBAC grants for
+ * Caller / Team Leader / Manager / Admin.
+ */
+export async function requireInternalStaff(): Promise<CurrentUser> {
+  const current = await requireAuth();
+  if (!isInternalStaff(current.authContext)) {
     redirect("/unauthorized");
   }
   return current;

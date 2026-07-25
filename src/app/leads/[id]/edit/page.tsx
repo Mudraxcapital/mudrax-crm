@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { getLead, LeadNotFoundError } from "@/modules/leads";
+import { getLead, LeadNotFoundError, listActiveLeadFields } from "@/modules/leads";
 import { EditLeadForm } from "@/modules/leads/presentation/components/EditLeadForm";
 import { updateLeadAction } from "@/modules/leads/presentation/controllers/updateLead.action";
 
 export default async function EditLeadPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission("lead.update");
+  const { authContext } = await requirePermission("lead.update");
   const { id } = await params;
 
   let lead;
@@ -19,6 +19,7 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
     throw error;
   }
 
+  const fields = await listActiveLeadFields(authContext.organizationId);
   const boundAction = updateLeadAction.bind(null, id);
 
   return (
@@ -32,7 +33,7 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
         <p className="text-muted mt-1 text-sm">{lead.fullNameSnapshot}</p>
       </div>
 
-      <EditLeadForm action={boundAction} lead={lead} />
+      <EditLeadForm action={boundAction} lead={lead} fields={fields} />
     </div>
   );
 }

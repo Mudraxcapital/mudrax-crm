@@ -7,21 +7,33 @@ import { Badge } from "@/shared/ui/Badge";
 export interface LeadRow {
   id: string;
   fullNameSnapshot: string;
+  phoneSnapshot: string | null;
   currentStageName: string;
+  assignedAgent: string;
+  lastCallAt: string | null;
+  nextActionAt: string | null;
+  priority: string;
   leadSourceName: string;
 }
 
 const columns: DataColumn<LeadRow>[] = [
   {
     id: "fullNameSnapshot",
-    header: "Name",
+    header: "Lead Name",
     accessor: (r) => r.fullNameSnapshot,
     cell: (r) => <span className="font-medium">{r.fullNameSnapshot}</span>,
     minWidth: 160,
   },
   {
+    id: "phoneSnapshot",
+    header: "Phone",
+    accessor: (r) => r.phoneSnapshot ?? "",
+    cell: (r) => r.phoneSnapshot ?? "—",
+    minWidth: 120,
+  },
+  {
     id: "currentStageName",
-    header: "Stage",
+    header: "Status",
     accessor: (r) => r.currentStageName,
     cell: (r) => (
       <Badge tone="info" dot>
@@ -31,10 +43,30 @@ const columns: DataColumn<LeadRow>[] = [
     minWidth: 130,
   },
   {
-    id: "leadSourceName",
-    header: "Source",
-    accessor: (r) => r.leadSourceName,
-    minWidth: 120,
+    id: "assignedAgent",
+    header: "Assigned Agent",
+    accessor: (r) => r.assignedAgent,
+    minWidth: 140,
+  },
+  {
+    id: "lastCallAt",
+    header: "Last Call",
+    accessor: (r) => r.lastCallAt ?? "",
+    cell: (r) => (r.lastCallAt ? new Date(r.lastCallAt).toLocaleString() : "—"),
+    minWidth: 140,
+  },
+  {
+    id: "nextActionAt",
+    header: "Next Follow-up",
+    accessor: (r) => r.nextActionAt ?? "",
+    cell: (r) => (r.nextActionAt ? new Date(r.nextActionAt).toLocaleString() : "—"),
+    minWidth: 150,
+  },
+  {
+    id: "priority",
+    header: "Priority",
+    accessor: (r) => r.priority,
+    minWidth: 90,
   },
 ];
 
@@ -52,7 +84,7 @@ export function LeadsTable({
       rows={rows}
       rowKey={(r) => r.id}
       searchable
-      searchPlaceholder="Filter leads…"
+      searchPlaceholder="Search leads…"
       emptyTitle="No leads match"
       emptyDescription="Adjust filters or create a new lead."
       onRowOpen={(row) => router.push(`/leads/${row.id}`)}

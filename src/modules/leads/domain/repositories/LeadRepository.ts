@@ -53,8 +53,15 @@ export interface ListLeadsFilter {
   campaignId?: string;
   /** Restricts to Leads currently assigned to one of these Users — used to enforce RBAC Data Scope (SELF/TEAM/BRANCH) at the presentation boundary. */
   assignedToUserIds?: string[];
-  /** Case-insensitive substring match over name/phone/email snapshots (Advanced Search). */
+  /** Case-insensitive substring match over searchable system + custom fields. */
   search?: string;
+  /**
+   * Dynamic filterable custom-field predicates (internalKey → value).
+   * System keys `full_name` / `phone` / `email` map to Lead snapshot columns.
+   */
+  fieldFilters?: Record<string, string>;
+  /** Internal keys marked searchable — used to widen global/advanced search. */
+  searchableCustomKeys?: string[];
   limit?: number;
   offset?: number;
 }

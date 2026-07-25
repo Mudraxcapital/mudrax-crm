@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
-import { listLeadsByCustomer } from "@/modules/leads";
+import { listActiveLeadFields, listLeadsByCustomer } from "@/modules/leads";
 import { listLoanApplications } from "@/modules/loan-applications";
 import { listDocumentsByCustomer } from "@/modules/documents";
 import { listCallHistoryByCustomer } from "@/modules/telephony";
@@ -39,7 +39,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const canViewNotifications = hasPermission(authContext, "notification.view");
   const canViewFollowUps = hasPermission(authContext, "follow_up.view");
 
-  const [leads, loanApps, documents, calls, notifications, allFollowUps, timeline] =
+  const [leads, loanApps, documents, calls, notifications, allFollowUps, timeline, leadFields] =
     await Promise.all([
       listLeadsByCustomer(id),
       canViewLoans
@@ -58,7 +58,13 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         ? listFollowUps(authContext.organizationId, { limit: 200 })
         : Promise.resolve([]),
       listCustomerTimeline(id, authContext.organizationId, 40),
+      listActiveLeadFields(authContext.organizationId),
     ]);
+  const visibleLeadFieldKeys = new Set(
+    leadFields
+      .filter((field) => field.isVisible && field.section !== "hidden")
+      .map((field) => field.internalKey),
+  );
 
   const leadIds = new Set(leads.map((lead) => lead.id));
   const followUps = allFollowUps.filter((item) => leadIds.has(item.leadId));
@@ -128,14 +134,28 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         {leads.length === 0 ? (
           <Empty>No Leads yet.</Empty>
         ) : (
-          leads.map((lead) => (
-            <Row
-              key={lead.id}
-              href={`/leads/${lead.id}`}
-              primary={lead.fullNameSnapshot}
-              secondary={lead.currentStageName}
-            />
-          ))
+          leads.map((lead) => {
+            const extras = (lead.fieldValues ?? [])
+              .filter(
+                (value) =>
+                  visibleLeadFieldKeys.has(value.internalKey) &&
+                  !["full_name", "phone", "email"].includes(value.internalKey) &&
+                  value.displayValue,
+              )
+              .slice(0, 3)
+              .map((value) => value.displayValue)
+              .join(" · ");
+            return (
+              <Row
+                key={lead.id}
+                href={`/leads/${lead.id}`}
+                primary={lead.fullNameSnapshot}
+                secondary={[lead.currentStageName, lead.phoneSnapshot, extras]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            );
+          })
         )}
       </ProfileSection>
 
