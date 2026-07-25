@@ -1,19 +1,19 @@
 // ============================================================================
-// organization — src/modules/organization
+// organization — single-company infrastructure substrate
 //
-// Source: docs/modules/organization.md, docs/domain/domain-model.md
-// ("Organization Bounded Context"), docs/platform/platform-contracts.md
-// (§2 RBAC Data Scope, §5 Organization Terminology).
+// Mudrax CRM is a single-company product. There is no Organization product
+// module / UI. This schema exists only so every other bounded context can
+// share one company-scope `organizationId` (platform-contracts.md §5) and
+// optional Branch/Team/Department pointers for RBAC Data Scope.
 //
-// Owns: Organization, Team, Branch, Region, Department, Holiday Calendar,
-// Working Hours, Escalation Rule. Never owns User identity (`users`) or
-// Role/Permission (`rbac`) — those are referenced by id only.
+// Owns: Organization (singleton company row), Team, Branch, Region,
+// Department, Holiday Calendar, Working Hours, Escalation Rule.
+// Never owns User identity (`users`) or Role/Permission (`rbac`).
 // ============================================================================
 
-/// The single canonical company/company-unit scope referenced by every other
-/// bounded context's `organizationId` (platform-contracts.md §5). Modeled
-/// explicitly (never a hard-coded singleton) so a future second legal
-/// entity/franchise is a new row, never a redesign (Known Risk #9).
+/// The single company scope row referenced by every other bounded context's
+/// `organizationId`. Seeded once as Mudrax Capitals — never managed as a
+/// multi-organization catalog in the product UI.
 model Organization {
   id     String             @id @default(uuid()) @db.Uuid
   name   String             @db.VarChar(200)

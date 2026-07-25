@@ -9,16 +9,16 @@
 // `rbac` is the sole authorization module; it never owns User identity.
 // ============================================================================
 
-/// A responsibility bundle (Caller, Manager, Team Leader, Admin, and future
-/// positions — HR, Branch Manager, Regional Manager, Recovery Officer, Sales
-/// Executive, ...). Never a hardcoded enum; always an admin-configurable
-/// catalog row.
+/// A fixed responsibility bundle. Mudrax CRM supports exactly four roles —
+/// Admin, Manager, Team Lead, Caller — seeded as system roles. Users cannot
+/// create custom roles or edit role definitions; they may only assign one of
+/// these four.
 model Role {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @db.Uuid
   name           String   @db.VarChar(150)
   description    String?  @db.Text
-  isSystemRole   Boolean  @default(false)
+  isSystemRole   Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

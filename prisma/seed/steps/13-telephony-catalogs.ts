@@ -18,9 +18,13 @@ const CALL_OUTCOMES: { name: string; sortOrder: number }[] = [
   { name: "Interested", sortOrder: 1 },
   { name: "Not Interested", sortOrder: 2 },
   { name: "Call Back Later", sortOrder: 3 },
-  { name: "Wrong Number", sortOrder: 4 },
-  { name: "Do Not Call", sortOrder: 5 },
-  { name: "Converted", sortOrder: 6 },
+  { name: "Follow Up", sortOrder: 4 },
+  { name: "Busy", sortOrder: 5 },
+  { name: "Switched Off", sortOrder: 6 },
+  { name: "Wrong Number", sortOrder: 7 },
+  { name: "Rejected", sortOrder: 8 },
+  { name: "Do Not Call", sortOrder: 9 },
+  { name: "Converted", sortOrder: 10 },
 ];
 
 export async function seedTelephonyCatalogs(

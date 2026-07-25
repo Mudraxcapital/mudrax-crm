@@ -10,7 +10,15 @@ import {
   unusedHeaders,
 } from "@/shared/spreadsheet/parseSpreadsheet";
 import { previewLeadDistribution } from "@/modules/leads/application/use-cases/previewLeadDistribution";
-import type { DuplicateDetectionSummary } from "@/modules/leads/application/use-cases/detectImportDuplicates";
+import type {
+  DuplicateDetectionSummary,
+  DuplicateResolutionMode,
+} from "@/modules/leads/application/use-cases/detectImportDuplicates";
+import {
+  buildUnknownColumnSuggestions,
+  type UnknownColumnSuggestion,
+} from "../../application/services/detectImportFieldType";
+import { LEAD_FIELD_TYPES } from "../../domain/entities/LeadFieldDefinition";
 import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
 import {
   createCampaignForImportAction,
@@ -24,10 +32,12 @@ import {
   saveMappingTemplate,
   type MappingTemplate,
 } from "./mappingTemplates";
+import { DuplicateReviewPanel } from "./DuplicateReviewPanel";
 
 type Step =
   | "upload"
   | "mapping"
+  | "fields"
   | "duplicates"
   | "campaign"
   | "agents"
@@ -37,12 +47,28 @@ type Step =
 const STEPS: Array<{ id: Step; label: string }> = [
   { id: "upload", label: "1. Upload" },
   { id: "mapping", label: "2. Mapping" },
-  { id: "duplicates", label: "3. Duplicates" },
-  { id: "campaign", label: "4. Campaign" },
-  { id: "agents", label: "5. Agents" },
-  { id: "distribution", label: "6. Distribution" },
-  { id: "summary", label: "7. Summary" },
+  { id: "fields", label: "3. New Fields" },
+  { id: "duplicates", label: "4. Duplicates" },
+  { id: "campaign", label: "5. Campaign" },
+  { id: "agents", label: "6. Agents" },
+  { id: "distribution", label: "7. Distribution" },
+  { id: "summary", label: "8. Summary" },
 ];
+
+const IMPORT_FIELD_TYPES = LEAD_FIELD_TYPES.filter((type) =>
+  [
+    "TEXT",
+    "TEXTAREA",
+    "NUMBER",
+    "CURRENCY",
+    "PHONE",
+    "EMAIL",
+    "DROPDOWN",
+    "BOOLEAN",
+    "DATE",
+    "DATE_TIME",
+  ].includes(type),
+);
 
 export interface ImportAgentOption {
   id: string;
@@ -121,13 +147,12 @@ export function LeadImportForm({
   const [templates, setTemplates] = useState<MappingTemplate[]>([]);
   const [templateName, setTemplateName] = useState("");
   const [matchMode, setMatchMode] = useState<"phone" | "email" | "phone_name" | "phone_or_email">(
-    "phone_or_email",
+    "phone",
   );
-  const [duplicateResolution, setDuplicateResolution] = useState<
-    "import_all" | "skip_duplicates" | "merge" | "update_existing"
-  >("skip_duplicates");
+  const [duplicateResolution, setDuplicateResolution] =
+    useState<DuplicateResolutionMode>("skip_duplicates");
+  const [selectedStageIds, setSelectedStageIds] = useState<string[]>([]);
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateDetectionSummary | null>(null);
-  const [reportCsv, setReportCsv] = useState<string | null>(null);
   const [campaignMode, setCampaignMode] = useState<"existing" | "new">("existing");
   const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? "");
   const [campaignSearch, setCampaignSearch] = useState("");
@@ -145,12 +170,17 @@ export function LeadImportForm({
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<ProductivityFormState | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [unknownFields, setUnknownFields] = useState<UnknownColumnSuggestion[]>([]);
   const [pending, startTransition] = useTransition();
 
   const previewRows = useMemo(() => rows.slice(0, 8), [rows]);
   const ignoredHeaders = useMemo(() => unusedHeaders(headers, mapping), [headers, mapping]);
   const nameMapped = Boolean(mapping.full_name || mapping.name);
   const requiredMapped = nameMapped;
+  const acceptedNewFields = useMemo(
+    () => unknownFields.filter((field) => field.create),
+    [unknownFields],
+  );
 
   const mappingStatus = useMemo(() => {
     const required = ["full_name"];
@@ -172,22 +202,25 @@ export function LeadImportForm({
 
   const importableCount = useMemo(() => {
     if (!duplicateSummary) return rows.length;
-    if (duplicateResolution === "import_all") {
-      return (
-        duplicateSummary.newLeads.length +
-        duplicateSummary.possibleDuplicates.length +
-        duplicateSummary.exactDuplicates.length
-      );
-    }
     if (duplicateResolution === "skip_duplicates") {
-      return duplicateSummary.newLeads.length;
+      return duplicateSummary.newLeadCount;
     }
-    return (
-      duplicateSummary.newLeads.length +
-      duplicateSummary.possibleDuplicates.length +
-      duplicateSummary.exactDuplicates.length
-    );
-  }, [duplicateResolution, duplicateSummary, rows.length]);
+    if (
+      duplicateResolution === "replace_selected_statuses" ||
+      duplicateResolution === "archive_and_reimport"
+    ) {
+      const selected = new Set(selectedStageIds);
+      const selectedDupes = duplicateSummary.allDuplicates.filter(
+        (row) => row.existingStageId && selected.has(row.existingStageId),
+      ).length;
+      return duplicateSummary.newLeadCount + selectedDupes;
+    }
+    if (duplicateResolution === "update_existing" || duplicateResolution === "merge") {
+      return duplicateSummary.newLeadCount + duplicateSummary.alreadyExisting;
+    }
+    // import_all
+    return duplicateSummary.newLeadCount + duplicateSummary.alreadyExisting;
+  }, [duplicateResolution, duplicateSummary, rows.length, selectedStageIds]);
 
   const filteredCampaigns = useMemo(() => {
     const q = campaignSearch.trim().toLowerCase();
@@ -295,6 +328,25 @@ export function LeadImportForm({
     }
   }
 
+  function goToFieldReview() {
+    if (!nameMapped) {
+      setParseError("Map Lead Name before continuing.");
+      return;
+    }
+    setParseError(null);
+    const suggestions = buildUnknownColumnSuggestions({
+      unusedHeaders: ignoredHeaders,
+      rows,
+    });
+    setUnknownFields(suggestions);
+    if (suggestions.length === 0) {
+      runDuplicateCheck();
+      return;
+    }
+    setStep("fields");
+    setProgress(22);
+  }
+
   function runDuplicateCheck() {
     if (!nameMapped) {
       setParseError("Map Lead Name before continuing.");
@@ -303,12 +355,13 @@ export function LeadImportForm({
     setParseError(null);
     startTransition(async () => {
       const columnMapping = buildColumnMapping();
+      // Provisional keys for accepted dynamic fields so duplicate preview sees mapped name/phone/email.
+      for (const field of acceptedNewFields) {
+        columnMapping[field.suggestedInternalKey] = field.excelHeader;
+      }
       const response = await previewImportDuplicatesAction({
         rows,
-        columnMapping: {
-          ...columnMapping,
-          name: columnMapping.full_name ?? columnMapping.name!,
-        },
+        columnMapping,
         matchMode,
       });
       if (response.error) {
@@ -316,21 +369,15 @@ export function LeadImportForm({
         return;
       }
       setDuplicateSummary(response.summary ?? null);
-      setReportCsv(response.reportCsv ?? null);
+      // Pre-select statuses that have duplicates for replace/archive convenience.
+      setSelectedStageIds(
+        (response.summary?.statusGroups ?? [])
+          .filter((group) => group.count > 0)
+          .map((group) => group.stageId),
+      );
       setStep("duplicates");
-      setProgress(28);
+      setProgress(36);
     });
-  }
-
-  function downloadReport() {
-    if (!reportCsv) return;
-    const blob = new Blob([reportCsv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${fileName.replace(/\.[^.]+$/, "")}-duplicates.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
   }
 
   function toggleAgent(id: string) {
@@ -383,12 +430,34 @@ export function LeadImportForm({
         skipDuplicates: duplicateResolution === "skip_duplicates",
         duplicateMatchMode: matchMode,
         duplicateResolution,
+        selectedStageIds:
+          duplicateResolution === "replace_selected_statuses" ||
+          duplicateResolution === "archive_and_reimport"
+            ? selectedStageIds
+            : undefined,
         agentUserIds: selectedAgentIds,
         distributionStrategy,
         manualAssigneeUserId:
           distributionStrategy === "MANUAL"
             ? manualAssigneeUserId || selectedAgentIds[0]
             : undefined,
+        dynamicFields: acceptedNewFields.map((field) => ({
+          excelHeader: field.excelHeader,
+          name: field.suggestedName,
+          internalKey: field.suggestedInternalKey,
+          fieldType: field.fieldType as
+            | "TEXT"
+            | "TEXTAREA"
+            | "NUMBER"
+            | "CURRENCY"
+            | "PHONE"
+            | "EMAIL"
+            | "DROPDOWN"
+            | "BOOLEAN"
+            | "DATE"
+            | "DATE_TIME",
+          selectOptions: field.selectOptions,
+        })),
       });
       setResult(state);
       setProgress(100);
@@ -404,9 +473,12 @@ export function LeadImportForm({
     setMapping({});
     setResult(null);
     setDuplicateSummary(null);
+    setSelectedStageIds([]);
+    setDuplicateResolution("skip_duplicates");
     setSelectedAgentIds([]);
     setBinaryBuffer(null);
     setCsvText(null);
+    setUnknownFields([]);
   }
 
   return (
@@ -500,7 +572,10 @@ export function LeadImportForm({
               ⚠ {mappingStatus.needs.length} needs mapping (name required; phone or email
               recommended)
             </span>
-            <span className="text-muted">{ignoredHeaders.length} unused columns ignored</span>
+            <span className="text-muted">
+              {ignoredHeaders.length} unmapped column
+              {ignoredHeaders.length === 1 ? "" : "s"} (review next)
+            </span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -635,87 +710,119 @@ export function LeadImportForm({
             <button
               type="button"
               className="mx-btn mx-btn-primary"
-              onClick={runDuplicateCheck}
+              onClick={goToFieldReview}
               disabled={!requiredMapped || pending}
             >
-              {pending ? "Checking…" : "Continue to duplicates"}
+              {pending ? "Checking…" : "Continue"}
             </button>
           </div>
         </div>
       ) : null}
 
-      {step === "duplicates" && duplicateSummary ? (
+      {step === "fields" ? (
         <div className="flex flex-col gap-4">
-          <label className="text-sm">
-            Match on
-            <select
-              value={matchMode}
-              onChange={(event) =>
-                setMatchMode(event.target.value as typeof matchMode)
-              }
-              className="mx-input mt-1 w-full"
-            >
-              <option value="phone">Phone</option>
-              <option value="email">Email</option>
-              <option value="phone_name">Phone + Name</option>
-              <option value="phone_or_email">Phone or Email</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="mx-btn mx-btn-secondary self-start"
-            onClick={runDuplicateCheck}
-            disabled={pending}
-          >
-            Re-check duplicates
-          </button>
+          <div>
+            <h2 className="text-sm font-medium">Unknown Excel columns</h2>
+            <p className="text-muted mt-1 text-sm">
+              These headers are not mapped to existing CRM fields. Accept to create dynamic
+              fields (Salesforce / HubSpot style). Values will import into Lead &amp; Customer
+              detail, filters, search, and exports.
+            </p>
+          </div>
 
-          <dl className="grid grid-cols-3 gap-3 text-sm">
-            <div className="rounded-lg border border-border p-3">
-              <dt className="text-muted">New Leads</dt>
-              <dd className="text-lg font-semibold text-success">
-                {duplicateSummary.newLeads.length}
-              </dd>
+          {unknownFields.length === 0 ? (
+            <p className="text-muted text-sm">No unknown columns — all headers are mapped.</p>
+          ) : (
+            <div className="mx-scroll overflow-x-auto rounded-lg border border-border">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-surface-sunken text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Create</th>
+                    <th className="px-3 py-2 font-medium">Excel Column</th>
+                    <th className="px-3 py-2 font-medium">Field Name</th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Sample</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unknownFields.map((field, index) => (
+                    <tr key={field.excelHeader} className="border-t border-border align-top">
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={field.create}
+                          onChange={(event) =>
+                            setUnknownFields((current) =>
+                              current.map((item, i) =>
+                                i === index ? { ...item, create: event.target.checked } : item,
+                              ),
+                            )
+                          }
+                          aria-label={`Create field for ${field.excelHeader}`}
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-medium">{field.excelHeader}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          className="mx-input w-full min-w-[10rem]"
+                          value={field.suggestedName}
+                          disabled={!field.create}
+                          onChange={(event) =>
+                            setUnknownFields((current) =>
+                              current.map((item, i) =>
+                                i === index
+                                  ? { ...item, suggestedName: event.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                        <p className="text-muted mt-1 text-[11px]">
+                          key: {field.suggestedInternalKey}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          className="mx-input w-full min-w-[8rem]"
+                          value={field.fieldType}
+                          disabled={!field.create}
+                          onChange={(event) =>
+                            setUnknownFields((current) =>
+                              current.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      fieldType: event.target
+                                        .value as UnknownColumnSuggestion["fieldType"],
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        >
+                          {IMPORT_FIELD_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="text-muted px-3 py-2 text-xs">
+                        {field.sampleValue || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="rounded-lg border border-border p-3">
-              <dt className="text-muted">Possible Duplicates</dt>
-              <dd className="text-lg font-semibold text-warning">
-                {duplicateSummary.possibleDuplicates.length}
-              </dd>
-            </div>
-            <div className="rounded-lg border border-border p-3">
-              <dt className="text-muted">Exact Duplicates</dt>
-              <dd className="text-lg font-semibold text-danger">
-                {duplicateSummary.exactDuplicates.length}
-              </dd>
-            </div>
-          </dl>
+          )}
 
-          <fieldset className="flex flex-col gap-2 text-sm">
-            <legend className="font-medium">Duplicate handling</legend>
-            {(
-              [
-                ["import_all", "Import All"],
-                ["skip_duplicates", "Skip Duplicates"],
-                ["merge", "Merge"],
-                ["update_existing", "Update Existing"],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="duplicateResolution"
-                  checked={duplicateResolution === value}
-                  onChange={() => setDuplicateResolution(value)}
-                />
-                {label}
-              </label>
-            ))}
-          </fieldset>
-
-          <button type="button" className="mx-btn mx-btn-secondary self-start" onClick={downloadReport}>
-            Download duplicate report
-          </button>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <span className="text-success">✓ {acceptedNewFields.length} will be created</span>
+            <span className="text-muted">
+              {unknownFields.length - acceptedNewFields.length} ignored
+            </span>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -731,20 +838,46 @@ export function LeadImportForm({
             <button
               type="button"
               className="mx-btn mx-btn-primary"
-              onClick={() => {
-                setStep("campaign");
-                setProgress(42);
-              }}
+              onClick={runDuplicateCheck}
+              disabled={pending}
             >
-              Continue to campaign
+              {pending ? "Checking…" : "Continue to duplicates"}
             </button>
           </div>
         </div>
       ) : null}
 
+      {step === "duplicates" && duplicateSummary ? (
+        <DuplicateReviewPanel
+          summary={duplicateSummary}
+          fileName={fileName}
+          matchMode={matchMode}
+          onMatchModeChange={setMatchMode}
+          onRecheck={runDuplicateCheck}
+          duplicateResolution={duplicateResolution}
+          onResolutionChange={setDuplicateResolution}
+          selectedStageIds={selectedStageIds}
+          onSelectedStageIdsChange={setSelectedStageIds}
+          pending={pending}
+          onBack={() => {
+            if (unknownFields.length > 0) {
+              setStep("fields");
+              setProgress(22);
+            } else {
+              setStep("mapping");
+              setProgress(14);
+            }
+          }}
+          onContinue={() => {
+            setStep("campaign");
+            setProgress(42);
+          }}
+        />
+      ) : null}
+
       {step === "campaign" ? (
         <div className="flex flex-col gap-4">
-          <p className="text-sm font-medium">Where should these imported leads go?</p>
+          <p className="text-sm font-medium">Where should these leads from Excel go?</p>
           <div className="flex flex-wrap gap-3 text-sm">
             <label className="flex items-center gap-2">
               <input
@@ -1037,7 +1170,7 @@ export function LeadImportForm({
               onClick={runImport}
               disabled={pending || selectedAgentIds.length === 0}
             >
-              {pending ? "Importing…" : `Import ${importableCount} lead(s)`}
+              {pending ? "Adding…" : `Add ${importableCount} lead(s) from Excel`}
             </button>
           </div>
         </div>
@@ -1049,26 +1182,42 @@ export function LeadImportForm({
           {result.success ? <p className="text-sm text-success">{result.success}</p> : null}
           {result.summary ? (
             <>
-              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-muted">Excel Rows</dt>
+                  <dd className="font-medium">{result.summary.total}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Duplicates</dt>
+                  <dd className="font-medium">{result.summary.duplicates}</dd>
+                </div>
                 <div>
                   <dt className="text-muted">Imported</dt>
                   <dd className="font-medium">{result.summary.created}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted">Duplicates skipped</dt>
-                  <dd className="font-medium">{result.summary.duplicates}</dd>
+                  <dt className="text-muted">Skipped</dt>
+                  <dd className="font-medium">{result.summary.skipped ?? result.summary.duplicates}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted">Updated</dt>
-                  <dd className="font-medium">{result.summary.updated}</dd>
+                  <dt className="text-muted">Replaced</dt>
+                  <dd className="font-medium">{result.summary.replaced ?? 0}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Archived</dt>
+                  <dd className="font-medium">{result.summary.archived ?? 0}</dd>
                 </div>
                 <div>
                   <dt className="text-muted">Failed</dt>
                   <dd className="font-medium">{result.summary.failed}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted">Skipped invalid</dt>
+                  <dt className="text-muted">Invalid</dt>
                   <dd className="font-medium">{result.summary.invalid}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted">Updated</dt>
+                  <dd className="font-medium">{result.summary.updated}</dd>
                 </div>
                 <div>
                   <dt className="text-muted">Campaign</dt>
@@ -1093,7 +1242,24 @@ export function LeadImportForm({
                   <dt className="text-muted">Distribution</dt>
                   <dd className="font-medium">{result.summary.distributionStrategy ?? "—"}</dd>
                 </div>
+                <div>
+                  <dt className="text-muted">New fields created</dt>
+                  <dd className="font-medium">{result.summary.newFieldsCreated?.length ?? 0}</dd>
+                </div>
               </dl>
+              {(result.summary.newFieldsCreated?.length ?? 0) > 0 ? (
+                <div>
+                  <h3 className="text-sm font-medium">Fields</h3>
+                  <ul className="mt-2 list-disc pl-5 text-sm">
+                    {result.summary.newFieldsCreated.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                  <p className="text-muted mt-2 text-xs">
+                    Manage in CRM → Field Settings (edit, rename, hide, archive, validation).
+                  </p>
+                </div>
+              ) : null}
               {result.summary.auditNotes.length > 0 ? (
                 <div>
                   <h3 className="text-sm font-medium">Audit Log</h3>
@@ -1113,10 +1279,29 @@ export function LeadImportForm({
                   ))}
                 </ul>
               ) : null}
+              {result.summary.failedCsv && result.summary.failed > 0 ? (
+                <button
+                  type="button"
+                  className="mx-btn mx-btn-secondary self-start"
+                  onClick={() => {
+                    const blob = new Blob([result.summary!.failedCsv!], {
+                      type: "text/csv;charset=utf-8",
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const anchor = document.createElement("a");
+                    anchor.href = url;
+                    anchor.download = `${fileName.replace(/\.[^.]+$/, "")}-failed-rows.csv`;
+                    anchor.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  Download Failed Rows
+                </button>
+              ) : null}
             </>
           ) : null}
           <button type="button" className="mx-btn mx-btn-secondary self-start" onClick={resetWizard}>
-            Import another file
+            Add another file from Excel
           </button>
         </div>
       ) : null}

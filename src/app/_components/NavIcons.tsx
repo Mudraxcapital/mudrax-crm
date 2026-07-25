@@ -104,6 +104,24 @@ const paths: Record<NavIcon, ReactNode> = {
       <path d="M8 2.5l5.5 2.5v3.8c0 3.2-2.3 5.5-5.5 6.7-3.2-1.2-5.5-3.5-5.5-6.7V5L8 2.5z" />
     </>
   ),
+  profile: (
+    <>
+      <circle cx="8" cy="5.5" r="2.5" />
+      <path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4" />
+    </>
+  ),
+  history: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 5v3.5l2.5 1.5" />
+    </>
+  ),
+  performance: (
+    <>
+      <path d="M2.5 12.5l3-4 2.5 2.5 5-6.5" />
+      <path d="M10.5 4.5H13.5V7.5" />
+    </>
+  ),
 };
 
 export function NavIconSvg({ name, className }: { name: NavIcon; className?: string }) {

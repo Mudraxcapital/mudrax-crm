@@ -24,6 +24,7 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig, isPublicPath, SESSION_COOKIE_NAME } from "../auth/config";
+import { PATHNAME_HEADER } from "../auth/callerAccess";
 
 const { auth } = NextAuth(authConfig);
 
@@ -31,16 +32,20 @@ export default auth((request) => {
   const { nextUrl, cookies } = request;
   const { pathname } = nextUrl;
 
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(PATHNAME_HEADER, pathname);
+
   if (isPublicPath(pathname)) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const isLoggedIn = Boolean(request.auth?.user);
   if (isLoggedIn) {
-    if (pathname === "/login") {
-      return NextResponse.redirect(new URL("/", nextUrl));
-    }
-    return NextResponse.next();
+    // Do not hard-redirect /login → / here. A JWT can decode successfully
+    // after a user reseed while the user id no longer exists; the login page
+    // (Node runtime) clears that stale cookie. Middleware cannot verify RBAC.
+    // Path is forwarded so the Node layout can enforce Caller Workspace isolation.
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const hadSessionCookie = cookies.has(SESSION_COOKIE_NAME);

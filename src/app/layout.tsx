@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
+import { PATHNAME_HEADER, isCallerAllowedPath } from "@/infra/auth/callerAccess";
 import { getCurrentUser } from "@/infra/auth/session";
-import { isInternalStaff } from "@/modules/rbac";
+import { isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
 import { ToastProvider } from "@/shared/ui/Toast";
 import { AppShell } from "./_components/AppShell";
@@ -33,7 +36,27 @@ export default async function RootLayout({
 }>) {
   const current = await getCurrentUser();
   const staff = current ? isInternalStaff(current.authContext) : false;
+  const callerWorkspace = current ? isCallerWorkspaceUser(current.authContext) : false;
   const permissions = current ? Object.keys(current.authContext.permissions) : [];
+
+  const headerStore = await headers();
+  const pathname = headerStore.get(PATHNAME_HEADER) ?? "/";
+
+  if (
+    current?.session.user.mustChangePassword &&
+    !pathname.startsWith("/change-password") &&
+    !pathname.startsWith("/api/auth") &&
+    !pathname.startsWith("/login")
+  ) {
+    redirect("/change-password");
+  }
+
+  if (current && callerWorkspace) {
+    if (!isCallerAllowedPath(pathname)) {
+      redirect("/unauthorized");
+    }
+  }
+
   const user = current
     ? {
         fullName: current.session.user.fullName,
@@ -41,6 +64,8 @@ export default async function RootLayout({
         roles: current.authContext.roles.map((role) => role.name),
         permissions,
         isStaff: staff,
+        isCallerWorkspace: callerWorkspace,
+        loginAt: current.session.user.loginAt,
       }
     : null;
 
@@ -57,7 +82,11 @@ export default async function RootLayout({
         <ThemeProvider>
           <ToastProvider>
             <AppShell user={user}>{children}</AppShell>
-            <CommandPalette enabled={staff} permissions={permissions} />
+            <CommandPalette
+              enabled={staff}
+              permissions={permissions}
+              callerWorkspace={callerWorkspace}
+            />
           </ToastProvider>
         </ThemeProvider>
       </body>

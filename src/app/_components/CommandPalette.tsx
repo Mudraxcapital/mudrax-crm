@@ -20,6 +20,7 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/leads",
     permissions: ["lead.create", "lead.view"],
+    adminOnly: true,
   },
   {
     id: "qa-customer",
@@ -27,6 +28,7 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/customers",
     permissions: ["customer.view"],
+    adminOnly: true,
   },
   {
     id: "qa-pipeline",
@@ -34,13 +36,23 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/leads/pipeline",
     permissions: ["lead.view"],
+    adminOnly: true,
   },
   {
     id: "qa-import",
-    title: "Bulk Import",
-    subtitle: "CSV / Excel",
+    title: "Add from Excel",
+    subtitle: "Add Leads from Excel",
     href: "/leads/import",
     permissions: ["lead.import"],
+    adminOnly: true,
+  },
+  {
+    id: "qa-leads-all",
+    title: "All Leads",
+    subtitle: "Quick action",
+    href: "/leads",
+    permissions: ["lead.view"],
+    adminOnly: true,
   },
   {
     id: "qa-calendar",
@@ -48,6 +60,7 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/calendar",
     permissions: ["follow_up.view"],
+    adminOnly: true,
   },
   {
     id: "qa-activity",
@@ -55,6 +68,7 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/activity",
     permissions: ["lead.view"],
+    adminOnly: true,
   },
   {
     id: "qa-duplicates",
@@ -62,6 +76,7 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/customers/duplicates",
     permissions: ["customer.merge", "customer.view"],
+    adminOnly: true,
   },
   {
     id: "qa-crm",
@@ -69,13 +84,15 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/crm",
     permissions: ["customer.view", "lead.view", "campaign.view"],
+    adminOnly: true,
   },
   {
     id: "qa-field-settings",
-    title: "Field Settings",
+    title: "Lead Settings",
     subtitle: "Quick action",
     href: "/crm/field-settings",
     permissions: ["custom_field.manage"],
+    adminOnly: true,
   },
   {
     id: "qa-search",
@@ -83,7 +100,28 @@ const QUICK_ACTIONS = [
     subtitle: "Quick action",
     href: "/leads",
     permissions: ["lead.view"],
+    adminOnly: true,
   },
+] as const;
+
+const CALLER_QUICK_ACTIONS = [
+  { id: "cqa-dash", title: "Dashboard", subtitle: "Caller workspace", href: "/" },
+  { id: "cqa-campaigns", title: "My Campaigns", subtitle: "Caller workspace", href: "/caller/campaigns" },
+  { id: "cqa-leads", title: "My Leads", subtitle: "Caller workspace", href: "/caller/leads" },
+  { id: "cqa-history", title: "Call History", subtitle: "Caller workspace", href: "/caller/history" },
+  {
+    id: "cqa-perf",
+    title: "My Performance",
+    subtitle: "Caller workspace",
+    href: "/caller/performance",
+  },
+  {
+    id: "cqa-notif",
+    title: "Notifications",
+    subtitle: "Caller workspace",
+    href: "/caller/notifications",
+  },
+  { id: "cqa-profile", title: "Profile", subtitle: "Caller workspace", href: "/caller/profile" },
 ] as const;
 
 export const OPEN_COMMAND_PALETTE = "mudrax:open-command-palette";
@@ -91,10 +129,13 @@ export const OPEN_COMMAND_PALETTE = "mudrax:open-command-palette";
 export function CommandPalette({
   enabled = false,
   permissions = [],
+  callerWorkspace = false,
 }: {
   /** Staff-only — customers never receive the command palette. */
   enabled?: boolean;
   permissions?: string[];
+  /** When true, only Caller Workspace quick actions are offered. */
+  callerWorkspace?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -155,9 +196,16 @@ export function CommandPalette({
   }, [open]);
 
   const items = useMemo(() => {
-    const quick = QUICK_ACTIONS.filter((action) =>
-      action.permissions.some((code) => held.has(code)),
-    )
+    const quickSource = callerWorkspace
+      ? CALLER_QUICK_ACTIONS.map((action) => ({
+          ...action,
+          permissions: [] as string[],
+        }))
+      : QUICK_ACTIONS.filter((action) => !action.adminOnly || !callerWorkspace).filter((action) =>
+          action.permissions.some((code) => held.has(code)),
+        );
+
+    const quick = quickSource
       .filter((action) =>
         query.trim()
           ? `${action.title} ${action.subtitle}`.toLowerCase().includes(query.trim().toLowerCase())
@@ -175,8 +223,8 @@ export function CommandPalette({
       subtitle: hit.subtitle,
       href: hit.href,
     }));
-    return [...searchItems, ...quick].slice(0, 20);
-  }, [hits, query, held]);
+    return [...(callerWorkspace ? [] : searchItems), ...quick].slice(0, 20);
+  }, [hits, query, held, callerWorkspace]);
 
   if (!enabled || !open) return null;
 

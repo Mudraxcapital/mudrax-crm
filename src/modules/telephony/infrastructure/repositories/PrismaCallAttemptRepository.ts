@@ -89,7 +89,11 @@ export class PrismaCallAttemptRepository implements CallAttemptRepository {
     const where: Prisma.CallAttemptWhereInput = { organizationId };
     if (filter?.leadId) where.leadId = filter.leadId;
     if (filter?.customerId) where.customerId = filter.customerId;
-    if (filter?.agentUserId) where.agentUserId = filter.agentUserId;
+    if (filter?.agentUserIds?.length) {
+      where.agentUserId = { in: filter.agentUserIds };
+    } else if (filter?.agentUserId) {
+      where.agentUserId = filter.agentUserId;
+    }
     if (filter?.direction) where.direction = filter.direction;
     if (filter?.missedOnly) {
       where.status = { in: MISSED_CALL_STATUSES };

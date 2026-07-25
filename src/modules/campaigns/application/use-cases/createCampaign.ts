@@ -11,12 +11,14 @@ export interface CreateCampaignCommand {
   organizationId: string;
   input: CreateCampaignInput;
   actor: CampaignAuditActor;
+  /** Required hierarchical owner (Manager id). */
+  ownerManagerId: string;
   correlationId?: string | null;
 }
 
 export function makeCreateCampaign(repository: CampaignRepository) {
   return async function createCampaign(command: CreateCampaignCommand): Promise<CampaignDto> {
-    const { organizationId, input, actor, correlationId } = command;
+    const { organizationId, input, actor, ownerManagerId, correlationId } = command;
 
     const created = await repository.createWithAudit(
       {
@@ -26,6 +28,7 @@ export function makeCreateCampaign(repository: CampaignRepository) {
         startDate: input.startDate ?? null,
         endDate: input.endDate ?? null,
         createdByUserId: actor.actorId ?? "",
+        ownerManagerId,
       },
       actor,
       correlationId,

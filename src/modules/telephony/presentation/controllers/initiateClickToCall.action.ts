@@ -9,6 +9,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { isCallerWorkspaceUser } from "@/modules/rbac";
 import {
   initiateClickToCall,
   initiateClickToCallSchema,
@@ -26,11 +27,15 @@ export async function initiateClickToCallAction(
   formData: FormData,
 ): Promise<TelephonyFormState> {
   const { session, authContext } = await requirePermission("call.initiate");
+  const callerWorkspace = isCallerWorkspaceUser(authContext);
 
   const parsed = initiateClickToCallSchema.safeParse({
     leadId: formData.get("leadId") || undefined,
     customerId: formData.get("customerId") || undefined,
-    agentUserId: formData.get("agentUserId") || undefined,
+    // Callers may only place calls as themselves.
+    agentUserId: callerWorkspace
+      ? session.user.id
+      : formData.get("agentUserId") || session.user.id,
     toPhoneNumber: formData.get("toPhoneNumber") || undefined,
     callerIdUsed: formData.get("callerIdUsed") || undefined,
   });
@@ -56,6 +61,17 @@ export async function initiateClickToCallAction(
       return { error: error.message };
     }
     throw error;
+  }
+
+  const leadId = parsed.data.leadId;
+  if (callerWorkspace) {
+    revalidatePath("/");
+    revalidatePath("/caller/history");
+    if (leadId) {
+      revalidatePath(`/caller/leads/${leadId}`);
+      redirect(`/caller/leads/${leadId}#call`);
+    }
+    redirect("/caller/history");
   }
 
   revalidatePath("/telephony/calls");

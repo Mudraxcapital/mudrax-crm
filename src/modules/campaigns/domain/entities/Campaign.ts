@@ -26,6 +26,8 @@ export interface Campaign {
   startDate: Date | null;
   endDate: Date | null;
   createdByUserId: string;
+  /** Hierarchical owner — Manager book this Campaign belongs to. */
+  ownerManagerId: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -5,6 +5,7 @@
   "description": "Mudrax CRM - production Enterprise CRM for Mudrax Capitals (Loan DSA operations).",
   "scripts": {
     "dev": "next dev --turbopack",
+    "restart": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/restart-dev.ps1",
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
@@ -16,6 +17,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
+    "db:reset-crm": "tsx prisma/seed/reset-crm-data.ts",
     "prepare": "husky",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",

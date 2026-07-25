@@ -72,6 +72,8 @@ export const duplicateResolutionModeSchema = z.enum([
   "skip_duplicates",
   "merge",
   "update_existing",
+  "replace_selected_statuses",
+  "archive_and_reimport",
 ]);
 
 export const importDistributionStrategySchema = z.enum([
@@ -94,14 +96,20 @@ export const importLeadsCsvSchema = z
     columnMapping: leadImportColumnMappingSchema.optional(),
     /** When true (legacy), rows that match an existing Lead for the Customer are skipped. */
     skipDuplicates: z.boolean().default(true),
-    duplicateMatchMode: duplicateMatchModeSchema.default("phone_or_email"),
+    /** Default primary identifier: Phone Number (architecture allows Email / others). */
+    duplicateMatchMode: duplicateMatchModeSchema.default("phone"),
     duplicateResolution: duplicateResolutionModeSchema.default("skip_duplicates"),
+    /**
+     * Lead Stage ids selected for replace_selected_statuses / archive_and_reimport.
+     * Statuses are always CRM metadata ids — never hardcoded names.
+     */
+    selectedStageIds: z.array(uuidSchema).max(200).optional(),
     agentUserIds: z.array(uuidSchema).max(200).optional(),
     distributionStrategy: importDistributionStrategySchema.optional(),
     manualAssigneeUserId: uuidSchema.optional(),
   })
   .refine((input) => Boolean(input.csvText?.trim()) || (input.rows && input.rows.length > 0), {
-    message: "Import rows or CSV content is required.",
+    message: "Excel/CSV rows or file content is required.",
     path: ["rows"],
   })
   .refine(
@@ -113,12 +121,22 @@ export const importLeadsCsvSchema = z
       message: "Manual distribution requires an assignee.",
       path: ["manualAssigneeUserId"],
     },
+  )
+  .refine(
+    (input) =>
+      (input.duplicateResolution !== "replace_selected_statuses" &&
+        input.duplicateResolution !== "archive_and_reimport") ||
+      (input.selectedStageIds?.length ?? 0) > 0,
+    {
+      message: "Select at least one Lead Status for replace/archive strategies.",
+      path: ["selectedStageIds"],
+    },
   );
 
 export const previewImportDuplicatesSchema = z.object({
-  rows: z.array(z.record(z.string(), z.string())).min(1).max(5000),
+  rows: z.array(z.record(z.string(), z.string())).min(1).max(100_000),
   columnMapping: leadImportColumnMappingSchema,
-  matchMode: duplicateMatchModeSchema.default("phone_or_email"),
+  matchMode: duplicateMatchModeSchema.default("phone"),
 });
 
 export const bulkLeadIdsSchema = z.object({

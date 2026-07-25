@@ -187,7 +187,7 @@ export function LeadFieldSettingsPanel({ fields }: { fields: LeadFieldDefinition
                           <Flag on={field.isVisible} label="Visible" />
                           <Flag on={field.isSearchable} label="Searchable" />
                           <Flag on={field.isFilterable} label="Filterable" />
-                          <Flag on={field.isImportable} label="Importable" />
+                          <Flag on={field.isImportable} label="Add from Excel" />
                           <Flag on={field.isExportable} label="Exportable" />
                           <Flag on={field.status === "ACTIVE"} label={field.status} />
                         </div>

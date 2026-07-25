@@ -8,8 +8,9 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, requireOwnerManagerId } from "@/modules/rbac";
 import { createCampaign, createCampaignSchema, listCampaigns } from "@/modules/campaigns";
+import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET() {
   const current = await getCurrentUser();
@@ -20,7 +21,8 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const campaigns = await listCampaigns(current.authContext.organizationId);
+  const book = managerBookFilter(current.authContext);
+  const campaigns = await listCampaigns(current.authContext.organizationId, book);
   return NextResponse.json({ data: campaigns });
 }
 
@@ -42,10 +44,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const campaign = await createCampaign({
-    organizationId: current.authContext.organizationId,
-    input: parsed.data,
-    actor: { actorType: "USER", actorId: current.session.user.id },
-  });
-  return NextResponse.json({ data: campaign }, { status: 201 });
+  try {
+    const ownerManagerId = requireOwnerManagerId(
+      current.authContext,
+      typeof body?.ownerManagerId === "string" ? body.ownerManagerId : null,
+    );
+    const campaign = await createCampaign({
+      organizationId: current.authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: current.session.user.id },
+      ownerManagerId,
+    });
+    return NextResponse.json({ data: campaign }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to create campaign." },
+      { status: 422 },
+    );
+  }
 }

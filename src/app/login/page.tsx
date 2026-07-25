@@ -1,19 +1,47 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/infra/auth";
+import { CLEAR_STALE_SESSION_PATH, getCurrentUser } from "@/infra/auth/session";
 import { LoginForm } from "@/modules/auth/presentation/components/LoginForm";
 import { ThemeToggle } from "@/shared/ui/ThemeProvider";
 
 interface LoginPageProps {
-  searchParams: Promise<{ callbackUrl?: string }>;
+  searchParams: Promise<{
+    callbackUrl?: string;
+    reason?: string;
+    passwordChanged?: string;
+  }>;
 }
 
+const ACCOUNT_DISABLED_BANNER =
+  "Your account has been disabled. Please contact your administrator.";
+const ACCOUNT_LOCKED_BANNER =
+  "Your account is temporarily locked after too many failed sign-in attempts. Contact an administrator to unlock, or try again later.";
+const PASSWORD_CHANGED_BANNER =
+  "Password updated. Sign in with your new password.";
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const session = await auth();
-  if (session?.user) {
+  // Only bounce home when the JWT still maps to a live staff user.
+  // Orphaned JWTs (e.g. after a user reseed) are cleared via a Route Handler —
+  // Server Components cannot mutate cookies.
+  const current = await getCurrentUser();
+  if (current) {
     redirect("/");
   }
 
-  const { callbackUrl } = await searchParams;
+  const session = await auth();
+  if (session?.user?.id) {
+    redirect(CLEAR_STALE_SESSION_PATH);
+  }
+
+  const { callbackUrl, reason, passwordChanged } = await searchParams;
+  const initialError =
+    reason === "disabled" || reason === "suspended"
+      ? ACCOUNT_DISABLED_BANNER
+      : reason === "locked"
+        ? ACCOUNT_LOCKED_BANNER
+        : passwordChanged === "1"
+          ? PASSWORD_CHANGED_BANNER
+          : undefined;
 
   return (
     <div className="relative flex min-h-screen">
@@ -63,7 +91,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <p className="text-muted mt-1 text-sm">Sign in to continue to your workspace.</p>
           </div>
           <div className="mx-card p-6 sm:p-7">
-            <LoginForm callbackUrl={callbackUrl} />
+            <LoginForm callbackUrl={callbackUrl} initialError={initialError} />
           </div>
         </div>
       </section>

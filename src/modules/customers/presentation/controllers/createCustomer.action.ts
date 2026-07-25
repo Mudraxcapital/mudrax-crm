@@ -10,6 +10,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { resolveOwnerManagerId } from "@/modules/rbac";
 import {
   createCustomer,
   createCustomerSchema,
@@ -61,6 +62,7 @@ export async function createCustomerAction(
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
+      ownerManagerId: resolveOwnerManagerId(authContext),
     });
     customerId = customer.id;
   } catch (error) {

@@ -35,6 +35,7 @@ export function toCampaign(row: PrismaCampaign): Campaign {
     startDate: row.startDate,
     endDate: row.endDate,
     createdByUserId: row.createdByUserId,
+    ownerManagerId: row.ownerManagerId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

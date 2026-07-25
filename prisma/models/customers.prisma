@@ -28,6 +28,9 @@ model Customer {
   /// through this pointer so nothing is ever orphaned.
   mergedIntoCustomerId String? @db.Uuid
 
+  /// Hierarchical owner — Customer book belongs to one Manager.
+  ownerManagerId String? @db.Uuid
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -42,6 +45,7 @@ model Customer {
 
   @@index([organizationId])
   @@index([mergedIntoCustomerId])
+  @@index([ownerManagerId])
   @@map("customers")
   @@schema("customers")
 }

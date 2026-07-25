@@ -16,10 +16,12 @@ import {
   makeRemoveCampaignMember,
 } from "./application/use-cases/manageCampaignMembership";
 import { makeAssignCampaignLeads } from "./application/use-cases/assignCampaignLeads";
+import { makeRedistributeCampaignLeads } from "./application/use-cases/redistributeCampaignLeads";
 import {
   makeCountCampaigns,
   makeGetCampaign,
   makeListCampaigns,
+  makeListCampaignsForMember,
 } from "./application/use-cases/getCampaign";
 import { makeGetCampaignStatistics } from "./application/use-cases/getCampaignStatistics";
 import {
@@ -82,6 +84,8 @@ export type {
   RemoveCampaignMemberCommand,
 } from "./application/use-cases/manageCampaignMembership";
 export type { AssignCampaignLeadsCommand } from "./application/use-cases/assignCampaignLeads";
+export type { RedistributeCampaignLeadsCommand } from "./application/use-cases/redistributeCampaignLeads";
+export { parseCampaignDistributionMethod } from "./application/use-cases/redistributeCampaignLeads";
 
 const campaignRepository = new PrismaCampaignRepository(prisma);
 const usersLookup = new UsersModuleLookupAdapter();
@@ -90,12 +94,21 @@ const leadsLookup = new LeadsModuleLookupAdapter();
 export const createCampaign = makeCreateCampaign(campaignRepository);
 export const updateCampaign = makeUpdateCampaign(campaignRepository);
 export const changeCampaignStatus = makeChangeCampaignStatus(campaignRepository);
-export const addCampaignMember = makeAddCampaignMember(campaignRepository, usersLookup);
-export const removeCampaignMember = makeRemoveCampaignMember(campaignRepository);
+export const addCampaignMember = makeAddCampaignMember(
+  campaignRepository,
+  usersLookup,
+  leadsLookup,
+);
+export const removeCampaignMember = makeRemoveCampaignMember(campaignRepository, leadsLookup);
 export const listCampaignMembers = makeListCampaignMembers(campaignRepository);
 export const assignCampaignLeads = makeAssignCampaignLeads(campaignRepository, leadsLookup);
+export const redistributeCampaignLeads = makeRedistributeCampaignLeads(
+  campaignRepository,
+  leadsLookup,
+);
 export const getCampaign = makeGetCampaign(campaignRepository);
 export const listCampaigns = makeListCampaigns(campaignRepository);
+export const listCampaignsForMember = makeListCampaignsForMember(campaignRepository);
 export const countCampaigns = makeCountCampaigns(campaignRepository);
 export const getCampaignStatistics = makeGetCampaignStatistics(campaignRepository);
 export const listCampaignAuditLog = makeListCampaignAuditLog(campaignRepository);

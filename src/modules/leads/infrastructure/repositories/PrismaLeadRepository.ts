@@ -57,7 +57,9 @@ export class PrismaLeadRepository implements LeadRepository {
     const rows = await this.prisma.lead.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      take: filter?.limit ?? 50,
+      // Default high enough for campaign/import workflows; UI pages should
+      // still pass an explicit limit + use count() for totals.
+      take: filter?.limit ?? 10_000,
       skip: filter?.offset ?? 0,
     });
     return rows.map(toLead);
@@ -107,6 +109,8 @@ export class PrismaLeadRepository implements LeadRepository {
     if (filter?.currentStageId) where.currentStageId = filter.currentStageId;
     if (filter?.leadSourceId) where.leadSourceId = filter.leadSourceId;
     if (filter?.campaignId) where.campaignId = filter.campaignId;
+    if (filter?.ownerManagerId) where.ownerManagerId = filter.ownerManagerId;
+    if (filter?.ownerTeamLeadId) where.ownerTeamLeadId = filter.ownerTeamLeadId;
     if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
 
     const and: Prisma.LeadWhereInput[] = [];
@@ -189,6 +193,8 @@ export class PrismaLeadRepository implements LeadRepository {
           leadSourceId: data.leadSourceId,
           currentStageId: data.currentStageId,
           campaignId: data.campaignId ?? null,
+          ownerManagerId: data.ownerManagerId ?? null,
+          ownerTeamLeadId: data.ownerTeamLeadId ?? null,
           fullNameSnapshot: data.fullNameSnapshot,
           phoneSnapshot: data.phoneSnapshot ?? null,
           emailSnapshot: data.emailSnapshot ?? null,

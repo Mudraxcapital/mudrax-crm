@@ -16,6 +16,7 @@ export interface CampaignDto {
   startDate: string | null;
   endDate: string | null;
   createdByUserId: string;
+  ownerManagerId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +31,7 @@ export function toCampaignDto(campaign: Campaign): CampaignDto {
     startDate: campaign.startDate ? campaign.startDate.toISOString().slice(0, 10) : null,
     endDate: campaign.endDate ? campaign.endDate.toISOString().slice(0, 10) : null,
     createdByUserId: campaign.createdByUserId,
+    ownerManagerId: campaign.ownerManagerId,
     createdAt: campaign.createdAt.toISOString(),
     updatedAt: campaign.updatedAt.toISOString(),
   };

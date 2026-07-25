@@ -1,22 +1,18 @@
 // ============================================================================
 // src/modules/auth/application/use-cases/authenticateUser.ts
-//
-// The single login use-case: verifies credentials for the seeded/any
-// Administrator account and every future User row, applying
-// platform-contracts.md §3's Password Policy (lockout/backoff, every
-// attempt Audit-logged) before delegating hash comparison to the
-// application's chosen PasswordHasher port.
-//
-// `users` owns identity (ADR 0002) — this use-case reads/writes User data
-// exclusively through `users`' public API, never a Prisma model directly.
 // ============================================================================
 
+import { getCompanyId } from "@/infra/company/getCompanyId";
 import {
   countRecentFailedLoginAttempts,
+  createLoginSession,
   getUserAuthProfileByEmail,
+  isAccountTemporarilyLocked,
+  lockUserAccount,
   recordLoginAttempt,
   touchLastLogin,
 } from "@/modules/users";
+import { LOGIN_LOCK_POLICY } from "../../domain/policies/loginLockPolicy";
 import type { PasswordHasher } from "../ports/PasswordHasher";
 import type { AuthenticatedUser } from "../dto/AuthenticatedUser";
 import {
@@ -24,8 +20,6 @@ import {
   AccountNotActiveError,
   InvalidCredentialsError,
 } from "../../domain/errors/AuthErrors";
-
-const MAX_RECENT_FAILED_ATTEMPTS = 5;
 
 export interface AuthenticateUserInput {
   email: string;
@@ -38,10 +32,11 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
   return async function authenticateUser(input: AuthenticateUserInput): Promise<AuthenticatedUser> {
     const email = input.email.trim().toLowerCase();
 
-    const recentFailures = await countRecentFailedLoginAttempts(email);
-    if (recentFailures >= MAX_RECENT_FAILED_ATTEMPTS) {
+    const profile = await getUserAuthProfileByEmail(email);
+
+    if (profile && isAccountTemporarilyLocked(profile.lockedUntil)) {
       await recordLoginAttempt({
-        userId: null,
+        userId: profile.id,
         emailTried: email,
         succeeded: false,
         ipAddress: input.ipAddress,
@@ -51,7 +46,28 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
       throw new AccountLockedError();
     }
 
-    const profile = await getUserAuthProfileByEmail(email);
+    const recentFailures = await countRecentFailedLoginAttempts(email);
+    if (recentFailures >= LOGIN_LOCK_POLICY.maxFailedAttempts) {
+      if (profile) {
+        const lockedUntil = new Date(
+          Date.now() + LOGIN_LOCK_POLICY.lockDurationMinutes * 60_000,
+        );
+        await lockUserAccount(
+          profile.id,
+          lockedUntil,
+          `Exceeded ${LOGIN_LOCK_POLICY.maxFailedAttempts} failed sign-in attempts`,
+        );
+      }
+      await recordLoginAttempt({
+        userId: profile?.id ?? null,
+        emailTried: email,
+        succeeded: false,
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+        failureReason: "LOCKED_OUT",
+      });
+      throw new AccountLockedError();
+    }
 
     if (!profile) {
       await recordLoginAttempt({
@@ -75,6 +91,19 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
         userAgent: input.userAgent,
         failureReason: "BAD_PASSWORD",
       });
+
+      const failuresAfter = await countRecentFailedLoginAttempts(email);
+      if (failuresAfter >= LOGIN_LOCK_POLICY.maxFailedAttempts) {
+        const lockedUntil = new Date(
+          Date.now() + LOGIN_LOCK_POLICY.lockDurationMinutes * 60_000,
+        );
+        await lockUserAccount(
+          profile.id,
+          lockedUntil,
+          `Exceeded ${LOGIN_LOCK_POLICY.maxFailedAttempts} failed sign-in attempts`,
+        );
+        throw new AccountLockedError();
+      }
       throw new InvalidCredentialsError();
     }
 
@@ -100,11 +129,23 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
     });
     await touchLastLogin(profile.id);
 
+    const session = await createLoginSession({
+      userId: profile.id,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+    });
+
+    // Refresh sessionVersion after possible prior lock revoke-all.
+    const fresh = await getUserAuthProfileByEmail(email);
+
     return {
       id: profile.id,
       email: profile.email,
       fullName: profile.fullName,
-      organizationId: profile.organizationId,
+      organizationId: await getCompanyId(),
+      sessionVersion: fresh?.sessionVersion ?? profile.sessionVersion,
+      sessionId: session.id,
+      mustChangePassword: fresh?.mustChangePassword ?? profile.mustChangePassword,
     };
   };
 }

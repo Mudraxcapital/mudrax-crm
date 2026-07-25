@@ -41,5 +41,6 @@ export async function addLeadNoteAction(
   }
 
   revalidatePath(`/leads/${leadId}`);
+  revalidatePath(`/caller/leads/${leadId}`);
   return {};
 }

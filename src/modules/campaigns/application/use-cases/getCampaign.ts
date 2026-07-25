@@ -17,14 +17,38 @@ export function makeGetCampaign(repository: CampaignRepository) {
 }
 
 export function makeListCampaigns(repository: CampaignRepository) {
-  return async function listCampaigns(organizationId: string): Promise<CampaignDto[]> {
-    const campaigns = await repository.list(organizationId);
+  return async function listCampaigns(
+    organizationId: string,
+    filter?: { ownerManagerId?: string },
+  ): Promise<CampaignDto[]> {
+    const campaigns = await repository.list(organizationId, filter);
     return campaigns.map(toCampaignDto);
   };
 }
 
+/**
+ * Campaigns the User is an active member of — Caller "My Campaigns" surface.
+ * Does not require `campaign.view` (Team Lead+); membership alone is enough.
+ */
+export function makeListCampaignsForMember(repository: CampaignRepository) {
+  return async function listCampaignsForMember(userId: string): Promise<CampaignDto[]> {
+    const memberships = await repository.listActiveMembershipsForUser(userId);
+    const campaigns: CampaignDto[] = [];
+    for (const membership of memberships) {
+      const campaign = await repository.findById(membership.campaignId);
+      if (campaign && (campaign.status === "ACTIVE" || campaign.status === "PAUSED")) {
+        campaigns.push(toCampaignDto(campaign));
+      }
+    }
+    return campaigns.sort((a, b) => a.name.localeCompare(b.name));
+  };
+}
+
 export function makeCountCampaigns(repository: CampaignRepository) {
-  return async function countCampaigns(organizationId: string): Promise<number> {
-    return repository.count(organizationId);
+  return async function countCampaigns(
+    organizationId: string,
+    filter?: { ownerManagerId?: string },
+  ): Promise<number> {
+    return repository.count(organizationId, filter);
   };
 }

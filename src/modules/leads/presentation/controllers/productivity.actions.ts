@@ -20,6 +20,7 @@ import {
   previewImportDuplicates,
   previewImportDuplicatesSchema,
   buildDuplicateReportCsv,
+  buildFailedRowsCsv,
   mergeLeads,
   mergeLeadsSchema,
   SavedViewNotFoundError,
@@ -29,23 +30,51 @@ import {
   type DuplicateDetectionSummary,
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
+import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { resolveImportOwnership } from "@/shared/auth/resolveImportOwnership";
+import { requireOwnerManagerId } from "@/modules/rbac";
 
 export type ProductivityFormState = {
   error?: string;
   success?: string;
   summary?: {
     created: number;
+    /** Total duplicate matches detected in the file. */
     duplicates: number;
+    /** Duplicates that were skipped (not imported). */
+    skipped: number;
     invalid: number;
     updated: number;
+    replaced: number;
+    archived: number;
     failed: number;
     total: number;
     campaignId: string | null;
     assignedAgentIds: string[];
     distributionStrategy: string | null;
     auditNotes: string[];
-    sampleErrors: Array<{ rowNumber: number; message: string }>;
+    sampleErrors: Array<{ rowNumber: number; message: string; name?: string; phone?: string }>;
+    newFieldsCreated: string[];
+    failedCsv?: string;
   };
+};
+
+export type DynamicFieldCreateInput = {
+  excelHeader: string;
+  name: string;
+  internalKey?: string;
+  fieldType:
+    | "TEXT"
+    | "TEXTAREA"
+    | "NUMBER"
+    | "CURRENCY"
+    | "PHONE"
+    | "EMAIL"
+    | "DROPDOWN"
+    | "BOOLEAN"
+    | "DATE"
+    | "DATE_TIME";
+  selectOptions?: string[];
 };
 
 export async function createSavedViewAction(
@@ -103,20 +132,29 @@ export async function importLeadsCsvAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
   try {
+    const ownership = await resolveImportOwnership({
+      authContext,
+      campaignId: parsed.data.campaignId,
+    });
     const batch = await importLeadsCsv({
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
+      ownerManagerId: ownership.ownerManagerId,
+      ownerTeamLeadId: ownership.ownerTeamLeadId,
     });
     revalidatePath("/leads");
     revalidatePath("/leads/import");
     return {
-      success: `Imported ${batch.createdRowCount} Lead(s); ${batch.duplicateRowCount} duplicate match(es).`,
+      success: `Added ${batch.createdRowCount} Lead(s) from Excel; ${batch.duplicateRowCount} duplicate match(es).`,
       summary: {
         created: batch.createdRowCount,
-        duplicates: batch.skippedDuplicateCount,
+        duplicates: batch.duplicateRowCount,
+        skipped: batch.skippedDuplicateCount,
         invalid: batch.skippedInvalidCount,
         updated: batch.updatedCount,
+        replaced: batch.replacedCount,
+        archived: batch.archivedCount,
         failed: batch.failedCount,
         total: batch.totalRowCount,
         campaignId: batch.campaignId,
@@ -124,10 +162,12 @@ export async function importLeadsCsvAction(
         distributionStrategy: batch.distributionStrategy,
         auditNotes: batch.auditNotes,
         sampleErrors: batch.errors.slice(0, 8),
+        newFieldsCreated: [],
+        failedCsv: buildFailedRowsCsv(batch.errors),
       },
     };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Import failed." };
+    return { error: error instanceof Error ? error.message : "Add from Excel failed." };
   }
 }
 
@@ -137,26 +177,89 @@ export async function importLeadsFileAction(input: {
   sourceFileName: string;
   sheetName?: string;
   rows: Record<string, string>[];
-  columnMapping: {
-    name: string;
-    phone?: string;
-    email?: string;
-    city?: string;
-    state?: string;
-    source?: string;
-    campaign?: string;
-    assignedAgent?: string;
-    notes?: string;
-  };
+  columnMapping: Record<string, string | undefined>;
   skipDuplicates?: boolean;
   duplicateMatchMode?: "phone" | "email" | "phone_name" | "phone_or_email";
-  duplicateResolution?: "import_all" | "skip_duplicates" | "merge" | "update_existing";
+  duplicateResolution?:
+    | "import_all"
+    | "skip_duplicates"
+    | "merge"
+    | "update_existing"
+    | "replace_selected_statuses"
+    | "archive_and_reimport";
+  selectedStageIds?: string[];
   agentUserIds?: string[];
   distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
   manualAssigneeUserId?: string;
+  /** Unknown Excel columns accepted as new dynamic CRM fields. */
+  dynamicFields?: DynamicFieldCreateInput[];
 }): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.import");
   const { listCampaigns } = await import("@/modules/campaigns");
+  const {
+    createLeadField,
+    LeadFieldKeyConflictError,
+    LeadFieldNameConflictError,
+  } = await import("@/modules/leads");
+
+  const actor = { actorType: "USER" as const, actorId: session.user.id };
+  const columnMapping: Record<string, string | undefined> = { ...input.columnMapping };
+  const newFieldsCreated: string[] = [];
+
+  for (const field of input.dynamicFields ?? []) {
+    try {
+      const created = await createLeadField({
+        organizationId: authContext.organizationId,
+        input: {
+          name: field.name,
+          internalKey: field.internalKey,
+          fieldType: field.fieldType,
+          fieldGroup: "SECONDARY",
+          isRequired: false,
+          isVisible: true,
+          isSearchable: true,
+          isFilterable: true,
+          isImportable: true,
+          isExportable: true,
+          selectOptions:
+            field.fieldType === "DROPDOWN"
+              ? field.selectOptions && field.selectOptions.length > 0
+                ? field.selectOptions
+                : [field.name]
+              : field.selectOptions,
+        },
+        actor,
+      });
+      columnMapping[created.internalKey] = field.excelHeader;
+      newFieldsCreated.push(created.name);
+    } catch (error) {
+      if (
+        error instanceof LeadFieldKeyConflictError ||
+        error instanceof LeadFieldNameConflictError
+      ) {
+        // Field already exists — still map the Excel column onto the key.
+        const key =
+          field.internalKey?.trim() ||
+          field.name
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+        if (key) columnMapping[key] = field.excelHeader;
+        continue;
+      }
+      return {
+        error:
+          error instanceof Error
+            ? `Failed to create field “${field.name}”: ${error.message}`
+            : `Failed to create field “${field.name}”.`,
+      };
+    }
+  }
+
+  if (!columnMapping.full_name && columnMapping.name) {
+    columnMapping.full_name = columnMapping.name;
+  }
 
   const parsed = importLeadsCsvSchema.safeParse({
     leadSourceId: input.leadSourceId,
@@ -164,10 +267,11 @@ export async function importLeadsFileAction(input: {
     sourceFileName: input.sourceFileName,
     sheetName: input.sheetName,
     rows: input.rows,
-    columnMapping: input.columnMapping,
+    columnMapping,
     skipDuplicates: input.skipDuplicates ?? true,
     duplicateMatchMode: input.duplicateMatchMode,
     duplicateResolution: input.duplicateResolution,
+    selectedStageIds: input.selectedStageIds,
     agentUserIds: input.agentUserIds,
     distributionStrategy: input.distributionStrategy,
     manualAssigneeUserId: input.manualAssigneeUserId,
@@ -176,7 +280,8 @@ export async function importLeadsFileAction(input: {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const campaigns = await listCampaigns(authContext.organizationId);
+  const book = managerBookFilter(authContext);
+  const campaigns = await listCampaigns(authContext.organizationId, book);
   const campaignNameToId: Record<string, string> = {};
   for (const campaign of campaigns) {
     campaignNameToId[campaign.name] = campaign.id;
@@ -184,52 +289,66 @@ export async function importLeadsFileAction(input: {
   }
 
   try {
+    const ownership = await resolveImportOwnership({
+      authContext,
+      campaignId: parsed.data.campaignId,
+      agentUserIds: parsed.data.agentUserIds,
+      manualAssigneeUserId: parsed.data.manualAssigneeUserId,
+    });
     const batch = await importLeadsCsv({
       organizationId: authContext.organizationId,
       input: parsed.data,
-      actor: { actorType: "USER", actorId: session.user.id },
+      actor,
       campaignNameToId,
+      ownerManagerId: ownership.ownerManagerId,
+      ownerTeamLeadId: ownership.ownerTeamLeadId,
     });
     revalidatePath("/leads");
     revalidatePath("/leads/import");
+    revalidatePath("/crm/field-settings");
     if (batch.campaignId) {
       revalidatePath(`/campaigns/${batch.campaignId}`);
     }
     revalidatePath("/campaigns");
+    revalidatePath("/customers");
+    const fieldsNote =
+      newFieldsCreated.length > 0
+        ? ` ${newFieldsCreated.length} new field(s) created.`
+        : "";
     return {
-      success: `Imported ${batch.createdRowCount} Lead(s). ${batch.updatedCount} updated, ${batch.skippedDuplicateCount} duplicate(s) skipped, ${batch.failedCount} failed.`,
+      success: `Added ${batch.createdRowCount} Lead(s) from Excel. ${batch.updatedCount} updated, ${batch.replacedCount} replaced, ${batch.archivedCount} archived, ${batch.skippedDuplicateCount} duplicate(s) skipped, ${batch.failedCount} failed.${fieldsNote}`,
       summary: {
         created: batch.createdRowCount,
-        duplicates: batch.skippedDuplicateCount,
+        duplicates: batch.duplicateRowCount,
+        skipped: batch.skippedDuplicateCount,
         invalid: batch.skippedInvalidCount,
         updated: batch.updatedCount,
+        replaced: batch.replacedCount,
+        archived: batch.archivedCount,
         failed: batch.failedCount,
         total: batch.totalRowCount,
         campaignId: batch.campaignId,
         assignedAgentIds: batch.assignedAgentIds,
         distributionStrategy: batch.distributionStrategy,
-        auditNotes: batch.auditNotes,
+        auditNotes: [
+          ...batch.auditNotes,
+          ...(newFieldsCreated.length > 0
+            ? [`New fields: ${newFieldsCreated.join(", ")}`]
+            : []),
+        ],
         sampleErrors: batch.errors.slice(0, 8),
+        newFieldsCreated,
+        failedCsv: buildFailedRowsCsv(batch.errors),
       },
     };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Import failed." };
+    return { error: error instanceof Error ? error.message : "Add from Excel failed." };
   }
 }
 
 export async function previewImportDuplicatesAction(input: {
   rows: Record<string, string>[];
-  columnMapping: {
-    name: string;
-    phone?: string;
-    email?: string;
-    city?: string;
-    state?: string;
-    source?: string;
-    campaign?: string;
-    assignedAgent?: string;
-    notes?: string;
-  };
+  columnMapping: Record<string, string | undefined>;
   matchMode: "phone" | "email" | "phone_name" | "phone_or_email";
 }): Promise<{ error?: string; summary?: DuplicateDetectionSummary; reportCsv?: string }> {
   const { authContext } = await requirePermission("lead.import");
@@ -263,6 +382,7 @@ export async function createCampaignForImportAction(input: {
     input.description?.trim(),
     input.sourceLabel ? `Source: ${input.sourceLabel}` : null,
     input.priority ? `Priority: ${input.priority}` : null,
+    input.distributionStrategy ? `Distribution: ${input.distributionStrategy}` : null,
   ].filter(Boolean);
 
   const parsed = createCampaignSchema.safeParse({
@@ -276,10 +396,12 @@ export async function createCampaignForImportAction(input: {
   }
 
   try {
+    const ownerManagerId = requireOwnerManagerId(authContext);
     const campaign = await createCampaign({
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
+      ownerManagerId,
     });
     for (const userId of input.memberUserIds ?? []) {
       try {
@@ -287,6 +409,7 @@ export async function createCampaignForImportAction(input: {
           campaignId: campaign.id,
           input: { userId },
           actor: { actorType: "USER", actorId: session.user.id },
+          redistribute: false,
         });
       } catch {
         // Member may already exist or be invalid — continue.

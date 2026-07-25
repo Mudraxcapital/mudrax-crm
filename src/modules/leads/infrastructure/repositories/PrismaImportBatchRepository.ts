@@ -35,6 +35,8 @@ export class PrismaImportBatchRepository implements ImportBatchRepository {
         uploadedByUserId: data.uploadedByUserId,
         leadSourceId: data.leadSourceId,
         campaignId: data.campaignId ?? null,
+        ownerManagerId: data.ownerManagerId ?? null,
+        ownerTeamLeadId: data.ownerTeamLeadId ?? null,
         sourceFileName: data.sourceFileName,
         status: "UPLOADED",
       },
@@ -71,16 +73,20 @@ export class PrismaImportBatchRepository implements ImportBatchRepository {
 
   async createRows(rows: CreateImportRowData[]): Promise<ImportRow[]> {
     if (rows.length === 0) return [];
-    await this.prisma.importRow.createMany({
-      data: rows.map((row) => ({
-        importBatchId: row.importBatchId,
-        rowNumber: row.rowNumber,
-        rawData: toJson(row.rawData),
-        parseStatus: row.parseStatus,
-        parseErrors: row.parseErrors ? toJson(row.parseErrors) : undefined,
-        resolvedCustomerId: row.resolvedCustomerId ?? null,
-      })),
-    });
+    const chunkSize = 500;
+    for (let offset = 0; offset < rows.length; offset += chunkSize) {
+      const chunk = rows.slice(offset, offset + chunkSize);
+      await this.prisma.importRow.createMany({
+        data: chunk.map((row) => ({
+          importBatchId: row.importBatchId,
+          rowNumber: row.rowNumber,
+          rawData: toJson(row.rawData),
+          parseStatus: row.parseStatus,
+          parseErrors: row.parseErrors ? toJson(row.parseErrors) : undefined,
+          resolvedCustomerId: row.resolvedCustomerId ?? null,
+        })),
+      });
+    }
     return this.listRows(rows[0]!.importBatchId);
   }
 

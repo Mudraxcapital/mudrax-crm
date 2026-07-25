@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { assertOwnsManagerData, hasPermission } from "@/modules/rbac";
 import {
   CampaignNotFoundError,
   getCampaign,
@@ -9,7 +9,7 @@ import {
   listCampaignAuditLog,
   listCampaignMembers,
 } from "@/modules/campaigns";
-import { listActiveLeadFields, listImportBatches, listLeads } from "@/modules/leads";
+import { countLeads, listActiveLeadFields, listImportBatches, listLeads } from "@/modules/leads";
 import { listUserSummaries } from "@/modules/users";
 import { CampaignStatusForm } from "@/modules/campaigns/presentation/components/CampaignStatusForm";
 import { AddCampaignMemberForm } from "@/modules/campaigns/presentation/components/AddCampaignMemberForm";
@@ -19,6 +19,7 @@ import { addCampaignMemberAction } from "@/modules/campaigns/presentation/contro
 import { removeCampaignMemberAction } from "@/modules/campaigns/presentation/controllers/removeCampaignMember.action";
 import { assignCampaignLeadsAction } from "@/modules/campaigns/presentation/controllers/assignCampaignLeads.action";
 import { TabNav } from "@/shared/ui/Tabs";
+import { EmployeeLink } from "@/shared/ui/EmployeeLink";
 import { CampaignLeadsTable } from "../_components/CampaignLeadsTable";
 
 export default async function CampaignDetailPage({
@@ -36,6 +37,9 @@ export default async function CampaignDetailPage({
   let campaign;
   try {
     campaign = await getCampaign(id);
+    if (!assertOwnsManagerData(authContext.hierarchy, campaign.ownerManagerId)) {
+      notFound();
+    }
   } catch (error) {
     if (error instanceof CampaignNotFoundError) {
       notFound();
@@ -51,24 +55,31 @@ export default async function CampaignDetailPage({
       fieldFilterParams[field.internalKey] = raw.trim();
     }
   }
+  const employeeId =
+    typeof query.employeeId === "string" && query.employeeId.trim()
+      ? query.employeeId.trim()
+      : undefined;
 
-  const [members, statistics, auditLog, users, leads, importBatches] = await Promise.all([
-    listCampaignMembers(id),
-    getCampaignStatistics(id),
-    listCampaignAuditLog(id),
-    listUserSummaries(authContext.organizationId),
-    listLeads(authContext.organizationId, {
-      campaignId: id,
-      limit: 500,
-      fieldFilters: Object.keys(fieldFilterParams).length > 0 ? fieldFilterParams : undefined,
-      searchableCustomKeys: activeFields
-        .filter((field) => field.isSearchable)
-        .map((field) => field.internalKey)
-        .filter((key) => !["full_name", "phone", "email"].includes(key)),
-      search: typeof query.search === "string" ? query.search : undefined,
-    }),
-    listImportBatches(authContext.organizationId, { campaignId: id }),
-  ]);
+  const [members, statistics, auditLog, users, leads, totalLeadCount, importBatches] =
+    await Promise.all([
+      listCampaignMembers(id),
+      getCampaignStatistics(id),
+      listCampaignAuditLog(id),
+      listUserSummaries(authContext.organizationId),
+      listLeads(authContext.organizationId, {
+        campaignId: id,
+        limit: 100_000,
+        assignedToUserIds: employeeId ? [employeeId] : undefined,
+        fieldFilters: Object.keys(fieldFilterParams).length > 0 ? fieldFilterParams : undefined,
+        searchableCustomKeys: activeFields
+          .filter((field) => field.isSearchable)
+          .map((field) => field.internalKey)
+          .filter((key) => !["full_name", "phone", "email"].includes(key)),
+        search: typeof query.search === "string" ? query.search : undefined,
+      }),
+      countLeads(authContext.organizationId, { campaignId: id }),
+      listImportBatches(authContext.organizationId, { campaignId: id }),
+    ]);
 
   const canManage = hasPermission(authContext, "campaign.manage");
   const canAssign = hasPermission(authContext, "campaign.assign");
@@ -98,7 +109,7 @@ export default async function CampaignDetailPage({
     { href: `/campaigns/${id}?tab=overview`, label: "Overview" },
     { href: `/campaigns/${id}?tab=agents`, label: "Assigned Agents" },
     { href: `/campaigns/${id}?tab=leads`, label: "Lead List" },
-    { href: `/campaigns/${id}?tab=imports`, label: "Import History" },
+    { href: `/campaigns/${id}?tab=imports`, label: "Add from Excel History" },
     { href: `/campaigns/${id}?tab=analytics`, label: "Analytics" },
   ];
 
@@ -131,7 +142,7 @@ export default async function CampaignDetailPage({
               href="/leads/import"
               className="text-sm text-accent hover:underline underline-offset-4"
             >
-              Import leads
+              Add Leads from Excel
             </Link>
           ) : null}
           {canManage ? (
@@ -157,7 +168,7 @@ export default async function CampaignDetailPage({
               <dt className="text-muted">Source</dt>
               <dd>{sourceFromDescription}</dd>
               <dt className="text-muted">Total Leads</dt>
-              <dd>{leads.length}</dd>
+              <dd>{totalLeadCount}</dd>
               <dt className="text-muted">Assigned Agents</dt>
               <dd>{activeMembers.length}</dd>
               <dt className="text-muted">Created By</dt>
@@ -182,7 +193,7 @@ export default async function CampaignDetailPage({
               ) : (
                 distribution.map((item) => (
                   <li key={item.userId} className="flex justify-between border-b border-border pb-2">
-                    <span>{item.name}</span>
+                    <EmployeeLink userId={item.userId} name={item.name} campaignId={id} />
                     <span className="font-medium">{item.count} leads</span>
                   </li>
                 ))
@@ -211,7 +222,11 @@ export default async function CampaignDetailPage({
               activeMembers.map((member) => (
                 <li key={member.userId} className="flex items-center justify-between">
                   <span>
-                    {userNameById.get(member.userId) ?? member.userId}{" "}
+                    <EmployeeLink
+                      userId={member.userId}
+                      name={userNameById.get(member.userId) ?? member.userId}
+                      campaignId={id}
+                    />{" "}
                     <span className="text-muted">(weight {member.allocationWeight})</span>
                   </span>
                   {canManage ? (
@@ -258,12 +273,27 @@ export default async function CampaignDetailPage({
               placeholder="Search searchable fields…"
               className="mx-input"
             />
+            <label className="text-sm">
+              Employee
+              <select
+                name="employeeId"
+                defaultValue={employeeId ?? ""}
+                className="mx-input mt-1 w-full"
+              >
+                <option value="">All assigned callers</option>
+                {activeMembers.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {userNameById.get(member.userId) ?? member.userId}
+                  </option>
+                ))}
+              </select>
+            </label>
             {activeFields
               .filter(
                 (field) =>
                   field.isFilterable && !["full_name", "phone", "email"].includes(field.internalKey),
               )
-              .slice(0, 6)
+              .slice(0, 5)
               .map((field) => (
                 <input
                   key={field.id}
@@ -277,6 +307,17 @@ export default async function CampaignDetailPage({
               Apply filters
             </button>
           </form>
+          {employeeId ? (
+            <p className="text-muted mb-3 text-sm">
+              Showing customers assigned to{" "}
+              <EmployeeLink
+                userId={employeeId}
+                name={userNameById.get(employeeId) ?? employeeId}
+                campaignId={id}
+              />
+              .
+            </p>
+          ) : null}
           <CampaignLeadsTable
             rows={leads.map((lead) => ({
               id: lead.id,
@@ -287,6 +328,8 @@ export default async function CampaignDetailPage({
                 lead.currentAssigneeUserId
                   ? (userNameById.get(lead.currentAssigneeUserId) ?? lead.currentAssigneeUserId)
                   : "Unassigned",
+              assignedAgentUserId: lead.currentAssigneeUserId,
+              campaignId: id,
               nextActionAt: lead.nextActionAt,
               priority: "—",
             }))}
@@ -321,11 +364,13 @@ export default async function CampaignDetailPage({
       {tab === "imports" ? (
         <section className="mx-card overflow-hidden">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Import History</h2>
+            <h2 className="text-sm font-medium">Add from Excel History</h2>
           </div>
           <ul className="text-sm">
             {importBatches.length === 0 ? (
-              <li className="text-muted px-4 py-6 text-center">No imports for this campaign.</li>
+              <li className="text-muted px-4 py-6 text-center">
+                Nothing added from Excel for this campaign.
+              </li>
             ) : (
               importBatches.map((batch) => (
                 <li
@@ -336,7 +381,7 @@ export default async function CampaignDetailPage({
                     {batch.sourceFileName} · {batch.status}
                   </span>
                   <span className="text-muted">
-                    {batch.createdRowCount} imported · {batch.duplicateRowCount} duplicates ·{" "}
+                    {batch.createdRowCount} added · {batch.duplicateRowCount} duplicates ·{" "}
                     {new Date(batch.createdAt).toLocaleString()}
                   </span>
                 </li>

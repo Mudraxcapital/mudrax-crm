@@ -28,6 +28,7 @@ export interface CreateCustomerData {
   organizationId: string;
   fullName: string;
   dob?: Date | null;
+  ownerManagerId?: string | null;
   identifiers: CreateIdentifierData[];
 }
 
@@ -44,6 +45,7 @@ export interface CustomerWithIdentifiers {
 
 export interface ListCustomersOptions {
   search?: string;
+  ownerManagerId?: string;
   limit?: number;
   offset?: number;
 }
@@ -85,7 +87,7 @@ export interface CustomerRepository {
     organizationId: string,
     options?: ListCustomersOptions,
   ): Promise<CustomerWithIdentifiers[]>;
-  count(organizationId: string): Promise<number>;
+  count(organizationId: string, options?: Pick<ListCustomersOptions, "ownerManagerId">): Promise<number>;
 
   /** Creates the Customer, its Identifiers, and a "created" Audit Record atomically. */
   createWithAudit(

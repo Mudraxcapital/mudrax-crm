@@ -10,7 +10,7 @@
 export interface UserLookupSummary {
   id: string;
   organizationId: string;
-  status: "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
+  status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
   fullName: string;
 }
 

@@ -8,7 +8,7 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { hasPermission, isCallerWorkspaceUser, resolveOwnerManagerId } from "@/modules/rbac";
 import {
   createLead,
   createLeadSchema,
@@ -18,6 +18,7 @@ import {
   InvalidLeadStageReferenceError,
   listLeads,
 } from "@/modules/leads";
+import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET() {
   const current = await getCurrentUser();
@@ -28,8 +29,15 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scope = getPermissionScope(current.authContext, "lead.view");
-  const filter = scope === "SELF" ? { assignedToUserIds: [current.session.user.id] } : undefined;
+  // Hierarchy + Caller SELF — never trust client filters.
+  const hierarchyFilter = leadHierarchyFilter(current.authContext);
+  const filter =
+    isCallerWorkspaceUser(current.authContext)
+      ? {
+          ...hierarchyFilter,
+          assignedToUserIds: [current.session.user.id],
+        }
+      : hierarchyFilter;
 
   const leads = await listLeads(current.authContext.organizationId, filter);
   return NextResponse.json({ data: leads });
@@ -58,6 +66,8 @@ export async function POST(request: Request) {
       organizationId: current.authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: current.session.user.id },
+      ownerManagerId: resolveOwnerManagerId(current.authContext),
+      ownerTeamLeadId: current.authContext.hierarchy.teamLeadId,
     });
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {

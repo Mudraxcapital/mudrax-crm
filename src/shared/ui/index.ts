@@ -33,4 +33,5 @@ export type { TimelineItem } from "./Timeline";
 export { BarList, RingStat } from "./Charts";
 export { DataTable } from "./DataTable";
 export type { DataColumn, DataTableProps } from "./DataTable";
+export { EmployeeLink } from "./EmployeeLink";
 export { ThemeProvider, ThemeToggle, useTheme } from "./ThemeProvider";

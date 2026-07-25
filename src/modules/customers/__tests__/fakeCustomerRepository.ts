@@ -87,6 +87,9 @@ export class FakeCustomerRepository implements CustomerRepository {
     let results = [...this.customers.values()].filter(
       (customer) => customer.organizationId === organizationId && customer.status !== "MERGED",
     );
+    if (options?.ownerManagerId) {
+      results = results.filter((customer) => customer.ownerManagerId === options.ownerManagerId);
+    }
     if (options?.search) {
       const search = options.search.toLowerCase();
       results = results.filter((customer) => customer.fullName.toLowerCase().includes(search));
@@ -105,10 +108,15 @@ export class FakeCustomerRepository implements CustomerRepository {
     }));
   }
 
-  async count(organizationId: string): Promise<number> {
-    return [...this.customers.values()].filter(
-      (c) => c.organizationId === organizationId && c.status !== "MERGED",
-    ).length;
+  async count(
+    organizationId: string,
+    options?: Pick<ListCustomersOptions, "ownerManagerId">,
+  ): Promise<number> {
+    return [...this.customers.values()].filter((c) => {
+      if (c.organizationId !== organizationId || c.status === "MERGED") return false;
+      if (options?.ownerManagerId && c.ownerManagerId !== options.ownerManagerId) return false;
+      return true;
+    }).length;
   }
 
   async createWithAudit(
@@ -130,6 +138,7 @@ export class FakeCustomerRepository implements CustomerRepository {
       identityConfidence,
       status: "ACTIVE",
       mergedIntoCustomerId: null,
+      ownerManagerId: data.ownerManagerId ?? null,
       createdAt: now,
       updatedAt: now,
     };

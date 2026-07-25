@@ -100,7 +100,7 @@ export function LeadFieldForm({
             ["isVisible", "Visible", true],
             ["isSearchable", "Searchable", false],
             ["isFilterable", "Filterable", false],
-            ["isImportable", "Importable", true],
+            ["isImportable", "Add from Excel", true],
             ["isExportable", "Exportable", true],
           ] as const
         ).map(([name, label, createDefault]) => (

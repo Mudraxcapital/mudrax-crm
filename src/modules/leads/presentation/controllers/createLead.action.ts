@@ -9,6 +9,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { resolveOwnerManagerId } from "@/modules/rbac";
+import { getUser } from "@/modules/users";
 import {
   createLead,
   createLeadSchema,
@@ -57,12 +59,29 @@ export async function createLeadAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  const ownerManagerId = resolveOwnerManagerId(authContext);
+  let ownerTeamLeadId = authContext.hierarchy.teamLeadId;
+  if (parsed.data.currentAssigneeUserId) {
+    try {
+      const assignee = await getUser(parsed.data.currentAssigneeUserId);
+      if (assignee.roleName === "Team Lead") {
+        ownerTeamLeadId = assignee.id;
+      } else if (assignee.assignedTeamLeadId) {
+        ownerTeamLeadId = assignee.assignedTeamLeadId;
+      }
+    } catch {
+      // Keep hierarchy teamLeadId fallback.
+    }
+  }
+
   let leadId: string;
   try {
     const lead = await createLead({
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
+      ownerManagerId,
+      ownerTeamLeadId,
     });
     leadId = lead.id;
   } catch (error) {

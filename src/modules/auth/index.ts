@@ -8,10 +8,12 @@ import { makeAuthenticateUser } from "./application/use-cases/authenticateUser";
 
 export type { AuthenticatedUser } from "./application/dto/AuthenticatedUser";
 export type { AuthenticateUserInput } from "./application/use-cases/authenticateUser";
+export type { PasswordHasher } from "./application/ports/PasswordHasher";
 export {
   InvalidCredentialsError,
   AccountLockedError,
   AccountNotActiveError,
 } from "./domain/errors/AuthErrors";
 
-export const authenticateUser = makeAuthenticateUser(new BcryptPasswordHasher());
+export const passwordHasher = new BcryptPasswordHasher();
+export const authenticateUser = makeAuthenticateUser(passwordHasher);

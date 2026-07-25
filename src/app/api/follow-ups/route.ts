@@ -8,7 +8,7 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import {
   createFollowUp,
   createFollowUpSchema,
@@ -16,6 +16,7 @@ import {
   InvalidLeadReferenceError,
   listFollowUps,
 } from "@/modules/follow-ups";
+import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET() {
   const current = await getCurrentUser();
@@ -26,8 +27,15 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scope = getPermissionScope(current.authContext, "follow_up.view");
-  const filter = scope === "SELF" ? { assignedToUserIds: [current.session.user.id] } : undefined;
+  const ownership = leadHierarchyFilter(current.authContext);
+  const filter = ownership.assignedToUserIds?.length
+    ? { assignedToUserIds: ownership.assignedToUserIds }
+    : ownership.ownerManagerId || ownership.ownerTeamLeadId
+      ? {
+          // Follow-ups inherit visibility via assignee tree when hierarchy is set.
+          assignedToUserIds: current.authContext.hierarchy.visibleUserIds ?? undefined,
+        }
+      : undefined;
 
   const followUps = await listFollowUps(current.authContext.organizationId, filter);
   return NextResponse.json({ data: followUps });

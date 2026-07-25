@@ -8,13 +8,14 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, resolveOwnerManagerId } from "@/modules/rbac";
 import {
   createCustomer,
   createCustomerSchema,
   DuplicateCustomerIdentifierError,
   listCustomers,
 } from "@/modules/customers";
+import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
   const current = await getCurrentUser();
@@ -26,7 +27,11 @@ export async function GET(request: Request) {
   }
 
   const search = new URL(request.url).searchParams.get("search") ?? undefined;
-  const customers = await listCustomers(current.authContext.organizationId, { search });
+  const book = managerBookFilter(current.authContext);
+  const customers = await listCustomers(current.authContext.organizationId, {
+    search,
+    ...book,
+  });
   return NextResponse.json({ data: customers });
 }
 
@@ -53,6 +58,7 @@ export async function POST(request: Request) {
       organizationId: current.authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: current.session.user.id },
+      ownerManagerId: resolveOwnerManagerId(current.authContext),
     });
     return NextResponse.json({ data: customer }, { status: 201 });
   } catch (error) {

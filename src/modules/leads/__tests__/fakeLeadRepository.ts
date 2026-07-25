@@ -39,6 +39,12 @@ export class FakeLeadRepository implements LeadRepository {
     if (filter?.currentStageId) {
       results = results.filter((lead) => lead.currentStageId === filter.currentStageId);
     }
+    if (filter?.ownerManagerId) {
+      results = results.filter((lead) => lead.ownerManagerId === filter.ownerManagerId);
+    }
+    if (filter?.ownerTeamLeadId) {
+      results = results.filter((lead) => lead.ownerTeamLeadId === filter.ownerTeamLeadId);
+    }
     if (filter?.assignedToUserIds) {
       results = results.filter(
         (lead) =>
@@ -111,6 +117,8 @@ export class FakeLeadRepository implements LeadRepository {
       lostReasonId: null,
       campaignId: data.campaignId ?? null,
       currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
+      ownerManagerId: data.ownerManagerId ?? null,
+      ownerTeamLeadId: data.ownerTeamLeadId ?? null,
       fullNameSnapshot: data.fullNameSnapshot,
       phoneSnapshot: data.phoneSnapshot ?? null,
       emailSnapshot: data.emailSnapshot ?? null,

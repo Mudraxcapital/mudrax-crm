@@ -5,14 +5,20 @@
 // ============================================================================
 
 import { useActionState } from "react";
-import { loginAction, type LoginActionState } from "../controllers/login.action";
+import { loginAction } from "../controllers/login.action";
 import { Button } from "@/shared/ui/Button";
 import { Field, Input } from "@/shared/ui/Input";
 
-const initialState: LoginActionState = {};
-
-export function LoginForm({ callbackUrl }: { callbackUrl?: string }) {
-  const [state, formAction, isPending] = useActionState(loginAction, initialState);
+export function LoginForm({
+  callbackUrl,
+  initialError,
+}: {
+  callbackUrl?: string;
+  initialError?: string;
+}) {
+  const [state, formAction, isPending] = useActionState(loginAction, {
+    error: initialError,
+  });
 
   return (
     <form action={formAction} className="flex flex-col gap-5">

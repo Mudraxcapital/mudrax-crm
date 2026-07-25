@@ -49,7 +49,10 @@ import {
 } from "./application/use-cases/importLeadsCsv";
 import {
   buildDuplicateReportCsv,
+  buildFailedRowsCsv,
   classifyImportDuplicates,
+  DUPLICATE_MATCH_LABELS,
+  groupDuplicatesByStage,
 } from "./application/use-cases/detectImportDuplicates";
 import { previewLeadDistribution } from "./application/use-cases/previewLeadDistribution";
 import {
@@ -59,6 +62,7 @@ import {
 } from "./application/use-cases/bulkLeadOperations";
 import { makeMergeLeads } from "./application/use-cases/mergeLeads";
 import { makeGetKanbanBoard } from "./application/use-cases/getKanbanBoard";
+import { makeGetAssigneePortfolio } from "./application/use-cases/getAssigneePortfolio";
 import { makeRepointLeadsCustomer } from "./application/use-cases/repointLeadsCustomer";
 import {
   makeArchiveLeadField,
@@ -201,18 +205,36 @@ export type {
   DuplicateResolutionMode,
   DuplicateDetectionSummary,
   DuplicateClassification,
+  DuplicateStatusGroup,
 } from "./application/use-cases/detectImportDuplicates";
 export type {
   ImportDistributionStrategy,
   DistributionPreview,
 } from "./application/use-cases/previewLeadDistribution";
-export { buildDuplicateReportCsv, classifyImportDuplicates, previewLeadDistribution };
+export {
+  buildDuplicateReportCsv,
+  buildFailedRowsCsv,
+  classifyImportDuplicates,
+  groupDuplicatesByStage,
+  DUPLICATE_MATCH_LABELS,
+  previewLeadDistribution,
+};
+export {
+  buildUnknownColumnSuggestions,
+  detectFieldTypeFromSamples,
+} from "./application/services/detectImportFieldType";
+export type { UnknownColumnSuggestion } from "./application/services/detectImportFieldType";
 export type { CreateLeadCommand } from "./application/use-cases/createLead";
 export type { UpdateLeadCommand } from "./application/use-cases/updateLead";
 export type { ChangeLeadStageCommand } from "./application/use-cases/changeLeadStage";
 export type { AssignLeadCommand } from "./application/use-cases/assignLead";
 export type { AddLeadNoteCommand } from "./application/use-cases/addLeadNote";
 export type { UpdateLeadNoteCommand } from "./application/use-cases/updateLeadNote";
+export type {
+  AssigneePortfolioDto,
+  AssigneePortfolioSummaryDto,
+} from "./application/dto/AssigneePortfolioDto";
+export type { AssigneePortfolioFilter } from "./application/use-cases/getAssigneePortfolio";
 
 const leadRepository = new PrismaLeadRepository(prisma);
 const leadNoteRepository = new PrismaLeadNoteRepository(prisma);
@@ -283,7 +305,10 @@ export const ensureLeadFieldDefaults = (organizationId: string, createdByUserId?
   leadFieldRepository.ensureSystemDefaults(organizationId, createdByUserId);
 export const listImportBatches = makeListImportBatches(importBatchRepository);
 export const getImportBatch = makeGetImportBatch(importBatchRepository);
-export const previewImportDuplicates = makePreviewImportDuplicates(leadRepository);
+export const previewImportDuplicates = makePreviewImportDuplicates(
+  leadRepository,
+  leadCatalogRepository,
+);
 export const bulkAssignLeads = makeBulkAssignLeads(
   leadRepository,
   leadCatalogRepository,
@@ -293,6 +318,10 @@ export const bulkChangeLeadStage = makeBulkChangeLeadStage(leadRepository, leadC
 export const bulkCloseLeads = makeBulkCloseLeads(leadRepository, leadCatalogRepository);
 export const mergeLeads = makeMergeLeads(leadRepository, leadCatalogRepository);
 export const getKanbanBoard = makeGetKanbanBoard(leadRepository, leadCatalogRepository);
+export const getAssigneePortfolio = makeGetAssigneePortfolio(
+  leadRepository,
+  leadCatalogRepository,
+);
 export const repointLeadsCustomer = makeRepointLeadsCustomer(leadRepository);
 
 export const leadCatalogs = {

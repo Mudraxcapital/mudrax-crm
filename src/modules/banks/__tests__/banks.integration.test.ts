@@ -42,8 +42,7 @@ describe.skipIf(!hasDatabase)("Banks module (integration)", () => {
     const suffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTBNK${suffix}`,
+        employeeId: `INTBNK${suffix}`,
         fullName: "Integration Banks User",
         email: `int-banks-${suffix}@example.com`,
         passwordHash: "not-a-real-hash",

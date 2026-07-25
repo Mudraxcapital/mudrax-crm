@@ -12,6 +12,7 @@ import {
   makeListCustomers,
   makeCountCustomers,
 } from "./application/use-cases/getCustomer";
+import { makeFindCustomerByContact } from "./application/use-cases/findCustomerByContact";
 import { makeListCustomerAuditLog } from "./application/use-cases/listCustomerAuditLog";
 import {
   makeDetectDuplicates,
@@ -82,6 +83,7 @@ export const updateCustomer = makeUpdateCustomer(customerRepository);
 export const getCustomer = makeGetCustomer(customerRepository);
 export const listCustomers = makeListCustomers(customerRepository);
 export const countCustomers = makeCountCustomers(customerRepository);
+export const findCustomerByContact = makeFindCustomerByContact(customerRepository);
 export const listCustomerAuditLog = makeListCustomerAuditLog(customerRepository);
 export const detectDuplicates = makeDetectDuplicates(customerRepository);
 export const listDuplicateCandidates = makeListDuplicateCandidates(customerRepository);

@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { requireOwnerManagerId } from "@/modules/rbac";
 import {
   addCampaignMember,
   createCampaign,
@@ -31,10 +32,12 @@ export async function createCampaignAction(
   const source = String(formData.get("source") ?? "").trim();
   const priority = String(formData.get("priority") ?? "").trim();
   const baseDescription = String(formData.get("description") ?? "").trim();
+  const distributionStrategy = String(formData.get("distributionStrategy") || "").trim();
   const descriptionParts = [
     baseDescription || null,
     source ? `Source: ${source}` : null,
     priority ? `Priority: ${priority}` : null,
+    distributionStrategy ? `Distribution: ${distributionStrategy}` : null,
   ].filter(Boolean);
 
   const parsed = createCampaignSchema.safeParse({
@@ -43,7 +46,7 @@ export async function createCampaignAction(
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
     memberUserIds: memberUserIds.length > 0 ? memberUserIds : undefined,
-    distributionStrategy: formData.get("distributionStrategy") || undefined,
+    distributionStrategy: distributionStrategy || undefined,
   });
 
   if (!parsed.success) {
@@ -51,10 +54,21 @@ export async function createCampaignAction(
   }
 
   const actor = { actorType: "USER" as const, actorId: session.user.id };
+  let ownerManagerId: string;
+  try {
+    ownerManagerId = requireOwnerManagerId(
+      authContext,
+      String(formData.get("ownerManagerId") || "") || null,
+    );
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Manager ownership is required." };
+  }
+
   const created = await createCampaign({
     organizationId: authContext.organizationId,
     input: parsed.data,
     actor,
+    ownerManagerId,
   });
 
   for (const userId of parsed.data.memberUserIds ?? []) {
@@ -63,6 +77,7 @@ export async function createCampaignAction(
         campaignId: created.id,
         input: { userId },
         actor,
+        redistribute: false,
       });
     } catch {
       // Skip invalid member candidates; Campaign itself was created successfully.

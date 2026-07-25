@@ -79,8 +79,7 @@ describe.skipIf(!hasDatabase)("Follow-up aggregate (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const userA = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTFU${uniqueSuffix}A`,
+        employeeId: `INTFU${uniqueSuffix}A`,
         fullName: "Integration Test Caller A",
         email: `int-test-fu-a-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",
@@ -90,8 +89,7 @@ describe.skipIf(!hasDatabase)("Follow-up aggregate (integration)", () => {
     userAId = userA.id;
     const userB = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTFU${uniqueSuffix}B`,
+        employeeId: `INTFU${uniqueSuffix}B`,
         fullName: "Integration Test Caller B",
         email: `int-test-fu-b-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",

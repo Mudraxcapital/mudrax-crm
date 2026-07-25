@@ -18,6 +18,7 @@ import {
   ImportBatchNotFoundError,
   InvalidLeadSourceReferenceError,
   InvalidLeadStageReferenceError,
+  LeadAlreadyClosedError,
 } from "../../domain/errors/LeadErrors";
 import type { ImportLeadsCsvInput } from "../validators/productivitySchemas";
 import { validateLeadFieldValues } from "../validators/leadFieldSchemas";
@@ -30,15 +31,18 @@ import {
   type DuplicateResolutionMode,
 } from "./detectImportDuplicates";
 import { previewLeadDistribution } from "./previewLeadDistribution";
+import { makeChangeLeadStage } from "./changeLeadStage";
 
 export interface ImportLeadsSummary extends ImportBatchDto {
   skippedInvalidCount: number;
   skippedDuplicateCount: number;
   updatedCount: number;
+  replacedCount: number;
+  archivedCount: number;
   failedCount: number;
   distributionStrategy: string | null;
   assignedAgentIds: string[];
-  errors: Array<{ rowNumber: number; message: string }>;
+  errors: Array<{ rowNumber: number; message: string; name?: string; phone?: string }>;
   rolledBack: boolean;
   auditNotes: string[];
 }
@@ -128,14 +132,20 @@ export function makeImportLeadsCsv(
   noteRepository: LeadNoteRepository,
   fieldRepository: LeadFieldDefinitionRepository,
 ) {
+  const changeLeadStage = makeChangeLeadStage(leadRepository, catalogRepository);
+
   return async function importLeadsCsv(command: {
     organizationId: string;
     input: ImportLeadsCsvInput;
     actor: LeadAuditActor;
     /** Optional campaign name → id map from the presentation layer (avoids campaigns→leads cycle). */
     campaignNameToId?: Record<string, string>;
+    ownerManagerId?: string | null;
+    ownerTeamLeadId?: string | null;
   }): Promise<ImportLeadsSummary> {
     const { organizationId, input, actor, campaignNameToId = {} } = command;
+    const ownerManagerId = command.ownerManagerId ?? null;
+    const ownerTeamLeadId = command.ownerTeamLeadId ?? null;
 
     const source = await catalogRepository.findSourceById(input.leadSourceId);
     if (!source || source.organizationId !== organizationId) {
@@ -154,8 +164,25 @@ export function makeImportLeadsCsv(
     const allFields = await fieldRepository.listActive(organizationId);
     const fieldsForImport = importableFields(allFields);
 
-    const sources = await catalogRepository.listSources(organizationId);
+    const [sources, stages, lostReasons] = await Promise.all([
+      catalogRepository.listSources(organizationId),
+      catalogRepository.listStages(organizationId),
+      catalogRepository.listLostReasons(organizationId),
+    ]);
     const sourceByName = new Map(sources.map((item) => [item.name.trim().toLowerCase(), item.id]));
+    const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+    const lostStage = stages.find(
+      (stage) => stage.bucket === "CLOSED" && stage.closeOutcome === "LOST" && stage.isActive,
+    );
+    const replaceLostReason =
+      lostReasons.find((reason) => /replaced|import/i.test(reason.name)) ??
+      lostReasons.find((reason) => /duplicate/i.test(reason.name)) ??
+      lostReasons[0];
+    const archiveLostReason =
+      lostReasons.find((reason) => /archiv/i.test(reason.name)) ??
+      lostReasons.find((reason) => /duplicate/i.test(reason.name)) ??
+      lostReasons[0];
+    const selectedStageIds = new Set(input.selectedStageIds ?? []);
 
     const agents = userLookup.listByOrganization
       ? await userLookup.listByOrganization(organizationId)
@@ -167,6 +194,8 @@ export function makeImportLeadsCsv(
       uploadedByUserId: actor.actorId ?? organizationId,
       leadSourceId: input.leadSourceId,
       campaignId: input.campaignId ?? null,
+      ownerManagerId,
+      ownerTeamLeadId,
       sourceFileName: input.sourceFileName,
     });
 
@@ -191,9 +220,9 @@ export function makeImportLeadsCsv(
     const phoneHeader = mapGet(mapping, "phone");
     const emailHeader = mapGet(mapping, "email");
     const duplicateResolution = resolveDuplicateMode(input);
-    const matchMode: DuplicateMatchMode = input.duplicateMatchMode ?? "phone_or_email";
+    const matchMode: DuplicateMatchMode = input.duplicateMatchMode ?? "phone";
 
-    const existingLeads = await leadRepository.list(organizationId, { limit: 5000 });
+    const existingLeads = await leadRepository.list(organizationId, { limit: 100_000 });
     const classifications = classifyImportDuplicates({
       rows: tableRows.map((row, index) => ({
         rowNumber: index + 1,
@@ -201,20 +230,35 @@ export function makeImportLeadsCsv(
         phone: mappedCell(row, phoneHeader),
         email: mappedCell(row, emailHeader),
       })),
-      existingLeads: existingLeads.map((lead) => ({
-        id: lead.id,
-        customerId: lead.customerId,
-        fullNameSnapshot: lead.fullNameSnapshot,
-        phoneSnapshot: lead.phoneSnapshot,
-        emailSnapshot: lead.emailSnapshot,
-      })),
+      existingLeads: existingLeads.map((lead) => {
+        const stage = stageById.get(lead.currentStageId);
+        return {
+          id: lead.id,
+          customerId: lead.customerId,
+          fullNameSnapshot: lead.fullNameSnapshot,
+          phoneSnapshot: lead.phoneSnapshot,
+          emailSnapshot: lead.emailSnapshot,
+          currentStageId: lead.currentStageId,
+          currentStageName: stage?.name ?? "Unknown",
+          stageBucket: stage?.bucket ?? "ACTIVE",
+          stageSortOrder: stage?.sortOrder ?? 0,
+          updatedAt: lead.updatedAt,
+        };
+      }),
       matchMode,
+      stages,
     });
     const classByRow = new Map(
-      [...classifications.newLeads, ...classifications.possibleDuplicates, ...classifications.exactDuplicates].map(
-        (item) => [item.rowNumber, item],
-      ),
+      [
+        ...classifications.newLeads,
+        ...classifications.possibleDuplicates,
+        ...classifications.exactDuplicates,
+      ].map((item) => [item.rowNumber, item]),
     );
+
+    const isStatusStrategy =
+      duplicateResolution === "replace_selected_statuses" ||
+      duplicateResolution === "archive_and_reimport";
 
     // Rows that will become new leads (for distribution sizing).
     const importableIndexes: number[] = [];
@@ -230,6 +274,10 @@ export function makeImportLeadsCsv(
       if (isDup && duplicateResolution === "skip_duplicates") continue;
       if (isDup && (duplicateResolution === "update_existing" || duplicateResolution === "merge")) {
         continue; // handled as update path, not new create
+      }
+      if (isDup && isStatusStrategy) {
+        const stageId = classification?.existingStageId;
+        if (!stageId || !selectedStageIds.has(stageId)) continue;
       }
       importableIndexes.push(index);
     }
@@ -295,15 +343,18 @@ export function makeImportLeadsCsv(
     let skippedInvalidCount = 0;
     let skippedDuplicateCount = 0;
     let updatedCount = 0;
+    let replacedCount = 0;
+    let archivedCount = 0;
     let failedCount = 0;
-    const errors: Array<{ rowNumber: number; message: string }> = [];
+    const errors: Array<{ rowNumber: number; message: string; name?: string; phone?: string }> = [];
     const createdLeadIds: string[] = [];
     const assignedAgentIds = new Set<string>();
     const auditNotes: string[] = [
       `File: ${input.sourceFileName}`,
       input.sheetName ? `Sheet: ${input.sheetName}` : null,
-      `Duplicate mode: ${matchMode}`,
+      `Duplicate detection based on: ${classifications.matchLabel}`,
       `Duplicate resolution: ${duplicateResolution}`,
+      selectedStageIds.size > 0 ? `Selected statuses: ${selectedStageIds.size}` : null,
       strategy ? `Distribution: ${strategy}` : null,
       selectedAgentIds.length > 0 ? `Agents: ${selectedAgentIds.length}` : null,
     ].filter((item): item is string => Boolean(item));
@@ -340,7 +391,12 @@ export function makeImportLeadsCsv(
         if (!validatedFields.ok) {
           skippedInvalidCount += 1;
           failedCount += 1;
-          errors.push({ rowNumber, message: validatedFields.error });
+          errors.push({
+            rowNumber,
+            message: validatedFields.error,
+            name: fullName,
+            phone,
+          });
           importRows.push({
             importBatchId: batch.id,
             rowNumber,
@@ -362,7 +418,7 @@ export function makeImportLeadsCsv(
         if (!fullName) {
           skippedInvalidCount += 1;
           failedCount += 1;
-          errors.push({ rowNumber, message: "Name is required" });
+          errors.push({ rowNumber, message: "Name is required", name: fullName, phone });
           importRows.push({
             importBatchId: batch.id,
             rowNumber,
@@ -376,7 +432,12 @@ export function makeImportLeadsCsv(
         if (!phone && !email) {
           skippedInvalidCount += 1;
           failedCount += 1;
-          errors.push({ rowNumber, message: "Phone or Email is required" });
+          errors.push({
+            rowNumber,
+            message: "Phone or Email is required",
+            name: fullName,
+            phone,
+          });
           importRows.push({
             importBatchId: batch.id,
             rowNumber,
@@ -404,7 +465,71 @@ export function makeImportLeadsCsv(
               continue;
             }
 
-            if (
+            if (isStatusStrategy) {
+              const stageId = classification?.existingStageId;
+              if (!stageId || !selectedStageIds.has(stageId)) {
+                skippedDuplicateCount += 1;
+                importRows.push({
+                  importBatchId: batch.id,
+                  rowNumber,
+                  rawData: row,
+                  parseStatus: "INVALID" as const,
+                  parseErrors: [
+                    `Duplicate in status “${classification?.existingStageName ?? "unknown"}” — not selected; skipped`,
+                  ],
+                  resolvedCustomerId: classification?.existingCustomerId ?? null,
+                });
+                continue;
+              }
+
+              if (!lostStage || !replaceLostReason) {
+                throw new InvalidLeadStageReferenceError(
+                  "(no Closed-Lost Lead Stage / Lost Reason configured for replace/archive)",
+                );
+              }
+
+              const existingLeadId = classification?.existingLeadId;
+              if (existingLeadId) {
+                try {
+                  await changeLeadStage({
+                    id: existingLeadId,
+                    input: {
+                      stageId: lostStage.id,
+                      lostReasonId:
+                        duplicateResolution === "archive_and_reimport"
+                          ? archiveLostReason!.id
+                          : replaceLostReason.id,
+                    },
+                    actor,
+                    correlationId: batch.id,
+                  });
+                  if (duplicateResolution === "archive_and_reimport") {
+                    archivedCount += 1;
+                  } else {
+                    replacedCount += 1;
+                  }
+                  if (actor.actorId) {
+                    await noteRepository.createWithAudit(
+                      {
+                        leadId: existingLeadId,
+                        authorUserId: actor.actorId,
+                        body:
+                          duplicateResolution === "archive_and_reimport"
+                            ? `Archived via import from ${input.sourceFileName} row ${rowNumber} (history retained).`
+                            : `Replaced via import from ${input.sourceFileName} row ${rowNumber} (closed before re-import).`,
+                      },
+                      actor,
+                    );
+                  }
+                } catch (closeError) {
+                  if (!(closeError instanceof LeadAlreadyClosedError)) {
+                    throw closeError;
+                  }
+                  // Already closed — still allow creating the fresh copy.
+                }
+              }
+              // Fall through to create a new Lead from the Excel row.
+            } else if (
               (duplicateResolution === "update_existing" || duplicateResolution === "merge") &&
               classification?.existingLeadId
             ) {
@@ -482,8 +607,12 @@ export function makeImportLeadsCsv(
               }
             }
 
-            // import_all falls through to create a new Lead.
-            if (duplicateResolution !== "import_all") {
+            // import_all / replace / archive fall through to create a new Lead.
+            if (
+              duplicateResolution !== "import_all" &&
+              duplicateResolution !== "replace_selected_statuses" &&
+              duplicateResolution !== "archive_and_reimport"
+            ) {
               skippedDuplicateCount += 1;
               importRows.push({
                 importBatchId: batch.id,
@@ -503,6 +632,7 @@ export function makeImportLeadsCsv(
             phone: phone || null,
             email: email || null,
             actorUserId: actor.actorId ?? organizationId,
+            ownerManagerId,
           });
 
           const resolvedSourceId =
@@ -528,6 +658,8 @@ export function makeImportLeadsCsv(
               leadSourceId: resolvedSourceId,
               currentStageId: defaultStage.id,
               campaignId: resolvedCampaignId,
+              ownerManagerId,
+              ownerTeamLeadId,
               fullNameSnapshot: systemUpdates.fullNameSnapshot ?? fullName,
               phoneSnapshot: systemUpdates.phoneSnapshot || phone || null,
               emailSnapshot: systemUpdates.emailSnapshot || email || null,
@@ -577,7 +709,7 @@ export function makeImportLeadsCsv(
           skippedInvalidCount += 1;
           failedCount += 1;
           const message = error instanceof Error ? error.message : "Import row failed";
-          errors.push({ rowNumber, message });
+          errors.push({ rowNumber, message, name: fullName, phone });
           importRows.push({
             importBatchId: batch.id,
             rowNumber,
@@ -604,12 +736,23 @@ export function makeImportLeadsCsv(
         skippedInvalidCount,
         skippedDuplicateCount,
         updatedCount,
+        replacedCount,
+        archivedCount,
         failedCount,
         distributionStrategy: strategy ?? null,
         assignedAgentIds: [...assignedAgentIds],
         errors,
         rolledBack: false,
-        auditNotes,
+        auditNotes: [
+          ...auditNotes,
+          `Excel rows: ${tableRows.length}`,
+          `Duplicates: ${duplicateRowCount}`,
+          `Imported: ${createdRowCount}`,
+          `Skipped: ${skippedDuplicateCount}`,
+          `Replaced: ${replacedCount}`,
+          `Archived: ${archivedCount}`,
+          `Failed: ${failedCount}`,
+        ],
       };
     } catch (criticalError) {
       rolledBack = createdLeadIds.length > 0;
@@ -642,12 +785,16 @@ export function makeImportLeadsCsv(
 export function makeListImportBatches(importRepository: ImportBatchRepository) {
   return async function listImportBatches(
     organizationId: string,
-    options?: { campaignId?: string; limit?: number },
+    options?: { campaignId?: string; ownerManagerId?: string; limit?: number },
   ): Promise<ImportBatchDto[]> {
     const batches = await importRepository.list(organizationId, options?.limit ?? 50);
-    const filtered = options?.campaignId
-      ? batches.filter((batch) => batch.campaignId === options.campaignId)
-      : batches;
+    let filtered = batches;
+    if (options?.campaignId) {
+      filtered = filtered.filter((batch) => batch.campaignId === options.campaignId);
+    }
+    if (options?.ownerManagerId) {
+      filtered = filtered.filter((batch) => batch.ownerManagerId === options.ownerManagerId);
+    }
     return filtered.map(toImportBatchDto);
   };
 }
@@ -662,6 +809,7 @@ export function makeGetImportBatch(importRepository: ImportBatchRepository) {
 
 export function makePreviewImportDuplicates(
   leadRepository: LeadRepository,
+  catalogRepository: LeadCatalogRepository,
 ) {
   return async function previewImportDuplicates(command: {
     organizationId: string;
@@ -670,22 +818,41 @@ export function makePreviewImportDuplicates(
     matchMode: DuplicateMatchMode;
   }) {
     const { organizationId, rows, columnMapping, matchMode } = command;
-    const existingLeads = await leadRepository.list(organizationId, { limit: 5000 });
+    const mapping = normalizeMapping(columnMapping);
+    const nameHeader = mapGet(mapping, "full_name", "name");
+    const phoneHeader = mapGet(mapping, "phone");
+    const emailHeader = mapGet(mapping, "email");
+
+    const [existingLeads, stages] = await Promise.all([
+      leadRepository.list(organizationId, { limit: 100_000 }),
+      catalogRepository.listStages(organizationId),
+    ]);
+    const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+
     return classifyImportDuplicates({
       rows: rows.map((row, index) => ({
         rowNumber: index + 1,
-        name: mappedCell(row, columnMapping.name),
-        phone: mappedCell(row, columnMapping.phone),
-        email: mappedCell(row, columnMapping.email),
+        name: mappedCell(row, nameHeader),
+        phone: mappedCell(row, phoneHeader),
+        email: mappedCell(row, emailHeader),
       })),
-      existingLeads: existingLeads.map((lead) => ({
-        id: lead.id,
-        customerId: lead.customerId,
-        fullNameSnapshot: lead.fullNameSnapshot,
-        phoneSnapshot: lead.phoneSnapshot,
-        emailSnapshot: lead.emailSnapshot,
-      })),
+      existingLeads: existingLeads.map((lead) => {
+        const stage = stageById.get(lead.currentStageId);
+        return {
+          id: lead.id,
+          customerId: lead.customerId,
+          fullNameSnapshot: lead.fullNameSnapshot,
+          phoneSnapshot: lead.phoneSnapshot,
+          emailSnapshot: lead.emailSnapshot,
+          currentStageId: lead.currentStageId,
+          currentStageName: stage?.name ?? "Unknown",
+          stageBucket: stage?.bucket ?? "ACTIVE",
+          stageSortOrder: stage?.sortOrder ?? 0,
+          updatedAt: lead.updatedAt,
+        };
+      }),
       matchMode,
+      stages,
     });
   };
 }

@@ -25,10 +25,17 @@ export function AddCampaignMemberForm({
   action: AddMemberFormAction;
   candidates: { id: string; fullName: string }[];
 }) {
+  // After submit, the server redistributes all uncompleted Campaign Leads
+  // across active members (weighted EQUAL / Campaign Distribution setting).
   const [state, formAction, isPending] = useActionState(action, initialState);
 
   return (
-    <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <form action={formAction} className="flex flex-col gap-3">
+      <p className="text-muted text-xs">
+        Adding a caller automatically redistributes all uncompleted leads across every active
+        member (respects allocation weights / campaign distribution setting).
+      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex flex-1 flex-col gap-1.5">
         <label htmlFor="userId" className="mx-label">
           User
@@ -73,6 +80,7 @@ export function AddCampaignMemberForm({
       >
         {isPending ? "Adding…" : "Add Member"}
       </button>
+      </div>
     </form>
   );
 }

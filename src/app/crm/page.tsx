@@ -12,6 +12,7 @@ import { Timeline } from "@/shared/ui/Timeline";
 import { Button } from "@/shared/ui/Button";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { Badge, statusTone } from "@/shared/ui/Badge";
+import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function CrmDashboardPage() {
   const { authContext } = await requireAuth();
@@ -21,14 +22,16 @@ export default async function CrmDashboardPage() {
   const canViewCampaigns = hasPermission(authContext, "campaign.view");
   const canViewFollowUps = hasPermission(authContext, "follow_up.view");
   const canManageFields = hasPermission(authContext, "custom_field.manage");
+  const book = managerBookFilter(authContext);
+  const leadFilter = leadHierarchyFilter(authContext);
 
   const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns, activity] =
     await Promise.all([
-      canViewCustomers ? countCustomers(authContext.organizationId) : Promise.resolve(0),
-      canViewLeads ? countLeads(authContext.organizationId) : Promise.resolve(0),
+      canViewCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
+      canViewLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
       canViewLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
       canViewLeads ? getLeadsBySource(authContext.organizationId) : Promise.resolve([]),
-      canViewCampaigns ? listCampaigns(authContext.organizationId) : Promise.resolve([]),
+      canViewCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
       listRecentCrmActivity(authContext.organizationId, 10, {
         includeLeads: canViewLeads,
         includeFollowUps: canViewFollowUps,
@@ -45,12 +48,12 @@ export default async function CrmDashboardPage() {
     <PageSection>
       <PageHeader
         title="CRM Dashboard"
-        description="Operational overview of customers, leads, and campaigns."
+        description="Operational overview of customers and related CRM activity."
         actions={
           <>
             {canManageFields ? (
               <Link href="/crm/field-settings">
-                <Button variant="secondary">Field Settings</Button>
+                <Button variant="secondary">Lead Settings</Button>
               </Link>
             ) : null}
             {canViewLeads ? (

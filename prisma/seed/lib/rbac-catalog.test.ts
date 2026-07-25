@@ -1,48 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { computeRoleGrants, PERMISSION_CATALOG } from "./rbac-catalog";
+import { PERMISSION_CATALOG, computeRoleGrants, ROLE_DEFINITIONS } from "./rbac-catalog";
 
-describe("organization.manage permission", () => {
-  it("is declared in the Permission catalog as an Admin-only, System-scope grant", () => {
-    const permission = PERMISSION_CATALOG.find((p) => p.code === "organization.manage");
-
-    expect(permission).toBeDefined();
-    expect(permission?.minRole).toBe("Admin");
-    expect(permission?.systemOnly).toBe(true);
-  });
-
-  it("grants organization.manage to Admin at SYSTEM scope only, per RBAC enforcement", () => {
-    const grants = computeRoleGrants().filter(
-      (grant) => grant.permissionCode === "organization.manage",
+describe("fixed roles", () => {
+  it("defines exactly four fixed roles", () => {
+    expect(ROLE_DEFINITIONS.map((r) => r.name).sort()).toEqual(
+      ["Admin", "Caller", "Manager", "Team Lead"].sort(),
     );
-
-    expect(grants).toHaveLength(1);
-    const [grant] = grants;
-    expect(grant?.role).toBe("Admin");
-    expect(grant?.scope).toBe("SYSTEM");
-  });
-
-  it("does not grant organization.manage to Caller, Team Leader, or Manager", () => {
-    const grants = computeRoleGrants().filter(
-      (grant) => grant.permissionCode === "organization.manage",
-    );
-    const roles = grants.map((grant) => grant.role);
-
-    expect(roles).not.toContain("Caller");
-    expect(roles).not.toContain("Team Leader");
-    expect(roles).not.toContain("Manager");
   });
 });
 
-describe("organization.view permission", () => {
-  it("remains available starting at Caller (read-only structure visibility)", () => {
-    const permission = PERMISSION_CATALOG.find((p) => p.code === "organization.view");
-    expect(permission?.minRole).toBe("Caller");
+describe("user management permissions", () => {
+  it("restricts user.view to Manager and Admin (not Team Lead or Caller)", () => {
+    const roles = computeRoleGrants()
+      .filter((grant) => grant.permissionCode === "user.view")
+      .map((grant) => grant.role)
+      .sort();
+    expect(roles).toEqual(["Admin", "Manager"]);
+  });
 
-    const grants = computeRoleGrants().filter(
-      (grant) => grant.permissionCode === "organization.view",
+  it("grants user.delete and user.reset_password to Admin only", () => {
+    for (const code of ["user.delete", "user.reset_password"] as const) {
+      const grants = computeRoleGrants().filter((grant) => grant.permissionCode === code);
+      expect(grants).toHaveLength(1);
+      expect(grants[0]?.role).toBe("Admin");
+      expect(grants[0]?.scope).toBe("SYSTEM");
+    }
+  });
+
+  it("does not expose organization.* product permissions", () => {
+    const orgCodes = PERMISSION_CATALOG.filter((p) => p.module === "organization").map(
+      (p) => p.code,
     );
-    expect(grants.map((grant) => grant.role).sort()).toEqual(
-      ["Admin", "Caller", "Manager", "Team Leader"].sort(),
-    );
+    expect(orgCodes).toEqual([]);
+  });
+
+  it("does not expose role.manage — roles are fixed in code", () => {
+    expect(PERMISSION_CATALOG.find((p) => p.code === "role.manage")).toBeUndefined();
   });
 });

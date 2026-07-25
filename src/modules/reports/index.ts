@@ -19,6 +19,7 @@ import { makeCreateDashboard } from "./application/use-cases/createDashboard";
 import { makeDeleteSavedReport } from "./application/use-cases/deleteSavedReport";
 import { makeDownloadExport, makeExportReport } from "./application/use-cases/exportReport";
 import { makeGetAnalyticsDashboard } from "./application/use-cases/getAnalyticsDashboard";
+import { makeGetCallerLeaderboard } from "./application/use-cases/getCallerLeaderboard";
 import { makeGetDashboard, makeListDashboards } from "./application/use-cases/getDashboard";
 import { makeGetReportExecution } from "./application/use-cases/getReportExecution";
 import {
@@ -93,6 +94,12 @@ export type { SavedReportDto } from "./application/dto/SavedReportDto";
 export type { ReportExecutionDto } from "./application/dto/ReportExecutionDto";
 export type { ExportJobDto } from "./application/dto/ExportJobDto";
 export type { ReportResultDto } from "./application/dto/ReportResultDto";
+export type {
+  CallerLeaderboardDto,
+  CallerLeaderboardHighlightDto,
+  CallerLeaderboardRowDto,
+  NamedMetricDto,
+} from "./application/dto/CallerLeaderboardDto";
 
 export {
   createDashboardSchema,
@@ -113,6 +120,14 @@ export {
   type RunReportInput,
   type SaveReportInput,
 } from "./application/validators/reportSchemas";
+export {
+  callerLeaderboardQuerySchema,
+  callerLeaderboardPresetSchema,
+  callerLeaderboardSortSchema,
+  type CallerLeaderboardQuery,
+  type CallerLeaderboardPreset,
+  type CallerLeaderboardSort,
+} from "./application/validators/callerLeaderboardSchemas";
 
 const dashboardRepository = new PrismaDashboardRepository(prisma);
 const templateRepository = new PrismaReportTemplateRepository(prisma);
@@ -124,6 +139,7 @@ const metricDefinitionRepository = new PrismaMetricDefinitionRepository(prisma);
 const sourceData = new SourceModulesDataAdapter();
 
 export const getAnalyticsDashboard = makeGetAnalyticsDashboard(sourceData);
+export const getCallerLeaderboard = makeGetCallerLeaderboard();
 export const runReport = makeRunReport(templateRepository, executionRepository, sourceData);
 export const saveReport = makeSaveReport(templateRepository, savedReportRepository);
 export const deleteSavedReport = makeDeleteSavedReport(savedReportRepository);

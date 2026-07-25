@@ -70,8 +70,7 @@ describe.skipIf(!hasDatabase)("Documents module (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTDOC${uniqueSuffix}`,
+        employeeId: `INTDOC${uniqueSuffix}`,
         fullName: "Integration Test Documents User",
         email: `int-test-docs-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",

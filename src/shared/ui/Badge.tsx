@@ -41,11 +41,30 @@ export function Badge({
 
 export function statusTone(status: string): BadgeTone {
   const s = status.toLowerCase();
-  if (/(active|open|won|approved|sent|connected|verified|completed|success|live)/.test(s))
+  if (/(^active$|open|won|approved|sent|connected|verified|completed|success|live)/.test(s))
     return "success";
-  if (/(pending|draft|queued|new|review|hold)/.test(s)) return "warning";
-  if (/(lost|failed|rejected|closed|inactive|missed|error|cancelled|canceled)/.test(s))
+  if (/(suspended|pending|draft|queued|new|review|hold)/.test(s)) return "warning";
+  if (
+    /(disabled|lost|failed|rejected|closed|inactive|missed|error|cancelled|canceled)/.test(s)
+  )
     return "danger";
   if (/(progress|running|in_?progress|processing)/.test(s)) return "info";
   return "neutral";
+}
+
+/** Account status badges — Active / Disabled / Suspended / Locked. */
+export function accountStatusTone(status: string): BadgeTone {
+  const s = status.toUpperCase();
+  if (s === "ACTIVE") return "success";
+  if (s === "SUSPENDED" || s === "LOCKED") return "warning";
+  return "danger";
+}
+
+export function accountStatusLabel(status: string): string {
+  const s = status.toUpperCase();
+  if (s === "ACTIVE") return "Active";
+  if (s === "SUSPENDED") return "Suspended";
+  if (s === "INACTIVE") return "Disabled";
+  if (s === "LOCKED") return "Locked";
+  return status;
 }

@@ -1,32 +1,28 @@
-# Users Module
+# users — Employee Management
 
-The canonical identity and profile for every employee who uses the CRM.
+Single-company employee identity for Mudrax Capitals.
 
-## Boundary
+## Fixed roles
 
-- A **User is the identity**. It represents one person and remains stable
-  throughout promotions, transfers, or changes in responsibility.
-- Job functions such as Caller, Manager, Team Leader, and Admin are Roles
-  assigned through the `rbac` module. They are not separate User types or
-  standalone modules.
-- This module owns identity/profile lifecycle. The `rbac` module owns Roles,
-  Permissions, assignments, and authorization policy evaluation.
-- `organization` owns Team, Branch, Region, and Department membership plus
-  operating calendars and escalation policy; these references never replace
-  the User identity owned here.
-- Future positions such as HR, Branch Manager, Regional Manager, Recovery
-  Officer, and Sales Executive must be added as Roles without creating new
-  identity modules.
+Admin · Manager · Team Lead · Caller
 
-**Never put here**: role-specific duplicate identities, permission evaluation,
-or separate entities for each job title. A promotion changes role assignments;
-it does not replace or re-create the User.
+No custom roles. No permission templates. No licenses.
 
-Follows the standard Clean Architecture layering:
+## Employee ID
 
-- `domain/` - entities, value objects, domain events, repository interfaces. No framework dependencies.
-- `application/` - use-cases, DTOs, validators, ports (interfaces for external services).
-- `infrastructure/` - Prisma repository implementations, mappers, adapters. The only layer allowed to know about Prisma.
-- `presentation/` - feature-specific React components, hooks, and HTTP controllers.
+Auto-generated in a DB transaction: `MCS0001`, `MCS0002`, …
 
-Other modules may only import from this module's `index.ts` - never from its internal folders.
+Never collected from the UI.
+
+## Access
+
+| Capability | Admin | Manager | Team Lead / Caller |
+|---|---|---|---|
+| View User Management | Yes | Yes | No |
+| Create / edit / disable | Yes | Yes (non-Admin) | No |
+| Create / edit Admins | Yes | No | No |
+| Reset password / delete | Yes | No | No |
+
+## No organizationId
+
+Users and user audit logs do not store `organizationId`. Company scope for other modules is resolved via `getCompanyId()`.

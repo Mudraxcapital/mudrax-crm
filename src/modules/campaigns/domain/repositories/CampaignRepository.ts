@@ -22,6 +22,11 @@ export interface CreateCampaignData {
   startDate?: Date | null;
   endDate?: Date | null;
   createdByUserId: string;
+  ownerManagerId: string;
+}
+
+export interface ListCampaignsFilter {
+  ownerManagerId?: string;
 }
 
 export interface UpdateCampaignData {
@@ -41,8 +46,8 @@ export interface CreateAssignmentData {
 
 export interface CampaignRepository {
   findById(id: string): Promise<Campaign | null>;
-  list(organizationId: string): Promise<Campaign[]>;
-  count(organizationId: string): Promise<number>;
+  list(organizationId: string, filter?: ListCampaignsFilter): Promise<Campaign[]>;
+  count(organizationId: string, filter?: ListCampaignsFilter): Promise<number>;
 
   /** Creates the Campaign and a "created" Audit Record atomically. */
   createWithAudit(
@@ -69,6 +74,8 @@ export interface CampaignRepository {
 
   listMembers(campaignId: string): Promise<CampaignMembership[]>;
   findMembership(campaignId: string, userId: string): Promise<CampaignMembership | null>;
+  /** Active Campaign memberships for a User (Caller "My Campaigns"). */
+  listActiveMembershipsForUser(userId: string): Promise<CampaignMembership[]>;
 
   /** Upserts an active CampaignMembership row and records a "member added" Audit Record atomically. */
   addMemberWithAudit(

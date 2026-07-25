@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
-import { getAnalyticsDashboard, REPORT_TYPE_LABELS } from "@/modules/reports";
+import { emptyReportFilter, getAnalyticsDashboard, REPORT_TYPE_LABELS } from "@/modules/reports";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { BarList } from "@/shared/ui/Charts";
 import { Button } from "@/shared/ui/Button";
 import { TabNav } from "@/shared/ui/Tabs";
+import { reportHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function AnalyticsDashboardPage() {
   const { authContext } = await requirePermission("report.view");
   const canManage = hasPermission(authContext, "report.manage");
   const canManageDashboards = hasPermission(authContext, "dashboard.manage");
-  const dashboard = await getAnalyticsDashboard(authContext.organizationId);
+  const dashboard = await getAnalyticsDashboard(authContext.organizationId, {
+    ...emptyReportFilter(),
+    ...reportHierarchyFilter(authContext),
+  });
 
   return (
     <PageSection>
@@ -41,6 +45,7 @@ export default async function AnalyticsDashboardPage() {
           { href: "/reports/customers", label: "Customers" },
           { href: "/reports/campaigns", label: "Campaigns" },
           { href: "/reports/telephony", label: "Telephony" },
+          { href: "/reports/caller-leaderboard", label: "Caller Leaderboard" },
           { href: "/reports/documents", label: "Documents" },
           { href: "/reports/notifications", label: "Notifications" },
           { href: "/reports/saved", label: "Saved" },

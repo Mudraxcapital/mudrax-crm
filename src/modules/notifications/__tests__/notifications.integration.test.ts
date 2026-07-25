@@ -42,8 +42,7 @@ describe.skipIf(!hasDatabase)("Notifications module (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTNOT${uniqueSuffix}`,
+        employeeId: `INTNOT${uniqueSuffix}`,
         fullName: "Integration Test Notifications User",
         email: `int-test-notifications-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",

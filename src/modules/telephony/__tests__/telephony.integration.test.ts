@@ -70,8 +70,7 @@ describe.skipIf(!hasDatabase)("Telephony module (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTTELE${uniqueSuffix}`,
+        employeeId: `INTTELE${uniqueSuffix}`,
         fullName: "Integration Test Agent",
         email: `int-test-agent-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",

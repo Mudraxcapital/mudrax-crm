@@ -19,6 +19,7 @@ export interface ResolveOrCreateCustomerInput {
   phone?: string | null;
   email?: string | null;
   actorUserId: string;
+  ownerManagerId?: string | null;
 }
 
 export interface CustomerLookupPort {

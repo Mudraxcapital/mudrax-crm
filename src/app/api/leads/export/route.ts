@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { getPermissionScope, hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { exportLeadsCsv } from "@/modules/leads";
 
 export async function GET(request: Request) {
@@ -15,6 +15,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!hasPermission(current.authContext, "lead.view")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  // Callers never export the org lead book — use My Leads workspace instead.
+  if (isCallerWorkspaceUser(current.authContext)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import {
   initiateClickToCall,
   initiateClickToCallSchema,
@@ -16,6 +16,7 @@ import {
   InvalidLeadReferenceError,
   listCallAttempts,
 } from "@/modules/telephony";
+import { agentHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
   const current = await getCurrentUser();
@@ -26,13 +27,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scope = getPermissionScope(current.authContext, "call.view");
+  const agentFilter = agentHierarchyFilter(current.authContext);
   const url = new URL(request.url);
   const leadId = url.searchParams.get("leadId") ?? undefined;
   const customerId = url.searchParams.get("customerId") ?? undefined;
 
   const filter = {
-    ...(scope === "SELF" ? { agentUserId: current.session.user.id } : {}),
+    ...agentFilter,
     ...(leadId ? { leadId } : {}),
     ...(customerId ? { customerId } : {}),
   };

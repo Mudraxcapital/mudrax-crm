@@ -1,11 +1,10 @@
 // ============================================================================
 // src/modules/users/domain/repositories/UserRepository.ts
-//
-// Repository interface (domain layer — no Prisma import here). Implemented
-// by infrastructure/repositories/PrismaUserRepository.
 // ============================================================================
 
+import type { User, UserSessionRecord, UserStatus } from "../entities/User";
 import type { UserAuthProfile, UserScopeContext, UserSummary } from "../entities/UserAuthProfile";
+import type { UserAuditActor, UserAuditRecord } from "../entities/UserAuditRecord";
 
 export interface RecordLoginAttemptInput {
   userId: string | null;
@@ -16,16 +15,184 @@ export interface RecordLoginAttemptInput {
   failureReason: string | null;
 }
 
+export interface ListUsersFilter {
+  search?: string;
+  role?: string;
+  status?: UserStatus;
+  teamLeadId?: string;
+  /** Restrict to Team Leads reporting to this Manager. */
+  reportingManagerId?: string;
+  /** Explicit allow-list of user ids (hierarchy visibility). */
+  userIds?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface CreateUserData {
+  fullName: string;
+  email: string;
+  phone: string | null;
+  passwordHash: string;
+  status: UserStatus;
+  profilePhotoUrl: string | null;
+  assignedTeamLeadId: string | null;
+  reportingManagerId: string | null;
+  createdByUserId: string | null;
+  mustChangePassword?: boolean;
+}
+
+export interface UpdateUserData {
+  fullName?: string;
+  email?: string;
+  phone?: string | null;
+  status?: UserStatus;
+  profilePhotoUrl?: string | null;
+  assignedTeamLeadId?: string | null;
+  reportingManagerId?: string | null;
+  updatedByUserId?: string | null;
+  mustChangePassword?: boolean;
+  lockedUntil?: Date | null;
+  lockedReason?: string | null;
+}
+
+export interface UserListItem extends User {
+  roleName: string | null;
+  assignedTeamLeadName: string | null;
+  reportingManagerName: string | null;
+}
+
+export interface UserLoginSession {
+  id: string;
+  succeeded: boolean;
+  ipAddress: string | null;
+  userAgent: string | null;
+  failureReason: string | null;
+  occurredAt: Date;
+}
+
+export interface CreateUserSessionData {
+  userId: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  device: string | null;
+  browser: string | null;
+}
+
 export interface UserRepository {
   findAuthProfileByEmail(email: string): Promise<UserAuthProfile | null>;
   findScopeContext(userId: string): Promise<UserScopeContext | null>;
+  /** Status + sessionVersion for centralized session validity checks. */
+  findAccountSessionState(
+    userId: string,
+  ): Promise<import("../entities/UserAuthProfile").AccountSessionState | null>;
   countRecentFailedLoginAttempts(email: string, sinceMinutesAgo: number): Promise<number>;
   recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void>;
   touchLastLogin(userId: string): Promise<void>;
 
-  /** Non-sensitive lookup used by other modules' assignment/ownership pickers (e.g. CRM Lead Assignment). */
-  findSummaryById(id: string): Promise<UserSummary | null>;
+  lockAccount(
+    userId: string,
+    lockedUntil: Date,
+    reason: string,
+    actor?: UserAuditActor | null,
+  ): Promise<void>;
+  unlockAccount(userId: string, actor: UserAuditActor, ipAddress?: string | null): Promise<void>;
 
-  /** Non-sensitive listing used to populate assignment/membership dropdowns (e.g. CRM Lead/Campaign assignment). */
-  listSummariesByOrganization(organizationId: string): Promise<UserSummary[]>;
+  findSummaryById(id: string): Promise<UserSummary | null>;
+  /** All active employees (single-company). */
+  listSummaries(): Promise<UserSummary[]>;
+  /** Active Callers whose assignedTeamLeadId is in the given set. */
+  listCallerIdsForTeamLeads(teamLeadIds: string[]): Promise<string[]>;
+  /** Active Team Leads whose reportingManagerId matches. */
+  listTeamLeadIdsForManager(managerId: string): Promise<string[]>;
+
+  findById(id: string): Promise<User | null>;
+  findByEmail(email: string): Promise<User | null>;
+  findByPhone(phone: string): Promise<User | null>;
+  findByEmployeeId(employeeId: string): Promise<User | null>;
+
+  /** Callers currently assigned to this Team Lead (any status). */
+  countCallersForTeamLead(teamLeadId: string): Promise<number>;
+  /** Team Leads reporting to this Manager (any status). */
+  countTeamLeadsForManager(managerId: string): Promise<number>;
+  countApiKeysForUser(userId: string): Promise<number>;
+  reassignCallersToTeamLead(fromTeamLeadId: string, toTeamLeadId: string): Promise<number>;
+
+  list(filter?: ListUsersFilter): Promise<UserListItem[]>;
+  count(filter?: ListUsersFilter): Promise<number>;
+
+  createWithAudit(
+    data: CreateUserData,
+    actor: UserAuditActor,
+    correlationId?: string | null,
+  ): Promise<User>;
+
+  updateWithAudit(
+    id: string,
+    data: UpdateUserData,
+    actor: UserAuditActor,
+    action: string,
+    correlationId?: string | null,
+  ): Promise<User>;
+
+  setPasswordHashWithAudit(
+    id: string,
+    passwordHash: string,
+    actor: UserAuditActor,
+    correlationId?: string | null,
+    options?: {
+      mustChangePassword?: boolean;
+      clearMustChangePassword?: boolean;
+      action?: string;
+      ipAddress?: string | null;
+    },
+  ): Promise<void>;
+
+  deleteWithAudit(
+    id: string,
+    actor: UserAuditActor,
+    correlationId?: string | null,
+  ): Promise<void>;
+
+  bulkSetStatusWithAudit(
+    ids: string[],
+    status: UserStatus,
+    actor: UserAuditActor,
+    correlationId?: string | null,
+    meta?: {
+      reason?: string | null;
+      ipAddress?: string | null;
+      forceLogout?: boolean;
+      action?: string;
+    },
+  ): Promise<number>;
+
+  bulkDeleteWithAudit(
+    ids: string[],
+    actor: UserAuditActor,
+    correlationId?: string | null,
+  ): Promise<number>;
+
+  listAuditLog(userId: string, limit?: number): Promise<UserAuditRecord[]>;
+  /** Failed / succeeded login attempts (audit trail of sign-in tries). */
+  listLoginSessions(userId: string, limit?: number): Promise<UserLoginSession[]>;
+
+  createSession(data: CreateUserSessionData): Promise<UserSessionRecord>;
+  findSessionById(sessionId: string): Promise<UserSessionRecord | null>;
+  listActiveSessions(userId: string): Promise<UserSessionRecord[]>;
+  listSessionHistory(userId: string, limit?: number): Promise<UserSessionRecord[]>;
+  touchSessionActivity(sessionId: string): Promise<void>;
+  endSession(sessionId: string, reason?: string | null): Promise<void>;
+  revokeSession(sessionId: string, reason?: string | null): Promise<void>;
+  revokeAllSessionsForUser(userId: string, reason?: string | null): Promise<number>;
+
+  appendAudit(
+    userId: string,
+    action: string,
+    actor: UserAuditActor,
+    beforeState: Record<string, unknown> | null,
+    afterState: Record<string, unknown> | null,
+    correlationId?: string | null,
+  ): Promise<void>;
+
+  listByRole(roleName: string): Promise<UserSummary[]>;
 }

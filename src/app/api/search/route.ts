@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { hasPermission, isInternalStaff } from "@/modules/rbac";
+import { hasPermission, isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
 import { globalSearch } from "@/app/_lib/globalSearch";
 
 export async function GET(request: Request) {
@@ -20,12 +20,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: [] });
   }
 
+  const callerOnly = isCallerWorkspaceUser(current.authContext);
+
   const hits = await globalSearch(current.authContext.organizationId, q, {
-    includeCustomers: hasPermission(current.authContext, "customer.view"),
+    includeCustomers: !callerOnly && hasPermission(current.authContext, "customer.view"),
     includeLeads: hasPermission(current.authContext, "lead.view"),
-    includeCampaigns: hasPermission(current.authContext, "campaign.view"),
-    includeDocuments: hasPermission(current.authContext, "document.view"),
-    includeLoanApplications: hasPermission(current.authContext, "loan_application.view"),
+    includeCampaigns: !callerOnly && hasPermission(current.authContext, "campaign.view"),
+    includeDocuments: !callerOnly && hasPermission(current.authContext, "document.view"),
+    includeLoanApplications:
+      !callerOnly && hasPermission(current.authContext, "loan_application.view"),
+    assignedToUserId: callerOnly ? current.session.user.id : undefined,
+    leadHrefPrefix: callerOnly ? "/caller/leads" : "/leads",
     limit: 25,
   });
 

@@ -12,17 +12,22 @@ import {
 import { listUserSummaries } from "@/modules/users";
 import { LeadImportForm } from "@/modules/leads/presentation/components/LeadImportForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
+import { TabNav } from "@/shared/ui/Tabs";
+import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function LeadImportPage() {
   const { authContext } = await requirePermission("lead.import");
   const canCreateCampaign = hasPermission(authContext, "campaign.manage");
+  const canViewLeads = hasPermission(authContext, "lead.view");
+  const book = managerBookFilter(authContext);
+  const hierarchyFilter = leadHierarchyFilter(authContext);
 
   const [sources, batches, campaigns, users, allLeads, activeFields] = await Promise.all([
     leadCatalogs.listSources(authContext.organizationId),
-    listImportBatches(authContext.organizationId),
-    listCampaigns(authContext.organizationId),
+    listImportBatches(authContext.organizationId, book),
+    listCampaigns(authContext.organizationId, book),
     listUserSummaries(authContext.organizationId),
-    listLeads(authContext.organizationId, { limit: 5000 }),
+    listLeads(authContext.organizationId, { limit: 5000, ...hierarchyFilter }),
     listActiveLeadFields(authContext.organizationId),
   ]);
   const importableFields = activeFields.filter((field) => field.isImportable);
@@ -49,8 +54,10 @@ export default async function LeadImportPage() {
     }),
   );
 
+  const visibleIds = authContext.hierarchy.visibleUserIds;
   const agents = users
     .filter((user) => user.status === "ACTIVE")
+    .filter((user) => !visibleIds || visibleIds.includes(user.id))
     .map((user) => {
       const assigned = allLeads.filter((lead) => lead.currentAssigneeUserId === user.id);
       const openLeads = assigned.filter((lead) => lead.currentStageBucket !== "CLOSED").length;
@@ -70,11 +77,24 @@ export default async function LeadImportPage() {
   return (
     <PageSection>
       <PageHeader
-        title="Lead Onboarding"
-        description="Enterprise import workflow — upload, map fields, resolve duplicates, assign campaign & agents, then distribute."
+        title="Add Leads from Excel"
+        description="Add from Excel Wizard — upload, map fields, resolve duplicates, assign campaign & agents, then distribute."
         breadcrumbs={[
           { label: "Leads", href: "/leads" },
-          { label: "Import" },
+          { label: "Add from Excel" },
+        ]}
+      />
+
+      <TabNav
+        activeHref="/leads/import"
+        items={[
+          ...(canViewLeads
+            ? [
+                { href: "/leads", label: "All Leads" },
+                { href: "/leads/pipeline", label: "Pipeline" },
+              ]
+            : []),
+          { href: "/leads/import", label: "Add from Excel" },
         ]}
       />
 
@@ -90,7 +110,7 @@ export default async function LeadImportPage() {
 
       <section className="mx-card overflow-hidden">
         <div className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-medium">Import History</h2>
+          <h2 className="text-sm font-medium">Add from Excel History</h2>
         </div>
         <div className="mx-scroll overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -100,7 +120,7 @@ export default async function LeadImportPage() {
                 <th className="px-4 py-2">Uploaded By</th>
                 <th className="px-4 py-2">Upload Date</th>
                 <th className="px-4 py-2">Campaign</th>
-                <th className="px-4 py-2">Rows Imported</th>
+                <th className="px-4 py-2">Rows Added</th>
                 <th className="px-4 py-2">Rows Failed</th>
                 <th className="px-4 py-2">Duplicates</th>
                 <th className="px-4 py-2">Status</th>
@@ -110,7 +130,7 @@ export default async function LeadImportPage() {
               {batches.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-muted px-4 py-6 text-center">
-                    No imports yet.
+                    Nothing added from Excel yet.
                   </td>
                 </tr>
               ) : (
@@ -147,7 +167,7 @@ export default async function LeadImportPage() {
       </section>
 
       <Link href="/leads" className="text-sm text-accent hover:underline underline-offset-4">
-        ← Back to Leads
+        ← All Leads
       </Link>
     </PageSection>
   );

@@ -5,11 +5,11 @@
 //
 // Source of truth for the shape being seeded:
 //   - ADR 0002: "Users -> UserRoles -> Roles -> RolePermissions -> Permissions",
-//     Caller / Manager / Team Leader / Admin as the canonical Roles.
+//     Caller / Manager / Team Lead / Admin as the ONLY four fixed Roles.
 //   - platform-contracts.md §2 (RBAC Data Scope): Self / Team / Branch /
 //     Organization / System, with the typical-holder mapping
-//     Caller=Self, Team Leader=Team, Branch Manager=Branch,
-//     Senior Manager/Admin=Organization, System=explicitly-named grants only.
+//     Caller=Self, Team Lead=Team, Manager=Branch,
+//     Admin=Organization, System=explicitly-named grants only.
 //
 // Every Permission is declared once with the *lowest* Role tier that holds
 // it (`minRole`); every Role at or above that tier inherits it at its own
@@ -19,19 +19,19 @@
 // Admin alone, at SYSTEM scope instead of Admin's normal Organization scope.
 // ============================================================================
 
-export type RoleName = "Caller" | "Team Leader" | "Manager" | "Admin";
+export type RoleName = "Caller" | "Team Lead" | "Manager" | "Admin";
 export type DataScopeValue = "SELF" | "TEAM" | "BRANCH" | "ORGANIZATION" | "SYSTEM";
 
 const ROLE_TIER: Record<RoleName, number> = {
   Caller: 0,
-  "Team Leader": 1,
+  "Team Lead": 1,
   Manager: 2,
   Admin: 3,
 };
 
 const ROLE_NATURAL_SCOPE: Record<RoleName, DataScopeValue> = {
   Caller: "SELF",
-  "Team Leader": "TEAM",
+  "Team Lead": "TEAM",
   Manager: "BRANCH",
   Admin: "ORGANIZATION",
 };
@@ -43,19 +43,19 @@ export const ROLE_DEFINITIONS: { name: RoleName; description: string }[] = [
       "Front-line calling / lead-working position. Data Scope: Self — only records the Caller owns or is directly assigned to (ADR 0002; platform-contracts.md §2).",
   },
   {
-    name: "Team Leader",
+    name: "Team Lead",
     description:
-      "Supervises one Team of Callers. Data Scope: Team — records belonging to any User who is a member of the same Team.",
+      "Supervises Callers assigned to them. Data Scope: Team — records belonging to Callers under their supervision.",
   },
   {
     name: "Manager",
     description:
-      "Oversees a Branch (the 'Branch Manager' typical holder in platform-contracts.md §2). Data Scope: Branch — records belonging to any Team/User under the same Branch.",
+      "Oversees campaigns, customers, and team leads. Data Scope: Branch. Cannot create or modify Admin accounts.",
   },
   {
     name: "Admin",
     description:
-      "Organization-wide administrator. Data Scope: Organization for ordinary business data, plus a small, explicitly-named set of System-scope grants (RBAC administration, impersonation, provider/integration configuration, read-only audit access).",
+      "Full system administrator. Data Scope: Organization for ordinary business data, plus System-scope grants for User Management delete/reset and audit access.",
   },
 ];
 
@@ -69,58 +69,35 @@ interface PermissionDefinition {
 }
 
 export const PERMISSION_CATALOG: PermissionDefinition[] = [
-  // organization ------------------------------------------------------------
-  {
-    code: "organization.view",
-    module: "organization",
-    description: "View Organization / Region / Branch / Department / Team structure.",
-    minRole: "Caller",
-  },
-  {
-    code: "organization.manage",
-    module: "organization",
-    description:
-      "Create or update the Organization record itself (name, code, status, timezone) — platform/root-scope configuration, distinct from managing Regions/Branches/Departments/Teams within an existing Organization.",
-    minRole: "Admin",
-    systemOnly: true,
-  },
-  {
-    code: "team.manage",
-    module: "organization",
-    description: "Create, update, or archive Teams.",
-    minRole: "Manager",
-  },
-  {
-    code: "branch.manage",
-    module: "organization",
-    description: "Create, update, or archive Branches and Regions.",
-    minRole: "Manager",
-  },
-  {
-    code: "department.manage",
-    module: "organization",
-    description: "Create, update, or archive Departments.",
-    minRole: "Admin",
-  },
-  {
-    code: "escalation_rule.manage",
-    module: "organization",
-    description: "Configure overdue-obligation escalation rules.",
-    minRole: "Admin",
-  },
-
-  // users --------------------------------------------------------------------
+  // users — User Management (Admin full access; Manager view/manage non-Admins) -
   {
     code: "user.view",
     module: "users",
-    description: "View User profiles and Role assignments.",
-    minRole: "Team Leader",
+    description:
+      "View User profiles in User Management (scoped to hierarchy: Manager sees own tree; Team Lead sees own Callers).",
+    minRole: "Team Lead",
   },
   {
     code: "user.manage",
     module: "users",
-    description: "Create, update, or suspend User accounts.",
-    minRole: "Manager",
+    description:
+      "Create/update users inside hierarchy. Team Leads create Callers; Managers create Team Leads/Callers; Admins create anyone.",
+    minRole: "Team Lead",
+  },
+  {
+    code: "user.delete",
+    module: "users",
+    description:
+      "Delete users inside hierarchy. Team Leads: own Callers; Managers: own Team Leads/Callers; Admins: everyone.",
+    minRole: "Team Lead",
+  },
+  {
+    code: "user.reset_password",
+    module: "users",
+    description:
+      "Admin-only: reset password for Managers, Team Leads, and Callers (not other Admins or self). Forces password change on next login.",
+    minRole: "Admin",
+    systemOnly: true,
   },
   {
     code: "api_key.manage",
@@ -136,25 +113,11 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     systemOnly: true,
   },
 
-  // rbac -----------------------------------------------------------------------
+  // rbac — fixed four roles; Admin may view permission catalog only ----------
   {
     code: "permission.view",
     module: "rbac",
-    description: "View the Permission catalog.",
-    minRole: "Admin",
-    systemOnly: true,
-  },
-  {
-    code: "role.manage",
-    module: "rbac",
-    description: "Create or update Roles.",
-    minRole: "Admin",
-    systemOnly: true,
-  },
-  {
-    code: "role_permission.manage",
-    module: "rbac",
-    description: "Grant or revoke a Permission (and its Data Scope) on a Role.",
+    description: "View the Permission catalog (roles are fixed — not editable).",
     minRole: "Admin",
     systemOnly: true,
   },
@@ -217,13 +180,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "lead.reassign",
     module: "leads",
     description: "Reassign a Lead to another Caller.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "tag.manage",
     module: "leads",
     description: "Create and apply Tags.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "lead.import",
@@ -261,7 +224,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "follow_up.reassign",
     module: "follow_ups",
     description: "Reassign a Follow-up to another Caller.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
 
   // campaigns ------------------------------------------------------------------
@@ -269,13 +232,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "campaign.view",
     module: "campaigns",
     description: "View Campaigns and membership.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "campaign.assign",
     module: "campaigns",
     description: "Trigger a Campaign Assignment allocation run.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "campaign.manage",
@@ -419,13 +382,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "call.monitor",
     module: "telephony",
     description: "Listen / Whisper / Barge on a live Call.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "agent_session.manage",
     module: "telephony",
     description: "View/manage Agent Session and Queue participation.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "call.recording.access",
@@ -476,7 +439,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: "telephony",
     description:
       "View the Telephony Dashboard (Calls Today, Connected/Missed, Calls by Agent, Recent Calls).",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
 
   // documents ------------------------------------------------------------------
@@ -496,13 +459,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "document.verify",
     module: "documents",
     description: "Verify or reject a submitted Document.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "document.share",
     module: "documents",
     description: "Create a time-boxed external Document Sharing link.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "document.category.manage",
@@ -515,7 +478,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: "documents",
     description:
       "View the Documents Dashboard (Total Documents, by Category, Pending Verification, Recently Uploaded).",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "retention_policy.manage",
@@ -541,7 +504,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "notification.send",
     module: "notifications",
     description: "Trigger an ad-hoc Notification send.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "broadcast.manage",
@@ -565,14 +528,14 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "notification.queue.process",
     module: "notifications",
     description: "Process the Notification Queue and retry failed Deliveries.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "notifications.dashboard.view",
     module: "notifications",
     description:
       "View the Notifications Dashboard (Total, Pending, Sent, Failed, Channel Breakdown, Recent).",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "provider.manage",
@@ -587,7 +550,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "report.view",
     module: "reports",
     description: "View Reports, Dashboards, and KPIs.",
-    minRole: "Team Leader",
+    minRole: "Team Lead",
   },
   {
     code: "report.manage",

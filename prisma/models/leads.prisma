@@ -30,6 +30,10 @@ model Lead {
   // (leads.md); full history lives in LeadAssignment, append-only.
   currentAssigneeUserId String? @db.Uuid
 
+  /// Hierarchical ownership — Manager book + Team Lead / Caller chain.
+  ownerManagerId  String? @db.Uuid
+  ownerTeamLeadId String? @db.Uuid
+
   fullNameSnapshot String  @db.VarChar(200)
   phoneSnapshot    String? @db.VarChar(20)
   emailSnapshot    String? @db.VarChar(320)
@@ -75,6 +79,8 @@ model Lead {
   @@index([currentAssigneeUserId])
   @@index([currentStageId])
   @@index([campaignId])
+  @@index([ownerManagerId])
+  @@index([ownerTeamLeadId])
   @@map("leads")
   @@schema("leads")
 }
@@ -417,6 +423,9 @@ model ImportBatch {
   uploadedByUserId   String            @db.Uuid
   leadSourceId       String            @db.Uuid
   campaignId         String?           @db.Uuid
+  /// Hierarchical owner — imports stay inside the Manager book.
+  ownerManagerId     String?           @db.Uuid
+  ownerTeamLeadId    String?           @db.Uuid
   sourceFileName     String            @db.VarChar(255)
   // Cross-schema reference to documents.Attachment.id for the raw uploaded
   // file — storage mechanics only, never itself promoted to a Document.
@@ -436,6 +445,7 @@ model ImportBatch {
 
   @@index([organizationId])
   @@index([status])
+  @@index([ownerManagerId])
   @@map("import_batches")
   @@schema("leads")
 }

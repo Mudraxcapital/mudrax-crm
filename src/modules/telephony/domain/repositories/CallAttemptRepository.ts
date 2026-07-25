@@ -38,6 +38,8 @@ export interface ListCallAttemptsFilter {
   leadId?: string;
   customerId?: string;
   agentUserId?: string;
+  /** Hierarchy allow-list (Manager / Team Lead tree). */
+  agentUserIds?: string[];
   status?: CallStatus;
   missedOnly?: boolean;
   direction?: CallDirection;

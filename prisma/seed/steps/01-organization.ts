@@ -1,10 +1,9 @@
 // ============================================================================
 // prisma/seed/steps/01-organization.ts
 //
-// Seeds requirement #2: Organization, Branches, Departments, Teams.
-// (Region is an additive, low-risk realism touch — Branch.regionId is
-// already an optional column in the accepted schema, so grouping Branches
-// under a Region here does not add any new shape, only data.)
+// Seeds the single company row (Mudrax Capitals) plus Branch/Team/Department
+// infrastructure used for RBAC Data Scope pointers. There is no Organization
+// product module — this is company-scope bootstrap data only.
 //
 // Every row upserts on the real unique constraint already declared in
 // prisma/models/organization.prisma (organizationId + code), so re-running

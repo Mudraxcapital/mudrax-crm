@@ -13,21 +13,38 @@ import {
   InvalidMemberReferenceError,
 } from "../../domain/errors/CampaignErrors";
 import type { UserLookupPort } from "../ports/UserLookupPort";
+import type { LeadAssignmentPort } from "../ports/LeadAssignmentPort";
 import type { AddCampaignMemberInput } from "../validators/campaignSchemas";
 import { toCampaignMembershipDto, type CampaignMembershipDto } from "../dto/CampaignMembershipDto";
+import { makeRedistributeCampaignLeads } from "./redistributeCampaignLeads";
 
 export interface AddCampaignMemberCommand {
   campaignId: string;
   input: AddCampaignMemberInput;
   actor: CampaignAuditActor;
   correlationId?: string | null;
+  /**
+   * When true (default), rebalance all uncompleted Campaign Leads across
+   * active members after the membership write. Pass false when enrolling
+   * several members in a batch and redistributing once at the end.
+   */
+  redistribute?: boolean;
 }
 
-export function makeAddCampaignMember(repository: CampaignRepository, userLookup: UserLookupPort) {
+export function makeAddCampaignMember(
+  repository: CampaignRepository,
+  userLookup: UserLookupPort,
+  leadLookup?: LeadAssignmentPort,
+) {
+  const redistributeLeads = leadLookup
+    ? makeRedistributeCampaignLeads(repository, leadLookup)
+    : null;
+
   return async function addCampaignMember(
     command: AddCampaignMemberCommand,
   ): Promise<CampaignMembershipDto> {
     const { campaignId, input, actor, correlationId } = command;
+    const shouldRedistribute = command.redistribute !== false;
 
     const campaign = await repository.findById(campaignId);
     if (!campaign) {
@@ -47,6 +64,10 @@ export function makeAddCampaignMember(repository: CampaignRepository, userLookup
       correlationId,
     );
 
+    if (shouldRedistribute && redistributeLeads) {
+      await redistributeLeads({ campaignId, actor, correlationId });
+    }
+
     return toCampaignMembershipDto(membership);
   };
 }
@@ -56,13 +77,23 @@ export interface RemoveCampaignMemberCommand {
   userId: string;
   actor: CampaignAuditActor;
   correlationId?: string | null;
+  /** When true (default), rebalance remaining uncompleted Leads after removal. */
+  redistribute?: boolean;
 }
 
-export function makeRemoveCampaignMember(repository: CampaignRepository) {
+export function makeRemoveCampaignMember(
+  repository: CampaignRepository,
+  leadLookup?: LeadAssignmentPort,
+) {
+  const redistributeLeads = leadLookup
+    ? makeRedistributeCampaignLeads(repository, leadLookup)
+    : null;
+
   return async function removeCampaignMember(
     command: RemoveCampaignMemberCommand,
   ): Promise<CampaignMembershipDto> {
     const { campaignId, userId, actor, correlationId } = command;
+    const shouldRedistribute = command.redistribute !== false;
 
     const campaign = await repository.findById(campaignId);
     if (!campaign) {
@@ -80,6 +111,14 @@ export function makeRemoveCampaignMember(repository: CampaignRepository) {
       actor,
       correlationId,
     );
+
+    if (shouldRedistribute && redistributeLeads) {
+      const remaining = await repository.listMembers(campaignId);
+      if (remaining.some((member) => member.isActive)) {
+        await redistributeLeads({ campaignId, actor, correlationId });
+      }
+    }
+
     return toCampaignMembershipDto(membership);
   };
 }

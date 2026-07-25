@@ -6,6 +6,12 @@
 import { prisma } from "@/infra/db/client";
 import { PrismaRbacRepository } from "./infrastructure/repositories/PrismaRbacRepository";
 import { makeGetAuthorizationContext } from "./application/use-cases/getAuthorizationContext";
+import {
+  makeAssignFixedRole,
+  makeGetPermissionCodesForUser,
+  makeGetPrimaryRoleName,
+  makeListFixedRoles,
+} from "./application/use-cases/assignFixedRole";
 
 export type {
   AuthorizationContext,
@@ -16,15 +22,34 @@ export {
   hasRole,
   getPermissionScope,
   isInternalStaff,
+  isCallerWorkspaceUser,
   INTERNAL_STAFF_ROLES,
+  ELEVATED_STAFF_ROLES,
 } from "./domain/entities/AuthorizationContext";
+export { FIXED_ROLES, type FixedRoleName } from "./domain/entities/FixedRoles";
 export {
   DATA_SCOPES,
   widerScope,
   scopeAtLeast,
   type DataScope,
 } from "./domain/value-objects/DataScope";
+export {
+  ownershipFilterFromHierarchy,
+  assertOwnsManagerData,
+  canViewUserId,
+  type HierarchyScope,
+  type HierarchyPrimaryRole,
+  type OwnershipQueryFilter,
+} from "./domain/value-objects/HierarchyScope";
+export {
+  resolveOwnerManagerId,
+  requireOwnerManagerId,
+} from "./application/services/resolveOwnerManagerId";
 
-export const getAuthorizationContext = makeGetAuthorizationContext(
-  new PrismaRbacRepository(prisma),
-);
+const rbacRepository = new PrismaRbacRepository(prisma);
+
+export const getAuthorizationContext = makeGetAuthorizationContext(rbacRepository);
+export const assignFixedRole = makeAssignFixedRole(rbacRepository);
+export const listFixedRoles = makeListFixedRoles(rbacRepository);
+export const getPrimaryRoleName = makeGetPrimaryRoleName(rbacRepository);
+export const getPermissionCodesForUser = makeGetPermissionCodesForUser(rbacRepository);

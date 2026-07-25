@@ -28,13 +28,11 @@ generator client {
 // NOTE: the Prisma parser in this version requires the `schemas` array to
 // be a single line within the `datasource` block (a multi-line array here
 // fails validation with "not a valid definition within a datasource").
-// Modules, in order: CRM Core (organization, users, rbac, customers,
-// leads, follow_ups, campaigns), Loan Management (banks, loan_products,
-// loan_applications, loan_accounts, disbursements), Telephony & Call
-// Center (telephony), Document Management (documents), Notifications &
-// Communications (notifications), Reports & Analytics (reports), and the
-// AI Platform's six sibling modules (ai_core, ai_documents, ai_telephony,
-// ai_crm, ai_analytics, ai_governance).
+// Modules, in order: CRM Core (organization schema = single-company
+// substrate; users, rbac, customers, leads, follow_ups, campaigns), Loan
+// Management, Telephony, Documents, Notifications, Reports, and the AI
+// Platform's six sibling schemas. There is no multi-organization product
+// surface — `organizationId` is company-scope only.
 datasource db {
   provider = "postgresql"
   schemas  = ["organization", "users", "rbac", "customers", "leads", "follow_ups", "campaigns", "banks", "loan_products", "loan_applications", "loan_accounts", "disbursements", "telephony", "documents", "notifications", "reports", "ai_core", "ai_documents", "ai_telephony", "ai_crm", "ai_analytics", "ai_governance"]

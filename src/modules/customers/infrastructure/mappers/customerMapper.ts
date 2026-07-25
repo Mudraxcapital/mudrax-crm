@@ -30,6 +30,7 @@ export function toCustomer(row: PrismaCustomer): Customer {
     identityConfidence: row.identityConfidence,
     status: row.status,
     mergedIntoCustomerId: row.mergedIntoCustomerId,
+    ownerManagerId: row.ownerManagerId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

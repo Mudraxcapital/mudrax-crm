@@ -40,14 +40,24 @@ export class FakeCampaignRepository implements CampaignRepository {
     return this.campaigns.get(id) ?? null;
   }
 
-  async list(organizationId: string): Promise<Campaign[]> {
-    return [...this.campaigns.values()].filter(
-      (campaign) => campaign.organizationId === organizationId,
-    );
+  async list(
+    organizationId: string,
+    filter?: { ownerManagerId?: string },
+  ): Promise<Campaign[]> {
+    return [...this.campaigns.values()].filter((campaign) => {
+      if (campaign.organizationId !== organizationId) return false;
+      if (filter?.ownerManagerId && campaign.ownerManagerId !== filter.ownerManagerId) {
+        return false;
+      }
+      return true;
+    });
   }
 
-  async count(organizationId: string): Promise<number> {
-    return (await this.list(organizationId)).length;
+  async count(
+    organizationId: string,
+    filter?: { ownerManagerId?: string },
+  ): Promise<number> {
+    return (await this.list(organizationId, filter)).length;
   }
 
   async createWithAudit(
@@ -66,6 +76,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       startDate: data.startDate ?? null,
       endDate: data.endDate ?? null,
       createdByUserId: data.createdByUserId,
+      ownerManagerId: data.ownerManagerId,
       createdAt: now,
       updatedAt: now,
     };
@@ -136,6 +147,12 @@ export class FakeCampaignRepository implements CampaignRepository {
   async findMembership(campaignId: string, userId: string): Promise<CampaignMembership | null> {
     const members = this.memberships.get(campaignId) ?? [];
     return members.find((member) => member.userId === userId) ?? null;
+  }
+
+  async listActiveMembershipsForUser(userId: string): Promise<CampaignMembership[]> {
+    return [...this.memberships.values()]
+      .flat()
+      .filter((member) => member.userId === userId && member.isActive);
   }
 
   async addMemberWithAudit(

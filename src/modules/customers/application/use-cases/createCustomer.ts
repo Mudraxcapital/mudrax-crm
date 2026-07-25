@@ -18,12 +18,13 @@ export interface CreateCustomerCommand {
   organizationId: string;
   input: CreateCustomerInput;
   actor: CustomerAuditActor;
+  ownerManagerId?: string | null;
   correlationId?: string | null;
 }
 
 export function makeCreateCustomer(repository: CustomerRepository) {
   return async function createCustomer(command: CreateCustomerCommand): Promise<CustomerDto> {
-    const { organizationId, input, actor, correlationId } = command;
+    const { organizationId, input, actor, ownerManagerId, correlationId } = command;
 
     const prepared = input.identifiers.map((identifier) =>
       prepareIdentifier(identifier.type, identifier.value),
@@ -46,6 +47,7 @@ export function makeCreateCustomer(repository: CustomerRepository) {
         organizationId,
         fullName: input.fullName,
         dob: input.dob ? new Date(`${input.dob}T00:00:00.000Z`) : null,
+        ownerManagerId: ownerManagerId ?? null,
         identifiers: prepared.map((identifier) => ({
           type: identifier.type,
           valueHash: identifier.valueHash,

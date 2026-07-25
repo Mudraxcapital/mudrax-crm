@@ -28,6 +28,7 @@ export interface CustomerDto {
   identityConfidence: Customer["identityConfidence"];
   status: Customer["status"];
   mergedIntoCustomerId: string | null;
+  ownerManagerId: string | null;
   identifiers: CustomerIdentifierDto[];
   createdAt: string;
   updatedAt: string;
@@ -53,6 +54,7 @@ export function toCustomerDto(input: CustomerWithIdentifiers): CustomerDto {
     identityConfidence: customer.identityConfidence,
     status: customer.status,
     mergedIntoCustomerId: customer.mergedIntoCustomerId,
+    ownerManagerId: customer.ownerManagerId,
     identifiers: identifiers.map(toCustomerIdentifierDto),
     createdAt: customer.createdAt.toISOString(),
     updatedAt: customer.updatedAt.toISOString(),

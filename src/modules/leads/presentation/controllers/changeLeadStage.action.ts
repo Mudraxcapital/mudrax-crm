@@ -57,5 +57,8 @@ export async function changeLeadStageAction(
 
   revalidatePath(`/leads/${id}`);
   revalidatePath("/leads");
+  revalidatePath(`/caller/leads/${id}`);
+  revalidatePath("/caller/leads");
+  revalidatePath("/");
   return {};
 }

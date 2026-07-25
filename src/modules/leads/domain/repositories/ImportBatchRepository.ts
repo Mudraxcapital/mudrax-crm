@@ -9,6 +9,8 @@ export interface CreateImportBatchData {
   uploadedByUserId: string;
   leadSourceId: string;
   campaignId?: string | null;
+  ownerManagerId?: string | null;
+  ownerTeamLeadId?: string | null;
   sourceFileName: string;
 }
 

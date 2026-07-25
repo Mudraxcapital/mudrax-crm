@@ -18,10 +18,12 @@ describe("createCampaign", () => {
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
       actor: { actorType: "USER", actorId: "actor-1" },
+      ownerManagerId: "actor-1",
     });
 
     expect(dto.status).toBe("DRAFT");
     expect(dto.name).toBe("Spring Push");
+    expect(dto.ownerManagerId).toBe("actor-1");
   });
 
   it("records a CampaignCreated Audit Record", async () => {
@@ -29,6 +31,7 @@ describe("createCampaign", () => {
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
       actor: { actorType: "USER", actorId: "actor-1" },
+      ownerManagerId: "actor-1",
     });
 
     const auditEntries = await repository.listAuditLog(dto.id);

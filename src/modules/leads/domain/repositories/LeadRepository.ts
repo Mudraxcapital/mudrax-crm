@@ -15,6 +15,8 @@ export interface CreateLeadData {
   leadSourceId: string;
   currentStageId: string;
   campaignId?: string | null;
+  ownerManagerId?: string | null;
+  ownerTeamLeadId?: string | null;
   fullNameSnapshot: string;
   phoneSnapshot?: string | null;
   emailSnapshot?: string | null;
@@ -51,6 +53,10 @@ export interface ListLeadsFilter {
   currentStageId?: string;
   leadSourceId?: string;
   campaignId?: string;
+  /** Hierarchical Manager book filter. */
+  ownerManagerId?: string;
+  /** Hierarchical Team Lead filter. */
+  ownerTeamLeadId?: string;
   /** Restricts to Leads currently assigned to one of these Users — used to enforce RBAC Data Scope (SELF/TEAM/BRANCH) at the presentation boundary. */
   assignedToUserIds?: string[];
   /** Case-insensitive substring match over searchable system + custom fields. */

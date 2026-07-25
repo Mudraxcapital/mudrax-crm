@@ -98,8 +98,13 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
     if (filter?.leadId) results = results.filter((call) => call.leadId === filter.leadId);
     if (filter?.customerId)
       results = results.filter((call) => call.customerId === filter.customerId);
-    if (filter?.agentUserId)
+    if (filter?.agentUserIds?.length) {
+      results = results.filter(
+        (call) => !!call.agentUserId && filter.agentUserIds!.includes(call.agentUserId),
+      );
+    } else if (filter?.agentUserId) {
       results = results.filter((call) => call.agentUserId === filter.agentUserId);
+    }
     if (filter?.missedOnly) {
       results = results.filter((call) => MISSED_CALL_STATUSES.includes(call.status));
     } else if (filter?.status) {

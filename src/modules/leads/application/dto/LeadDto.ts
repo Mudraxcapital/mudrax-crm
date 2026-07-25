@@ -24,6 +24,8 @@ export interface LeadDto {
   lostReasonName: string | null;
   campaignId: string | null;
   currentAssigneeUserId: string | null;
+  ownerManagerId: string | null;
+  ownerTeamLeadId: string | null;
   fullNameSnapshot: string;
   phoneSnapshot: string | null;
   emailSnapshot: string | null;
@@ -63,6 +65,8 @@ export function toLeadDto(lead: Lead, catalogs: LeadCatalogLookups): LeadDto {
     lostReasonName: lostReason?.name ?? null,
     campaignId: lead.campaignId,
     currentAssigneeUserId: lead.currentAssigneeUserId,
+    ownerManagerId: lead.ownerManagerId,
+    ownerTeamLeadId: lead.ownerTeamLeadId,
     fullNameSnapshot: lead.fullNameSnapshot,
     phoneSnapshot: lead.phoneSnapshot,
     emailSnapshot: lead.emailSnapshot,

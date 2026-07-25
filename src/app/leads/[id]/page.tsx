@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import {
+  assertOwnsManagerData,
+  getPermissionScope,
+  hasPermission,
+  isCallerWorkspaceUser,
+} from "@/modules/rbac";
 import {
   getLead,
   LeadNotFoundError,
@@ -33,6 +38,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const { session, authContext } = await requirePermission("lead.view");
   const { id } = await params;
 
+  if (isCallerWorkspaceUser(authContext)) {
+    redirect(`/caller/leads/${id}`);
+  }
+
   let lead;
   try {
     lead = await getLead(id);
@@ -41,6 +50,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       notFound();
     }
     throw error;
+  }
+
+  if (!assertOwnsManagerData(authContext.hierarchy, lead.ownerManagerId)) {
+    notFound();
+  }
+  if (
+    authContext.hierarchy.primaryRole === "Team Lead" &&
+    lead.ownerTeamLeadId &&
+    lead.ownerTeamLeadId !== authContext.hierarchy.teamLeadId
+  ) {
+    notFound();
   }
 
   const leadScope = getPermissionScope(authContext, "lead.view");
@@ -86,7 +106,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className="mx-page flex flex-col gap-6">
       <Link href="/leads" className="text-sm text-accent hover:underline underline-offset-4">
-        ← Back to Leads
+        ← All Leads
       </Link>
 
       <div className="flex items-center justify-between">

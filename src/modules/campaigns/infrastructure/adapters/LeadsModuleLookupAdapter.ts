@@ -33,7 +33,9 @@ export class LeadsModuleLookupAdapter implements LeadAssignmentPort {
     organizationId: string,
     campaignId: string,
   ): Promise<LeadAssignmentLookupSummary[]> {
-    const leads = await listLeads(organizationId, { campaignId });
+    // Campaign redistribution / assignment must see the full lead set — never
+    // the UI list default of 50.
+    const leads = await listLeads(organizationId, { campaignId, limit: 100_000 });
     return leads.map((lead) => ({
       id: lead.id,
       organizationId: lead.organizationId,

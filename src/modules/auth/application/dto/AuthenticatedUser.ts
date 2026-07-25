@@ -1,9 +1,5 @@
 // ============================================================================
 // src/modules/auth/application/dto/AuthenticatedUser.ts
-//
-// What a successful authentication returns to the Auth.js Credentials
-// provider — identity only, never the password hash (security.mdc /
-// platform-contracts.md §3: "never expose password hashes").
 // ============================================================================
 
 export interface AuthenticatedUser {
@@ -11,4 +7,9 @@ export interface AuthenticatedUser {
   email: string;
   fullName: string;
   organizationId: string;
+  /** Embedded in JWT — must match DB or every request is rejected. */
+  sessionVersion: number;
+  /** Tracked UserSession id for per-session logout. */
+  sessionId: string;
+  mustChangePassword: boolean;
 }

@@ -95,8 +95,7 @@ describe.skipIf(!hasDatabase)("Lead aggregate (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTTEST${uniqueSuffix}`,
+        employeeId: `INTTEST${uniqueSuffix}`,
         fullName: "Integration Test Caller",
         email: `int-test-caller-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",

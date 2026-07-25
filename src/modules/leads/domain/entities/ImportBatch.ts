@@ -23,6 +23,8 @@ export interface ImportBatch {
   uploadedByUserId: string;
   leadSourceId: string;
   campaignId: string | null;
+  ownerManagerId: string | null;
+  ownerTeamLeadId: string | null;
   sourceFileName: string;
   status: ImportBatchStatus;
   totalRowCount: number;

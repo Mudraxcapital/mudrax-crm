@@ -20,6 +20,8 @@ model Campaign {
   startDate       DateTime?      @db.Date
   endDate         DateTime?      @db.Date
   createdByUserId String         @db.Uuid
+  /// Hierarchical owner — every Campaign belongs to exactly one Manager.
+  ownerManagerId  String         @db.Uuid
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -27,6 +29,7 @@ model Campaign {
   assignments CampaignAssignment[]
 
   @@index([organizationId])
+  @@index([ownerManagerId])
   @@map("campaigns")
   @@schema("campaigns")
 }

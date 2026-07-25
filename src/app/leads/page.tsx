@@ -1,9 +1,17 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { getPermissionScope, hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { listCustomers } from "@/modules/customers";
-import { leadCatalogs, listActiveLeadFields, listLeads, listSavedViews } from "@/modules/leads";
-import { listUserSummaries } from "@/modules/users";
+import {
+  countLeads,
+  leadCatalogs,
+  listActiveLeadFields,
+  listLeads,
+  listSavedViews,
+} from "@/modules/leads";
+import { listCampaigns } from "@/modules/campaigns";
+import { listUserSummaries, listUsers } from "@/modules/users";
 import { LeadForm } from "@/modules/leads/presentation/components/LeadForm";
 import { createLeadAction } from "@/modules/leads/presentation/controllers/createLead.action";
 import { AdvancedLeadSearch } from "@/modules/leads/presentation/components/AdvancedLeadSearch";
@@ -13,6 +21,8 @@ import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
 import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
 import { TabNav } from "@/shared/ui/Tabs";
+import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { CreatePanel } from "../_components/CreatePanel";
 import { LeadsTable } from "./_components/LeadsTable";
 
@@ -22,6 +32,10 @@ export default async function LeadsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { session, authContext } = await requirePermission("lead.view");
+  if (isCallerWorkspaceUser(authContext)) {
+    redirect("/caller/leads");
+  }
+
   const canCreate = hasPermission(authContext, "lead.create");
   const canImport = hasPermission(authContext, "lead.import");
   const canManageViews = hasPermission(authContext, "saved_view.manage");
@@ -35,6 +49,9 @@ export default async function LeadsPage({
   const leadSourceId = typeof params.leadSourceId === "string" ? params.leadSourceId : undefined;
   const assignedToUserId =
     typeof params.assignedToUserId === "string" ? params.assignedToUserId : undefined;
+  const campaignId = typeof params.campaignId === "string" ? params.campaignId : undefined;
+  const callerName = typeof params.callerName === "string" ? params.callerName.trim() : undefined;
+  const priority = typeof params.priority === "string" ? params.priority : undefined;
 
   const activeFields = await listActiveLeadFields(authContext.organizationId);
   const searchableKeys = activeFields
@@ -49,45 +66,83 @@ export default async function LeadsPage({
       fieldFilters[field.internalKey] = raw.trim();
     }
   }
+  if (priority && !fieldFilters.priority) {
+    fieldFilters.priority = priority;
+  }
+
+  const callers = await listUsers({ role: "Caller", status: "ACTIVE", limit: 2_000 }).catch(() =>
+    listUserSummaries(authContext.organizationId).then((users) =>
+      users.map((user) => ({ id: user.id, fullName: user.fullName, roleName: "Caller" as string | null })),
+    ),
+  );
+
+  let resolvedAssigneeId = assignedToUserId;
+  if (!resolvedAssigneeId && callerName) {
+    const match = callers.find(
+      (user) => user.fullName.toLowerCase() === callerName.toLowerCase(),
+    );
+    resolvedAssigneeId = match?.id;
+  }
 
   const scope = getPermissionScope(authContext, "lead.view");
+  const hierarchyFilter = leadHierarchyFilter(authContext);
   const filter = {
     search,
     currentStageId,
     leadSourceId,
+    campaignId,
+    ownerManagerId: hierarchyFilter.ownerManagerId,
+    ownerTeamLeadId: hierarchyFilter.ownerTeamLeadId,
     assignedToUserIds:
-      scope === "SELF"
-        ? [session.user.id]
-        : assignedToUserId
-          ? [assignedToUserId]
+      scope === "SELF" || hierarchyFilter.assignedToUserIds
+        ? (hierarchyFilter.assignedToUserIds ?? [session.user.id])
+        : resolvedAssigneeId
+          ? [resolvedAssigneeId]
           : undefined,
     fieldFilters: Object.keys(fieldFilters).length > 0 ? fieldFilters : undefined,
     searchableCustomKeys: searchableKeys,
   };
 
-  const [leads, customers, sources, stages, lostReasons, assignees, savedViews] =
-    await Promise.all([
-      listLeads(authContext.organizationId, filter),
-      listCustomers(authContext.organizationId),
-      leadCatalogs.listSources(authContext.organizationId),
-      leadCatalogs.listStages(authContext.organizationId),
-      leadCatalogs.listLostReasons(authContext.organizationId),
-      listUserSummaries(authContext.organizationId),
-      canManageViews ? listSavedViews(session.user.id) : Promise.resolve([]),
-    ]);
+  const [
+    leads,
+    totalLeadCount,
+    customers,
+    sources,
+    stages,
+    lostReasons,
+    assignees,
+    savedViews,
+    campaigns,
+  ] = await Promise.all([
+    listLeads(authContext.organizationId, { ...filter, limit: 10_000 }),
+    countLeads(authContext.organizationId, filter),
+    listCustomers(authContext.organizationId, {
+      limit: 10_000,
+      ...managerBookFilter(authContext),
+    }),
+    leadCatalogs.listSources(authContext.organizationId),
+    leadCatalogs.listStages(authContext.organizationId),
+    leadCatalogs.listLostReasons(authContext.organizationId),
+    listUserSummaries(authContext.organizationId),
+    canManageViews ? listSavedViews(session.user.id) : Promise.resolve([]),
+    hasPermission(authContext, "campaign.view")
+      ? listCampaigns(authContext.organizationId, managerBookFilter(authContext))
+      : Promise.resolve([]),
+  ]);
 
   const exportQs = new URLSearchParams();
   if (search) exportQs.set("search", search);
   if (currentStageId) exportQs.set("currentStageId", currentStageId);
   if (leadSourceId) exportQs.set("leadSourceId", leadSourceId);
-  if (assignedToUserId) exportQs.set("assignedToUserId", assignedToUserId);
+  if (resolvedAssigneeId) exportQs.set("assignedToUserId", resolvedAssigneeId);
+  if (campaignId) exportQs.set("campaignId", campaignId);
 
   return (
     <PageSection>
       <PageHeader
-        title="Leads"
-        description="Inbound sales inquiries tracked through your pipeline."
-        breadcrumbs={[{ label: "Sales", href: "/crm" }, { label: "Leads" }]}
+        title="All Leads"
+        description={`Inbound sales inquiries tracked through your pipeline. ${totalLeadCount.toLocaleString()} total.`}
+        breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: "All Leads" }]}
         actions={
           <>
             <Link href="/leads/pipeline">
@@ -95,7 +150,7 @@ export default async function LeadsPage({
             </Link>
             {canImport ? (
               <Link href="/leads/import">
-                <Button variant="secondary">Import</Button>
+                <Button variant="secondary">Add from Excel</Button>
               </Link>
             ) : null}
             <a href={`/api/leads/export?${exportQs.toString()}`}>
@@ -127,22 +182,29 @@ export default async function LeadsPage({
       <TabNav
         activeHref="/leads"
         items={[
-          { href: "/leads", label: "List" },
+          { href: "/leads", label: "All Leads" },
           { href: "/leads/pipeline", label: "Pipeline" },
-          ...(canImport ? [{ href: "/leads/import", label: "Import" }] : []),
+          ...(canImport ? [{ href: "/leads/import", label: "Add from Excel" }] : []),
         ]}
       />
 
       <AdvancedLeadSearch
-        stages={stages}
-        sources={sources}
+        stages={excludeTestCatalogRows(stages)}
+        sources={excludeTestCatalogRows(sources)}
+        campaigns={excludeTestCatalogRows(
+          campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name })),
+        )}
+        callers={callers.map((user) => ({ id: user.id, fullName: user.fullName }))}
         savedViews={savedViews}
         filterableFields={activeFields.filter((field) => field.isFilterable)}
+        showCallerFilter={scope !== "SELF"}
         current={{
           search,
           currentStageId,
           leadSourceId,
-          assignedToUserId,
+          assignedToUserId: resolvedAssigneeId,
+          campaignId,
+          priority,
           fieldFilters,
         }}
       />

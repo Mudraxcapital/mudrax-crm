@@ -26,13 +26,24 @@ export async function seedRbac(
   section("2. RBAC — Roles, Permissions, Role Permissions");
 
   explain(
-    "Four canonical Roles from ADR 0002 (Caller, Team Leader, Manager, Admin), each flagged isSystemRole so the seed's own bootstrap Roles are distinguishable from future admin-created ones.",
+    "Four fixed Roles (Caller, Team Lead, Manager, Admin). Custom roles are not supported.",
   );
+
+  // Migrate legacy role name from earlier seeds.
+  await prisma.role.updateMany({
+    where: { organizationId, name: "Team Leader" },
+    data: {
+      name: "Team Lead",
+      description:
+        "Supervises Callers assigned to them. Data Scope: Team — records belonging to Callers under their supervision.",
+    },
+  });
+
   const roleIds = {} as Record<RoleName, string>;
   for (const roleDef of ROLE_DEFINITIONS) {
     const row = await prisma.role.upsert({
       where: { organizationId_name: { organizationId, name: roleDef.name } },
-      update: { description: roleDef.description },
+      update: { description: roleDef.description, isSystemRole: true },
       create: {
         organizationId,
         name: roleDef.name,
@@ -61,7 +72,7 @@ export async function seedRbac(
   }
 
   explain(
-    "Role -> Permission grants, each carrying a Data Scope per platform-contracts.md §2 — Self/Team/Branch/Organization following the natural Caller/Team Leader/Manager/Admin hierarchy, System only for the small, individually-named platform-level grants (RBAC administration, impersonation, provider configuration, audit read access).",
+    "Role -> Permission grants at Self/Team/Branch/Organization scope for the fixed Caller/Team Lead/Manager/Admin hierarchy. System scope only for Admin-only User Management and audit grants.",
   );
   const grants = computeRoleGrants();
   for (const grant of grants) {
@@ -77,6 +88,27 @@ export async function seedRbac(
       update: { dataScope: grant.scope },
       create: { roleId, permissionId, dataScope: grant.scope },
     });
+  }
+
+  // Remove obsolete Organization / custom-role product permissions left by earlier seeds.
+  const obsoleteCodes = [
+    "organization.view",
+    "organization.manage",
+    "team.manage",
+    "branch.manage",
+    "department.manage",
+    "escalation_rule.manage",
+    "role.manage",
+    "role_permission.manage",
+  ];
+  const obsolete = await prisma.permission.findMany({
+    where: { code: { in: obsoleteCodes } },
+    select: { id: true },
+  });
+  if (obsolete.length > 0) {
+    const obsoleteIds = obsolete.map((row) => row.id);
+    await prisma.rolePermission.deleteMany({ where: { permissionId: { in: obsoleteIds } } });
+    await prisma.permission.deleteMany({ where: { id: { in: obsoleteIds } } });
   }
 
   summary("Roles", ROLE_DEFINITIONS.length);

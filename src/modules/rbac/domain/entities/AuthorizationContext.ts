@@ -13,6 +13,7 @@
 // ============================================================================
 
 import type { DataScope } from "../value-objects/DataScope";
+import type { HierarchyScope } from "../value-objects/HierarchyScope";
 
 export interface AuthorizationRole {
   id: string;
@@ -30,6 +31,11 @@ export interface AuthorizationContext {
     branchId: string | null;
     departmentId: string | null;
   };
+  /**
+   * Hierarchical ownership (Admin → Manager → Team Lead → Caller).
+   * Repositories / APIs must apply this — never rely on UI hiding alone.
+   */
+  hierarchy: HierarchyScope;
 }
 
 export function hasPermission(context: AuthorizationContext, permissionCode: string): boolean {
@@ -40,13 +46,28 @@ export function hasRole(context: AuthorizationContext, roleName: string): boolea
   return context.roles.some((role) => role.name === roleName);
 }
 
-/** Canonical internal staff Roles (ADR 0002). Customer / external identities must never hold these. */
-export const INTERNAL_STAFF_ROLES = ["Admin", "Manager", "Team Leader", "Caller"] as const;
+/** Canonical internal staff Roles — fixed four-role set. Customer / external identities must never hold these. */
+export const INTERNAL_STAFF_ROLES = ["Admin", "Manager", "Team Lead", "Caller"] as const;
+
+/** Supervisory / admin Roles that must keep the full CRM shell. */
+export const ELEVATED_STAFF_ROLES = ["Admin", "Manager", "Team Lead"] as const;
 
 /** True when the User holds at least one internal CRM staff Role. */
 export function isInternalStaff(context: AuthorizationContext): boolean {
   return context.roles.some((role) =>
     (INTERNAL_STAFF_ROLES as readonly string[]).includes(role.name),
+  );
+}
+
+/**
+ * True when the User is a front-line Caller only (no Admin / Manager / Team Lead).
+ * Used to switch to the dedicated Caller Workspace shell and block admin surfaces.
+ */
+export function isCallerWorkspaceUser(context: AuthorizationContext): boolean {
+  const holdsCaller = hasRole(context, "Caller");
+  if (!holdsCaller) return false;
+  return !context.roles.some((role) =>
+    (ELEVATED_STAFF_ROLES as readonly string[]).includes(role.name),
   );
 }
 

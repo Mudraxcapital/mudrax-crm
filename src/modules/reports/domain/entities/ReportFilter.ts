@@ -9,6 +9,10 @@ export interface ReportFilter {
   departmentId: string | null;
   teamId: string | null;
   userId: string | null;
+  /** Hierarchical Manager book — null/undefined = unrestricted (Admin). */
+  ownerManagerId?: string | null;
+  ownerTeamLeadId?: string | null;
+  agentUserIds?: string[] | null;
 }
 
 export function emptyReportFilter(): ReportFilter {
@@ -19,6 +23,9 @@ export function emptyReportFilter(): ReportFilter {
     departmentId: null,
     teamId: null,
     userId: null,
+    ownerManagerId: null,
+    ownerTeamLeadId: null,
+    agentUserIds: null,
   };
 }
 
@@ -30,5 +37,8 @@ export function resolveReportFilter(filter: ReportFilter, now: Date = new Date()
     departmentId: filter.departmentId,
     teamId: filter.teamId,
     userId: filter.userId,
+    ownerManagerId: filter.ownerManagerId ?? null,
+    ownerTeamLeadId: filter.ownerTeamLeadId ?? null,
+    agentUserIds: filter.agentUserIds ?? null,
   };
 }

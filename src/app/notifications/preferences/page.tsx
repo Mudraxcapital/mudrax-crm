@@ -24,15 +24,15 @@ export default async function NotificationPreferencesPage() {
       <PageHeader
         title="Settings"
         description="Notification preferences and delivery controls. Transactional and OTP always deliver."
-        breadcrumbs={[{ label: "Organization" }, { label: "Settings" }]}
+        breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: "Preferences" }]}
       />
 
       <TabNav
         activeHref="/notifications/preferences"
         items={[
+          { href: "/settings", label: "Settings hub" },
           { href: "/notifications/preferences", label: "Preferences" },
-          { href: "/organizations", label: "Organization" },
-          { href: "/admin", label: "Admin" },
+          { href: "/users", label: "User Management" },
         ]}
       />
 

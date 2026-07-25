@@ -11,15 +11,15 @@ export default async function FieldSettingsPage() {
   return (
     <PageSection>
       <PageHeader
-        title="Field Settings"
-        description="Configure every lead field used across the CRM — forms, import mapping, search, filters, and export."
+        title="Lead Settings"
+        description="Configure every lead field — forms, Add from Excel mapping, search, filters, and export."
         breadcrumbs={[
-          { label: "CRM", href: "/crm" },
-          { label: "Field Settings" },
+          { label: "Leads", href: "/leads" },
+          { label: "Lead Settings" },
         ]}
         actions={
-          <Link href="/crm" className="text-sm text-accent hover:underline underline-offset-4">
-            ← CRM Dashboard
+          <Link href="/leads" className="text-sm text-accent hover:underline underline-offset-4">
+            ← All Leads
           </Link>
         }
       />

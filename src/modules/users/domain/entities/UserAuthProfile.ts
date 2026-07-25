@@ -1,39 +1,60 @@
 // ============================================================================
 // src/modules/users/domain/entities/UserAuthProfile.ts
-//
-// The subset of `users`.User identity relevant to Authentication (ADR 0002 —
-// `users` is the sole employee identity module; `passwordHash` lives here,
-// never duplicated into `auth`). Framework-free: no Prisma types leak past
-// the infrastructure/mappers layer.
 // ============================================================================
 
-export type UserStatus = "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
+import type { UserStatus } from "./User";
+
+export type { UserStatus };
 
 export interface UserAuthProfile {
   id: string;
-  organizationId: string;
-  employeeCode: string;
+  employeeId: string;
   fullName: string;
   email: string;
   passwordHash: string;
   status: UserStatus;
+  sessionVersion: number;
+  mustChangePassword: boolean;
+  lockedUntil: Date | null;
+  lockedReason: string | null;
 }
 
-/** Current organizational membership pointers used by RBAC Data Scope resolution (platform-contracts.md §2). */
+/** Lightweight projection for session validity checks (every authenticated request). */
+export interface AccountSessionState {
+  userId: string;
+  status: UserStatus;
+  sessionVersion: number;
+  mustChangePassword: boolean;
+  lockedUntil: Date | null;
+}
+
+/** Membership pointers used by RBAC Data Scope resolution. */
 export interface UserScopeContext {
   userId: string;
-  organizationId: string;
   status: UserStatus;
   currentTeamId: string | null;
   currentBranchId: string | null;
   currentDepartmentId: string | null;
+  assignedTeamLeadId: string | null;
+  reportingManagerId: string | null;
 }
 
-/** Lightweight, non-sensitive projection of a User for other modules' assignment/ownership pickers (CRM Lead/Follow-up/Campaign assignment) — never includes `passwordHash`. */
+/** Hierarchy edges needed to resolve Manager → Team Lead → Caller ownership. */
+export interface UserHierarchyEdge {
+  id: string;
+  assignedTeamLeadId: string | null;
+  reportingManagerId: string | null;
+}
+
+/**
+ * Lightweight projection for assignment pickers.
+ * `organizationId` is the single-company scope id (not stored on User) so
+ * other modules' existing call sites keep working.
+ */
 export interface UserSummary {
   id: string;
   organizationId: string;
-  employeeCode: string;
+  employeeId: string;
   fullName: string;
   email: string;
   status: UserStatus;

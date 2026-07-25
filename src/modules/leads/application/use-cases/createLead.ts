@@ -32,6 +32,9 @@ export interface CreateLeadCommand {
   organizationId: string;
   input: CreateLeadInput;
   actor: LeadAuditActor;
+  ownerManagerId?: string | null;
+  ownerTeamLeadId?: string | null;
+  campaignId?: string | null;
   correlationId?: string | null;
 }
 
@@ -109,6 +112,9 @@ export function makeCreateLead(
         customerId: input.customerId,
         leadSourceId: input.leadSourceId,
         currentStageId: stageId,
+        campaignId: command.campaignId ?? null,
+        ownerManagerId: command.ownerManagerId ?? null,
+        ownerTeamLeadId: command.ownerTeamLeadId ?? null,
         fullNameSnapshot: fullName,
         phoneSnapshot: systemUpdates.phoneSnapshot ?? input.phoneSnapshot ?? null,
         emailSnapshot: systemUpdates.emailSnapshot ?? input.emailSnapshot ?? null,

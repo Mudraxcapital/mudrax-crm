@@ -107,6 +107,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       organizationId,
       status: { not: "MERGED" },
     };
+    if (options?.ownerManagerId) where.ownerManagerId = options.ownerManagerId;
     if (options?.search) {
       where.fullName = { contains: options.search, mode: "insensitive" };
     }
@@ -114,7 +115,8 @@ export class PrismaCustomerRepository implements CustomerRepository {
     const rows = await this.prisma.customer.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      take: options?.limit ?? 50,
+      // Default high enough for CRM list pages; pass an explicit limit for search.
+      take: options?.limit ?? 10_000,
       skip: options?.offset ?? 0,
     });
     return rows.map(toCustomer);
@@ -128,6 +130,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       organizationId,
       status: { not: "MERGED" },
     };
+    if (options?.ownerManagerId) where.ownerManagerId = options.ownerManagerId;
     if (options?.search) {
       where.fullName = { contains: options.search, mode: "insensitive" };
     }
@@ -145,9 +148,16 @@ export class PrismaCustomerRepository implements CustomerRepository {
     }));
   }
 
-  async count(organizationId: string): Promise<number> {
+  async count(
+    organizationId: string,
+    options?: Pick<ListCustomersOptions, "ownerManagerId">,
+  ): Promise<number> {
     return this.prisma.customer.count({
-      where: { organizationId, status: { not: "MERGED" } },
+      where: {
+        organizationId,
+        status: { not: "MERGED" },
+        ...(options?.ownerManagerId ? { ownerManagerId: options.ownerManagerId } : {}),
+      },
     });
   }
 
@@ -169,6 +179,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
           fullName: data.fullName,
           dob: data.dob ?? null,
           identityConfidence,
+          ownerManagerId: data.ownerManagerId ?? null,
         },
       });
 

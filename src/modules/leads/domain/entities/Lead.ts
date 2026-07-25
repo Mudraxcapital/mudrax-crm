@@ -15,6 +15,8 @@ export interface Lead {
   lostReasonId: string | null;
   campaignId: string | null;
   currentAssigneeUserId: string | null;
+  ownerManagerId: string | null;
+  ownerTeamLeadId: string | null;
   fullNameSnapshot: string;
   phoneSnapshot: string | null;
   emailSnapshot: string | null;

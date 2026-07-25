@@ -37,7 +37,10 @@ export function makeListCustomers(repository: CustomerRepository) {
 }
 
 export function makeCountCustomers(repository: CustomerRepository) {
-  return async function countCustomers(organizationId: string): Promise<number> {
-    return repository.count(organizationId);
+  return async function countCustomers(
+    organizationId: string,
+    options?: { ownerManagerId?: string },
+  ): Promise<number> {
+    return repository.count(organizationId, options);
   };
 }

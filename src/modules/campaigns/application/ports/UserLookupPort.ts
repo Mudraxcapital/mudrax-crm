@@ -11,7 +11,7 @@ export interface UserLookupSummary {
   id: string;
   organizationId: string;
   fullName: string;
-  status: "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
+  status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
 }
 
 export interface UserLookupPort {

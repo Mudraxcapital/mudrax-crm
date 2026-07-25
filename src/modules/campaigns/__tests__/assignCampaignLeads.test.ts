@@ -52,6 +52,7 @@ describe("assignCampaignLeads", () => {
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
       actor: { actorType: "USER", actorId: "actor-1" },
+      ownerManagerId: "actor-1",
     });
     campaignId = campaign.id;
 
@@ -190,6 +191,7 @@ describe("assignCampaignLeads", () => {
       organizationId: ORG_ID,
       input: { name: "No Members" },
       actor: { actorType: "USER", actorId: "actor-1" },
+      ownerManagerId: "actor-1",
     });
 
     await expect(

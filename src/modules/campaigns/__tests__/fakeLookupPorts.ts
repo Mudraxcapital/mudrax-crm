@@ -33,7 +33,10 @@ export class FakeLeadAssignmentPort implements LeadAssignmentPort {
     return this.leads.get(leadId) ?? null;
   }
 
-  async listByCampaign(organizationId: string): Promise<LeadAssignmentLookupSummary[]> {
+  async listByCampaign(
+    organizationId: string,
+    _campaignId: string,
+  ): Promise<LeadAssignmentLookupSummary[]> {
     return [...this.leads.values()].filter((lead) => lead.organizationId === organizationId);
   }
 

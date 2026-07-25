@@ -6,11 +6,14 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/shared/ui/cn";
 import { ThemeToggle } from "@/shared/ui/ThemeProvider";
 import { LogoutButton } from "@/modules/auth/presentation/components/LogoutButton";
+import { AccountStatusGuard } from "@/modules/auth/presentation/components/AccountStatusGuard";
 import { OPEN_COMMAND_PALETTE } from "./CommandPalette";
-import { filterNavGroups, isNavActive, NAV_GROUPS } from "./nav";
+import { filterNavGroups, isNavActive, navItemKey, NAV_GROUPS } from "./nav";
+import { callerNavAsNavGroups } from "./callerNav";
 import { NavIconSvg } from "./NavIcons";
+import { LoginDurationTimer } from "@/modules/caller-workspace/presentation/components/LoginDurationTimer";
 
-const BARE_PREFIXES = ["/login", "/session-expired", "/unauthorized"];
+const BARE_PREFIXES = ["/login", "/session-expired", "/unauthorized", "/change-password"];
 
 export interface AppShellUser {
   fullName: string;
@@ -18,6 +21,8 @@ export interface AppShellUser {
   roles: string[];
   permissions: string[];
   isStaff: boolean;
+  isCallerWorkspace?: boolean;
+  loginAt?: string;
 }
 
 export function AppShell({
@@ -56,8 +61,11 @@ function ShellFrame({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const navGroups = useMemo(
-    () => filterNavGroups(NAV_GROUPS, user.permissions),
-    [user.permissions],
+    () =>
+      user.isCallerWorkspace
+        ? callerNavAsNavGroups()
+        : filterNavGroups(NAV_GROUPS, user.permissions),
+    [user.isCallerWorkspace, user.permissions],
   );
 
   useEffect(() => {
@@ -79,6 +87,7 @@ function ShellFrame({
 
   return (
     <div className="bg-background text-foreground flex min-h-screen">
+      <AccountStatusGuard enabled />
       {mobileOpen ? (
         <button
           type="button"
@@ -107,7 +116,9 @@ function ShellFrame({
           {!collapsed ? (
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-tight">Mudrax CRM</p>
-              <p className="truncate text-[11px] text-sidebar-muted">Enterprise workspace</p>
+              <p className="truncate text-[11px] text-sidebar-muted">
+                {user.isCallerWorkspace ? "Caller workspace" : "Enterprise workspace"}
+              </p>
             </div>
           ) : null}
         </div>
@@ -124,7 +135,7 @@ function ShellFrame({
                 {group.items.map((item) => {
                   const active = isNavActive(pathname, item);
                   return (
-                    <li key={item.href}>
+                    <li key={navItemKey(item)}>
                       <Link
                         href={item.href}
                         title={collapsed ? item.label : undefined}
@@ -203,6 +214,9 @@ function ShellFrame({
           </button>
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            {user.isCallerWorkspace && user.loginAt ? (
+              <LoginDurationTimer loginAt={user.loginAt} />
+            ) : null}
             <ThemeToggle />
             <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-sunken/50 px-2.5 py-1.5 sm:flex">
               <div className="bg-accent/15 text-accent flex size-7 items-center justify-center rounded-full text-[11px] font-semibold">

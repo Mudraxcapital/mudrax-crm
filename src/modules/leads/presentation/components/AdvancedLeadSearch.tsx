@@ -13,6 +13,7 @@ import {
   deleteSavedViewAction,
   type ProductivityFormState,
 } from "../controllers/productivity.actions";
+import { CallerNameAutocomplete } from "./CallerNameAutocomplete";
 import { Button } from "@/shared/ui/Button";
 import { Input, Select } from "@/shared/ui/Input";
 
@@ -21,26 +22,38 @@ const initial: ProductivityFormState = {};
 export function AdvancedLeadSearch({
   stages,
   sources,
+  campaigns = [],
+  callers = [],
   savedViews,
   filterableFields = [],
   current,
+  showCallerFilter = true,
 }: {
   stages: LeadStage[];
   sources: LeadSource[];
+  campaigns?: { id: string; name: string }[];
+  callers?: { id: string; fullName: string }[];
   savedViews: SavedViewDto[];
   filterableFields?: LeadFieldDefinitionDto[];
+  showCallerFilter?: boolean;
   current: {
     search?: string;
     currentStageId?: string;
     leadSourceId?: string;
     assignedToUserId?: string;
+    campaignId?: string;
+    priority?: string;
+    dateFrom?: string;
+    dateTo?: string;
     fieldFilters?: Record<string, string>;
   };
 }) {
   const [saveState, saveAction, saving] = useActionState(createSavedViewAction, initial);
   const dynamicFilters = filterableFields.filter(
-    (field) => !["full_name", "phone", "email"].includes(field.internalKey),
+    (field) =>
+      !["full_name", "phone", "email", "priority"].includes(field.internalKey),
   );
+  const priorityField = filterableFields.find((field) => field.internalKey === "priority");
 
   return (
     <section className="mx-card sticky top-[calc(var(--topbar-height)+0.25rem)] z-[5] border-border/80 bg-surface/95 p-4 shadow-sm backdrop-blur-md">
@@ -48,24 +61,48 @@ export function AdvancedLeadSearch({
         <h2 className="text-sm font-semibold tracking-tight">Filters</h2>
         <p className="text-muted text-xs">Sticky · applies to list below</p>
       </div>
-      <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         <Input
           name="search"
           defaultValue={current.search}
           placeholder="Search searchable fields…"
           aria-label="Search leads"
         />
+        {showCallerFilter ? (
+          <CallerNameAutocomplete
+            callers={callers}
+            defaultCallerId={current.assignedToUserId}
+          />
+        ) : null}
+        <Select name="campaignId" defaultValue={current.campaignId ?? ""} aria-label="Campaign">
+          <option value="">Any campaign</option>
+          {campaigns.map((campaign) => (
+            <option key={campaign.id} value={campaign.id}>
+              {campaign.name}
+            </option>
+          ))}
+        </Select>
         <Select
           name="currentStageId"
           defaultValue={current.currentStageId ?? ""}
-          aria-label="Stage"
+          aria-label="Lead status"
         >
-          <option value="">Any stage</option>
+          <option value="">Any status</option>
           {stages.map((stage) => (
             <option key={stage.id} value={stage.id}>
               {stage.name}
             </option>
           ))}
+        </Select>
+        <Select
+          name={priorityField ? `ff_priority` : "priority"}
+          defaultValue={current.priority ?? current.fieldFilters?.priority ?? ""}
+          aria-label="Priority"
+        >
+          <option value="">Any priority</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
         </Select>
         <Select
           name="leadSourceId"
@@ -80,11 +117,12 @@ export function AdvancedLeadSearch({
           ))}
         </Select>
         <Input
-          name="assignedToUserId"
-          defaultValue={current.assignedToUserId}
-          placeholder="Assignee user id"
-          aria-label="Assignee"
+          type="date"
+          name="dateFrom"
+          defaultValue={current.dateFrom}
+          aria-label="Date from"
         />
+        <Input type="date" name="dateTo" defaultValue={current.dateTo} aria-label="Date to" />
         {dynamicFilters.map((field) => (
           <Input
             key={field.id}
@@ -104,6 +142,7 @@ export function AdvancedLeadSearch({
         <input type="hidden" name="currentStageId" value={current.currentStageId ?? ""} />
         <input type="hidden" name="leadSourceId" value={current.leadSourceId ?? ""} />
         <input type="hidden" name="assignedToUserId" value={current.assignedToUserId ?? ""} />
+        <input type="hidden" name="campaignId" value={current.campaignId ?? ""} />
         <Input
           name="name"
           required
@@ -141,6 +180,9 @@ export function AdvancedLeadSearch({
                     : {}),
                   ...(view.filterConfig.assignedToUserId
                     ? { assignedToUserId: String(view.filterConfig.assignedToUserId) }
+                    : {}),
+                  ...(view.filterConfig.campaignId
+                    ? { campaignId: String(view.filterConfig.campaignId) }
                     : {}),
                 }).toString()}`}
                 className="bg-accent-muted text-accent hover:bg-accent/15 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"

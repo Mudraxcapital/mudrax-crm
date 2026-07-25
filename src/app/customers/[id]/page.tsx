@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { assertOwnsManagerData, hasPermission } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
 import { listActiveLeadFields, listLeadsByCustomer } from "@/modules/leads";
 import { listLoanApplications } from "@/modules/loan-applications";
@@ -25,6 +25,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       notFound();
     }
     throw error;
+  }
+
+  if (!assertOwnsManagerData(authContext.hierarchy, customer.ownerManagerId)) {
+    notFound();
   }
 
   if (customer.mergedIntoCustomerId) {
@@ -74,6 +78,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <nav aria-label="Breadcrumb" className="text-muted flex flex-wrap items-center gap-1.5 text-xs">
+            <Link href="/crm" className="hover:text-foreground">
+              CRM
+            </Link>
+            <span>/</span>
             <Link href="/customers" className="hover:text-foreground">
               Customers
             </Link>

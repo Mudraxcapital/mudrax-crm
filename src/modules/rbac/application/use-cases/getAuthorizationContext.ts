@@ -1,14 +1,9 @@
 // ============================================================================
 // src/modules/rbac/application/use-cases/getAuthorizationContext.ts
-//
-// Resolves the full "Users -> UserRoles -> Roles -> RolePermissions ->
-// Permissions" chain (ADR 0002) plus Data Scope (platform-contracts.md §2)
-// for one authenticated User, reading organization membership fresh on
-// every call — never snapshotted onto a session — so a Role/Branch/Team
-// change takes effect on the User's very next request.
 // ============================================================================
 
-import { getUserScopeContext } from "@/modules/users";
+import { getCompanyId } from "@/infra/company/getCompanyId";
+import { getUserScopeContext, resolveVisibleHierarchy } from "@/modules/users";
 import type { RbacRepository } from "../../domain/repositories/RbacRepository";
 import type { AuthorizationContext } from "../../domain/entities/AuthorizationContext";
 import { widerScope, type DataScope } from "../../domain/value-objects/DataScope";
@@ -31,9 +26,13 @@ export function makeGetAuthorizationContext(repository: RbacRepository) {
       permissions[grant.code] = existing ? widerScope(existing, grant.scope) : grant.scope;
     }
 
+    // Company scope for other modules (CRM/Campaigns/…) — not stored on User.
+    const organizationId = await getCompanyId();
+    const hierarchy = await resolveVisibleHierarchy(userId);
+
     return {
       userId,
-      organizationId: scopeContext.organizationId,
+      organizationId,
       roles,
       permissions,
       scope: {
@@ -41,6 +40,7 @@ export function makeGetAuthorizationContext(repository: RbacRepository) {
         branchId: scopeContext.currentBranchId,
         departmentId: scopeContext.currentDepartmentId,
       },
+      hierarchy,
     };
   };
 }

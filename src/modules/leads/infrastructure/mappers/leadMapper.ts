@@ -31,6 +31,8 @@ export function toLead(row: PrismaLead): Lead {
     lostReasonId: row.lostReasonId,
     campaignId: row.campaignId,
     currentAssigneeUserId: row.currentAssigneeUserId,
+    ownerManagerId: row.ownerManagerId,
+    ownerTeamLeadId: row.ownerTeamLeadId,
     fullNameSnapshot: row.fullNameSnapshot,
     phoneSnapshot: row.phoneSnapshot,
     emailSnapshot: row.emailSnapshot,

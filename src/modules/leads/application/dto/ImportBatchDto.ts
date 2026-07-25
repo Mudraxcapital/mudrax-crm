@@ -10,6 +10,8 @@ export interface ImportBatchDto {
   uploadedByUserId: string;
   leadSourceId: string;
   campaignId: string | null;
+  ownerManagerId: string | null;
+  ownerTeamLeadId: string | null;
   sourceFileName: string;
   status: ImportBatch["status"];
   totalRowCount: number;
@@ -38,6 +40,8 @@ export function toImportBatchDto(batch: ImportBatch): ImportBatchDto {
     uploadedByUserId: batch.uploadedByUserId,
     leadSourceId: batch.leadSourceId,
     campaignId: batch.campaignId,
+    ownerManagerId: batch.ownerManagerId,
+    ownerTeamLeadId: batch.ownerTeamLeadId,
     sourceFileName: batch.sourceFileName,
     status: batch.status,
     totalRowCount: batch.totalRowCount,

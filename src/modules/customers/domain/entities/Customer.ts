@@ -21,6 +21,7 @@ export interface Customer {
   identityConfidence: IdentityConfidence;
   status: CustomerStatus;
   mergedIntoCustomerId: string | null;
+  ownerManagerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

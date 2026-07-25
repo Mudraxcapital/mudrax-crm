@@ -9,6 +9,7 @@ import { countLeads } from "@/modules/leads";
 import { listUserSummaries } from "@/modules/users";
 import { CampaignForm } from "@/modules/campaigns/presentation/components/CampaignForm";
 import { createCampaignAction } from "@/modules/campaigns/presentation/controllers/createCampaign.action";
+import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { CreatePanel } from "../_components/CreatePanel";
 import { CampaignsTable } from "./_components/CampaignsTable";
@@ -16,8 +17,9 @@ import { CampaignsTable } from "./_components/CampaignsTable";
 export default async function CampaignsPage() {
   const { authContext } = await requirePermission("campaign.view");
   const canManage = hasPermission(authContext, "campaign.manage");
+  const book = managerBookFilter(authContext);
   const [campaigns, users] = await Promise.all([
-    listCampaigns(authContext.organizationId),
+    listCampaigns(authContext.organizationId, book),
     listUserSummaries(authContext.organizationId),
   ]);
 
@@ -52,8 +54,8 @@ export default async function CampaignsPage() {
     <PageSection>
       <PageHeader
         title="Campaigns"
-        description="Outbound lead-distribution campaigns, agents, import history, and analytics."
-        breadcrumbs={[{ label: "Sales", href: "/crm" }, { label: "Campaigns" }]}
+        description="Outbound lead-distribution campaigns, agents, Add from Excel history, and analytics."
+        breadcrumbs={[{ label: "Campaigns" }]}
         actions={
           canManage ? (
             <CreatePanel

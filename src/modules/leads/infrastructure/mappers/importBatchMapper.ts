@@ -16,6 +16,8 @@ export function toImportBatch(row: PrismaImportBatch): ImportBatch {
     uploadedByUserId: row.uploadedByUserId,
     leadSourceId: row.leadSourceId,
     campaignId: row.campaignId,
+    ownerManagerId: row.ownerManagerId,
+    ownerTeamLeadId: row.ownerTeamLeadId,
     sourceFileName: row.sourceFileName,
     status: row.status,
     totalRowCount: row.totalRowCount,

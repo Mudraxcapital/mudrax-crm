@@ -10,8 +10,8 @@ import {
   createCustomer,
   CustomerNotFoundError,
   DuplicateCustomerIdentifierError,
+  findCustomerByContact,
   getCustomer,
-  listCustomers,
 } from "@/modules/customers";
 import type {
   CustomerLookupPort,
@@ -37,26 +37,16 @@ export class CustomersModuleLookupAdapter implements CustomerLookupPort {
   }
 
   async resolveOrCreate(input: ResolveOrCreateCustomerInput): Promise<CustomerLookupSummary> {
-    const searchKey = input.phone?.trim() || input.email?.trim() || input.fullName.trim();
-    if (searchKey) {
-      const matches = await listCustomers(input.organizationId, { search: searchKey, limit: 20 });
-      const exact = matches.find(
-        (customer) => customer.fullName.toLowerCase() === input.fullName.trim().toLowerCase(),
-      );
-      if (exact) {
-        return {
-          id: exact.id,
-          organizationId: input.organizationId,
-          fullName: exact.fullName,
-        };
-      }
-      if (matches.length === 1 && matches[0]) {
-        return {
-          id: matches[0].id,
-          organizationId: input.organizationId,
-          fullName: matches[0].fullName,
-        };
-      }
+    const existing = await findCustomerByContact(input.organizationId, {
+      phone: input.phone,
+      email: input.email,
+    });
+    if (existing) {
+      return {
+        id: existing.id,
+        organizationId: input.organizationId,
+        fullName: existing.fullName,
+      };
     }
 
     const identifiers: Array<{ type: "PHONE" | "EMAIL"; value: string }> = [];
@@ -78,6 +68,7 @@ export class CustomersModuleLookupAdapter implements CustomerLookupPort {
           identifiers,
         },
         actor: { actorType: "USER", actorId: input.actorUserId },
+        ownerManagerId: input.ownerManagerId ?? null,
       });
       return {
         id: created.id,
@@ -86,8 +77,20 @@ export class CustomersModuleLookupAdapter implements CustomerLookupPort {
       };
     } catch (error) {
       if (error instanceof DuplicateCustomerIdentifierError) {
-        const existing = await this.findById(error.existingCustomerId);
-        if (existing) return existing;
+        const byId = await this.findById(error.existingCustomerId);
+        if (byId) return byId;
+      }
+      // Race: another import row created the same phone/email — re-resolve.
+      const raced = await findCustomerByContact(input.organizationId, {
+        phone: input.phone,
+        email: input.email,
+      });
+      if (raced) {
+        return {
+          id: raced.id,
+          organizationId: input.organizationId,
+          fullName: raced.fullName,
+        };
       }
       throw error;
     }

@@ -69,16 +69,30 @@ export class PrismaCampaignRepository implements CampaignRepository {
     return row ? toCampaign(row) : null;
   }
 
-  async list(organizationId: string): Promise<Campaign[]> {
+  async list(
+    organizationId: string,
+    filter?: import("../../domain/repositories/CampaignRepository").ListCampaignsFilter,
+  ): Promise<Campaign[]> {
     const rows = await this.prisma.campaign.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(filter?.ownerManagerId ? { ownerManagerId: filter.ownerManagerId } : {}),
+      },
       orderBy: { createdAt: "desc" },
     });
     return rows.map(toCampaign);
   }
 
-  async count(organizationId: string): Promise<number> {
-    return this.prisma.campaign.count({ where: { organizationId } });
+  async count(
+    organizationId: string,
+    filter?: import("../../domain/repositories/CampaignRepository").ListCampaignsFilter,
+  ): Promise<number> {
+    return this.prisma.campaign.count({
+      where: {
+        organizationId,
+        ...(filter?.ownerManagerId ? { ownerManagerId: filter.ownerManagerId } : {}),
+      },
+    });
   }
 
   async createWithAudit(
@@ -95,6 +109,7 @@ export class PrismaCampaignRepository implements CampaignRepository {
           startDate: data.startDate ?? null,
           endDate: data.endDate ?? null,
           createdByUserId: data.createdByUserId,
+          ownerManagerId: data.ownerManagerId,
         },
       });
       const campaign = toCampaign(row);
@@ -203,6 +218,14 @@ export class PrismaCampaignRepository implements CampaignRepository {
       where: { campaignId_userId: { campaignId, userId } },
     });
     return row ? toCampaignMembership(row) : null;
+  }
+
+  async listActiveMembershipsForUser(userId: string): Promise<CampaignMembership[]> {
+    const rows = await this.prisma.campaignMembership.findMany({
+      where: { userId, isActive: true },
+      orderBy: { joinedAt: "desc" },
+    });
+    return rows.map(toCampaignMembership);
   }
 
   async addMemberWithAudit(

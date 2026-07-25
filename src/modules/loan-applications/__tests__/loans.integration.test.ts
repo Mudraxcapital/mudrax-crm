@@ -107,8 +107,7 @@ describe.skipIf(!hasDatabase)("Loan Management lifecycle (integration)", () => {
     const suffix = Date.now().toString().slice(-6);
     const user = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTLN${suffix}`,
+        employeeId: `INTLN${suffix}`,
         fullName: "Integration Loans User",
         email: `int-loans-${suffix}@example.com`,
         passwordHash: "not-a-real-hash",

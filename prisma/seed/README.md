@@ -69,8 +69,11 @@ task, not an extension of "seed the catalogs and a demo pipeline."
 ## Bootstrap Administrator credentials (DEV-ONLY)
 
 ```
-Email:    admin@mudraxcapital.com
-Password: Mudrax@Admin2026!
+Email:    aarush.taluja1@gmail.com
+Password: Sairam@123
+
+Roster: 1 Admin, 1 Manager, 3 Team Leads, 9 Callers (3 per Team Lead).
+Non-admin demo password: Mudrax@User2026!
 ```
 
 This password is hashed with `lib/security.ts`'s `hashSeedPassword`, which

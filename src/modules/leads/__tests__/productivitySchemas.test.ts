@@ -43,6 +43,27 @@ describe("productivitySchemas", () => {
     expect(parsed.distributionStrategy).toBe("ROUND_ROBIN");
   });
 
+  it("requires selectedStageIds for replace/archive strategies", () => {
+    const missing = importLeadsCsvSchema.safeParse({
+      leadSourceId: uuid,
+      rows: [{ Name: "Rahul", Phone: "9000000000" }],
+      columnMapping: { full_name: "Name", phone: "Phone" },
+      duplicateResolution: "replace_selected_statuses",
+    });
+    expect(missing.success).toBe(false);
+
+    const ok = importLeadsCsvSchema.parse({
+      leadSourceId: uuid,
+      rows: [{ Name: "Rahul", Phone: "9000000000" }],
+      columnMapping: { full_name: "Name", phone: "Phone" },
+      duplicateResolution: "archive_and_reimport",
+      selectedStageIds: [uuid],
+      duplicateMatchMode: "phone",
+    });
+    expect(ok.selectedStageIds).toEqual([uuid]);
+    expect(ok.duplicateMatchMode).toBe("phone");
+  });
+
   it("accepts bulk assign payload", () => {
     const parsed = bulkAssignLeadsSchema.parse({
       leadIds: [uuid],

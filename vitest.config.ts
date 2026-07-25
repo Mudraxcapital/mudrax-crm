@@ -6,8 +6,7 @@ import path from "node:path";
 // environment or React plugin is required. Integration tests that need the
 // real Postgres instance are tagged in their own file and skipped
 // automatically when DATABASE_URL is not set (see
-// src/modules/organization/__tests__/README or each *.integration.test.ts
-// file's own guard).
+// each *.integration.test.ts file's own guard).
 export default defineConfig({
   resolve: {
     alias: {

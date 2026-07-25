@@ -34,6 +34,10 @@ export interface GlobalSearchOptions {
   includeLoanApplications?: boolean;
   includeDocuments?: boolean;
   includeCampaigns?: boolean;
+  /** When set, lead results are restricted to this assignee (Caller Workspace). */
+  assignedToUserId?: string;
+  /** Lead detail path prefix — `/caller/leads` for Caller Workspace. */
+  leadHrefPrefix?: string;
   limit?: number;
 }
 
@@ -51,6 +55,8 @@ export async function globalSearch(
     includeLoanApplications = true,
     includeDocuments = true,
     includeCampaigns = true,
+    assignedToUserId,
+    leadHrefPrefix = "/leads",
     limit = 25,
   } = options;
 
@@ -70,6 +76,7 @@ export async function globalSearch(
           search: q,
           limit: 50,
           searchableCustomKeys,
+          assignedToUserIds: assignedToUserId ? [assignedToUserId] : undefined,
         })
       : Promise.resolve([]),
     includeCampaigns ? listCampaigns(organizationId) : Promise.resolve([]),
@@ -103,7 +110,7 @@ export async function globalSearch(
       id: item.id,
       title: item.fullNameSnapshot,
       subtitle: `Lead · ${item.currentStageName}`,
-      href: `/leads/${item.id}`,
+      href: `${leadHrefPrefix}/${item.id}`,
       score,
     });
   }

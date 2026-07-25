@@ -1,74 +1,68 @@
 // ============================================================================
 // users — src/modules/users
 //
-// Source: ADR 0002 (Users and Enterprise RBAC), docs/domain/domain-model.md,
-// docs/platform/platform-contracts.md (§3 Security & Identity).
-//
-// `users` is the sole employee identity module. Job titles (Caller, Manager,
-// Team Leader, Admin, ...) are Roles assigned via `rbac`, never separate
-// entities or separate modules (ADR 0002).
+// Sole employee identity module for Mudrax CRM (single-company).
+// Job titles (Caller, Manager, Team Lead, Admin) are fixed Roles via `rbac`.
+// There is no organizationId / multi-tenant column on Users.
 // ============================================================================
 
-/// The identity. Job responsibilities are Roles held via `rbac`.UserRole,
-/// never encoded on User itself.
+/// The employee identity. Roles are held via `rbac`.UserRole.
 model User {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @db.Uuid
-  employeeCode   String     @db.VarChar(50)
-  fullName       String     @db.VarChar(200)
-  email          String     @unique @db.VarChar(320)
-  phone          String?    @db.VarChar(20)
-  passwordHash   String     @db.VarChar(255)
-  status         UserStatus @default(ACTIVE)
+  id              String     @id @default(uuid()) @db.Uuid
+  /// Auto-generated Mudrax Capitals staff id — format MCS0001, MCS0002, …
+  employeeId      String     @unique @db.VarChar(50)
+  fullName        String     @db.VarChar(200)
+  email           String     @unique @db.VarChar(320)
+  /// Unique when present — duplicate employee phones are rejected in User Management.
+  phone           String?    @unique @db.VarChar(20)
+  passwordHash    String     @db.VarChar(255)
+  status          UserStatus @default(ACTIVE)
+  profilePhotoUrl String?    @db.VarChar(500)
+  /// Bumped on status change / password reset — JWT must match or session is invalid.
+  sessionVersion  Int        @default(0)
+  /// Set on create / password reset — cleared after the user changes password.
+  mustChangePassword Boolean @default(false)
+  /// Temporary lockout from failed sign-in attempts (cleared by Admin unlock or expiry).
+  lockedUntil  DateTime?
+  lockedReason String?   @db.VarChar(200)
 
-  // Current organizational membership, denormalized for cheap RBAC Data
-  // Scope resolution (platform-contracts.md §2: "reads organization's
-  // current Team/Branch membership at check time"). The authoritative,
-  // auditable history lives in `organization`.UserAssignmentHistory;
-  // these three pointers are kept in sync by that module's domain events,
-  // never written directly by any other module.
+  assignedTeamLeadId String? @db.Uuid
+  reportingManagerId String? @db.Uuid
+
+  // Operational membership pointers for RBAC Data Scope resolution.
   currentTeamId       String? @db.Uuid
   currentBranchId     String? @db.Uuid
   currentDepartmentId String? @db.Uuid
 
-  // MFA seam reserved per platform-contracts.md §3 ("not mandated day one
-  // ... reserves the seam so it can be turned on per-Role later as pure
-  // configuration").
   mfaEnabled Boolean    @default(false)
   mfaMethod  MfaMethod?
+
+  createdByUserId String? @db.Uuid
+  updatedByUserId String? @db.Uuid
 
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   loginAttempts LoginAttempt[]
+  sessions      UserSession[]
   apiKeys       ApiKey[]
 
-  // Cross-schema FKs to `organization` are intentionally left as plain
-  // columns above (no Prisma relation) to avoid a circular module
-  // dependency at the Prisma-schema level mirroring the codebase's
-  // one-directional module dependency discipline (ADR 0001); referential
-  // integrity is enforced with manually-added foreign keys:
-  //   ALTER TABLE users.users
-  //     ADD CONSTRAINT users_current_team_id_fkey
-  //       FOREIGN KEY (current_team_id) REFERENCES organization.teams(id),
-  //     ADD CONSTRAINT users_current_branch_id_fkey
-  //       FOREIGN KEY (current_branch_id) REFERENCES organization.branches(id),
-  //     ADD CONSTRAINT users_current_department_id_fkey
-  //       FOREIGN KEY (current_department_id) REFERENCES organization.departments(id);
-
-  @@unique([organizationId, employeeCode])
-  @@index([organizationId])
   @@index([currentTeamId])
   @@index([currentBranchId])
+  @@index([assignedTeamLeadId])
+  @@index([reportingManagerId])
+  @@index([status])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
   @@map("users")
   @@schema("users")
 }
 
 enum UserStatus {
   ACTIVE
+  INACTIVE
   SUSPENDED
-  OFFBOARDED
 
   @@map("user_status")
   @@schema("users")
@@ -83,9 +77,6 @@ enum MfaMethod {
   @@schema("users")
 }
 
-/// Every login attempt, success or failure, is Audit-logged
-/// (platform-contracts.md §3). Structurally append-only: no update/delete
-/// use-case is ever exposed at the domain layer.
 model LoginAttempt {
   id            String   @id @default(uuid()) @db.Uuid
   userId        String?  @db.Uuid
@@ -105,9 +96,38 @@ model LoginAttempt {
   @@schema("users")
 }
 
-/// Scoped, attributable, individually revocable inbound-integration
-/// credential (platform-contracts.md §3 "API Keys") — never a blanket key
-/// shared across integrations.
+/// Tracked CRM login sessions — active sessions + login history.
+model UserSession {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @db.Uuid
+  ipAddress      String?           @db.VarChar(64)
+  userAgent      String?           @db.Text
+  device         String?           @db.VarChar(80)
+  browser        String?           @db.VarChar(80)
+  loginAt        DateTime          @default(now())
+  lastActivityAt DateTime          @default(now())
+  logoutAt       DateTime?
+  revokedAt      DateTime?
+  revokeReason   String?           @db.VarChar(200)
+  status         UserSessionStatus @default(ACTIVE)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, loginAt])
+  @@map("user_sessions")
+  @@schema("users")
+}
+
+enum UserSessionStatus {
+  ACTIVE
+  ENDED
+  REVOKED
+
+  @@map("user_session_status")
+  @@schema("users")
+}
+
 model ApiKey {
   id             String        @id @default(uuid()) @db.Uuid
   ownerUserId    String        @db.Uuid
@@ -128,12 +148,6 @@ model ApiKey {
   @@schema("users")
 }
 
-/// Enterprise-wide RBAC Data Scope vocabulary (platform-contracts.md §2),
-/// duplicated as a schema-local enum (Postgres has no cross-schema enum
-/// sharing, and Prisma additionally requires globally-unique names across
-/// every `@@schema`-tagged type in one multi-schema project) — kept
-/// byte-for-byte identical in value set to `rbac.DataScope` by convention,
-/// never diverged.
 enum UserDataScope {
   SELF
   TEAM
@@ -142,5 +156,36 @@ enum UserDataScope {
   SYSTEM
 
   @@map("data_scope")
+  @@schema("users")
+}
+
+/// Append-only User Management audit log (platform-contracts.md §4).
+model UserAuditLog {
+  id            String        @id @default(uuid()) @db.Uuid
+  occurredAt    DateTime      @default(now())
+  actorType     UserActorType
+  actorId       String?       @db.Uuid
+  action        String        @db.VarChar(200)
+  targetType    String        @db.VarChar(100)
+  targetId      String        @db.Uuid
+  correlationId String?       @db.Uuid
+  beforeState   Json?         @db.JsonB
+  afterState    Json?         @db.JsonB
+
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("user_audit_log")
+  @@schema("users")
+}
+
+enum UserActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("user_actor_type")
   @@schema("users")
 }

@@ -42,7 +42,11 @@ function matchesUserScope(userId: string | null | undefined, filter: ReportFilte
 
 export class SourceModulesDataAdapter implements SourceDataPort {
   async getAnalyticsKpis(organizationId: string, filter?: ReportFilter): Promise<AnalyticsKpis> {
-    void filter;
+    const ownerManagerId = filter?.ownerManagerId ?? undefined;
+    const leadScope = {
+      ownerManagerId,
+      ownerTeamLeadId: filter?.ownerTeamLeadId ?? undefined,
+    };
     const [
       totalCustomers,
       totalLeads,
@@ -53,11 +57,11 @@ export class SourceModulesDataAdapter implements SourceDataPort {
       documentsDashboard,
       notifications,
     ] = await Promise.all([
-      countCustomers(organizationId),
-      countLeads(organizationId),
+      countCustomers(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
+      countLeads(organizationId, leadScope),
       getLeadsByStage(organizationId),
       getLeadsBySource(organizationId),
-      listCampaigns(organizationId),
+      listCampaigns(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
       getTelephonyDashboard(organizationId),
       getDocumentsDashboard(organizationId),
       getNotificationsDashboard(organizationId),
@@ -129,7 +133,10 @@ export class SourceModulesDataAdapter implements SourceDataPort {
   }
 
   private async customerReport(organizationId: string, filter: ReportFilter): Promise<ReportResult> {
-    const customers = await listCustomers(organizationId, { limit: 500 });
+    const customers = await listCustomers(organizationId, {
+      limit: 500,
+      ownerManagerId: filter.ownerManagerId ?? undefined,
+    });
     const columns = ["id", "fullName", "status", "identityConfidence", "createdAt"];
     const rows: ReportRow[] = customers
       .filter((customer) => inDateRange(customer.createdAt, filter))
@@ -145,7 +152,13 @@ export class SourceModulesDataAdapter implements SourceDataPort {
 
   private async leadReport(organizationId: string, filter: ReportFilter): Promise<ReportResult> {
     const leads = await listLeads(organizationId, {
-      assignedToUserIds: filter.userId ? [filter.userId] : undefined,
+      assignedToUserIds: filter.userId
+        ? [filter.userId]
+        : filter.agentUserIds?.length
+          ? filter.agentUserIds
+          : undefined,
+      ownerManagerId: filter.ownerManagerId ?? undefined,
+      ownerTeamLeadId: filter.ownerTeamLeadId ?? undefined,
       limit: 500,
     });
     const columns = [
@@ -172,7 +185,10 @@ export class SourceModulesDataAdapter implements SourceDataPort {
   }
 
   private async campaignReport(organizationId: string, filter: ReportFilter): Promise<ReportResult> {
-    const campaigns = await listCampaigns(organizationId);
+    const campaigns = await listCampaigns(
+      organizationId,
+      filter.ownerManagerId ? { ownerManagerId: filter.ownerManagerId } : undefined,
+    );
     const columns = [
       "id",
       "name",
@@ -208,6 +224,7 @@ export class SourceModulesDataAdapter implements SourceDataPort {
   ): Promise<ReportResult> {
     const calls = await listCallAttempts(organizationId, {
       agentUserId: filter.userId ?? undefined,
+      agentUserIds: !filter.userId && filter.agentUserIds?.length ? filter.agentUserIds : undefined,
       initiatedFrom: filter.dateFrom ? new Date(filter.dateFrom) : undefined,
       initiatedTo: filter.dateTo ? new Date(filter.dateTo) : undefined,
       limit: 500,

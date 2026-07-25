@@ -81,8 +81,7 @@ describe.skipIf(!hasDatabase)("Campaign aggregate (integration)", () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const userA = await prisma.user.create({
       data: {
-        organizationId,
-        employeeCode: `INTCM${uniqueSuffix}A`,
+        employeeId: `INTCM${uniqueSuffix}A`,
         fullName: "Integration Test Campaign Caller",
         email: `int-test-cm-a-${uniqueSuffix}@example.com`,
         passwordHash: "not-a-real-hash",
@@ -150,6 +149,7 @@ describe.skipIf(!hasDatabase)("Campaign aggregate (integration)", () => {
       organizationId,
       input: { name: "Integration Test Campaign" },
       actor: { actorType: "USER", actorId: userAId },
+      ownerManagerId: userAId,
     });
     campaignId = created.id;
     expect(created.status).toBe("DRAFT");

@@ -19,7 +19,13 @@ import { createSeedClient } from "./lib/client";
 import { section, explain } from "./lib/logger";
 import { seedOrganization } from "./steps/01-organization";
 import { seedRbac } from "./steps/02-rbac";
-import { seedAdminUser, ADMIN_EMAIL, ADMIN_DEV_PASSWORD } from "./steps/03-admin-user";
+import {
+  seedAdminUser,
+  ADMIN_EMAIL,
+  ADMIN_DEV_PASSWORD,
+  DEMO_USER_PASSWORD,
+  DEMO_USERS,
+} from "./steps/03-admin-user";
 import { seedLeadCatalogs } from "./steps/04-lead-catalogs";
 import { seedLoanCatalogs } from "./steps/05-loan-catalogs";
 import { seedBanks } from "./steps/06-banks";
@@ -41,11 +47,12 @@ async function main(): Promise<void> {
 
   const org = await seedOrganization(prisma);
   const rbac = await seedRbac(prisma, org.organizationId);
-  const adminRoleId = rbac.roleIds["Admin"];
-  if (!adminRoleId) {
-    throw new Error("Admin Role was not seeded — check lib/rbac-catalog.ts ROLE_DEFINITIONS.");
+  for (const roleName of ["Admin", "Manager", "Team Lead", "Caller"] as const) {
+    if (!rbac.roleIds[roleName]) {
+      throw new Error(`Role ${roleName} was not seeded — check lib/rbac-catalog.ts ROLE_DEFINITIONS.`);
+    }
   }
-  const admin = await seedAdminUser(prisma, org, adminRoleId);
+  const admin = await seedAdminUser(prisma, org, rbac.roleIds);
 
   const leadCatalogs = await seedLeadCatalogs(prisma, org.organizationId);
   const loanCatalogs = await seedLoanCatalogs(prisma, org.organizationId);
@@ -81,9 +88,12 @@ async function main(): Promise<void> {
   await seedReportsCatalogs(prisma, org.organizationId, admin.adminUserId);
 
   section("Done");
-  explain(
-    `Log in as ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD} once Authentication is implemented (DEV-ONLY credential — see README.md).`,
-  );
+  explain(`DEV-ONLY logins (see README.md):`);
+  explain(`  Admin      ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD}`);
+  explain(`  Manager    manager@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Team Lead  (4)  *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Caller     (20) *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`Total employees seeded: ${DEMO_USERS.length}`);
 
   await prisma.$disconnect();
 }
