@@ -51,8 +51,6 @@ export interface UpdateUserData {
   reportingManagerId?: string | null;
   updatedByUserId?: string | null;
   mustChangePassword?: boolean;
-  lockedUntil?: Date | null;
-  lockedReason?: string | null;
 }
 
 export interface UserListItem extends User {
@@ -85,7 +83,6 @@ export interface UserRepository {
   findAccountSessionState(
     userId: string,
   ): Promise<import("../entities/UserAuthProfile").AccountSessionState | null>;
-  countRecentFailedLoginAttempts(email: string, sinceMinutesAgo: number): Promise<number>;
   recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void>;
   touchLastLogin(userId: string): Promise<void>;
 

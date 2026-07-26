@@ -77,22 +77,21 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
     });
     await touchLastLogin(profile.id);
 
+    // touchLastLogin / createLoginSession do not mutate sessionVersion or mustChangePassword.
     const session = await createLoginSession({
       userId: profile.id,
       ipAddress: input.ipAddress,
       userAgent: input.userAgent,
     });
 
-    const fresh = await getUserAuthProfileByEmail(email);
-
     return {
       id: profile.id,
       email: profile.email,
       fullName: profile.fullName,
       organizationId: await getCompanyId(),
-      sessionVersion: fresh?.sessionVersion ?? profile.sessionVersion,
+      sessionVersion: profile.sessionVersion,
       sessionId: session.id,
-      mustChangePassword: fresh?.mustChangePassword ?? profile.mustChangePassword,
+      mustChangePassword: profile.mustChangePassword,
     };
   };
 }

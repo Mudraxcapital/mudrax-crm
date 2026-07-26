@@ -38,10 +38,11 @@ export async function loginAction(
   }
 
   try {
+    // callbackUrl is already sanitized by loginSchema → safeCallbackUrl.
     await signIn("credentials", {
       email: parsed.data.email,
       password: parsed.data.password,
-      redirectTo: parsed.data.callbackUrl || "/",
+      redirectTo: parsed.data.callbackUrl,
     });
     return {};
   } catch (error) {

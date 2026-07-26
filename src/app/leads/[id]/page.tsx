@@ -68,7 +68,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     redirect("/unauthorized");
   }
 
-  const [stages, lostReasons, assignees, assignments, notes, auditLog, followUps, fields] =
+  const [stages, lostReasons, assigneesRaw, assignments, notes, auditLog, followUps, fields] =
     await Promise.all([
       leadCatalogs.listStages(authContext.organizationId),
       leadCatalogs.listLostReasons(authContext.organizationId),
@@ -95,6 +95,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const canCreateFollowUp = hasPermission(authContext, "follow_up.create");
   const canCompleteFollowUp = hasPermission(authContext, "follow_up.complete");
   const canReassignFollowUp = hasPermission(authContext, "follow_up.reassign");
+  const visibleIds = authContext.hierarchy.visibleUserIds;
+  const assignees = visibleIds
+    ? assigneesRaw.filter((user) => visibleIds.includes(user.id))
+    : assigneesRaw;
   const assigneeOptions = assignees.map((user) => ({ id: user.id, fullName: user.fullName }));
   const assigneeNameById = new Map(assigneeOptions.map((user) => [user.id, user.fullName]));
 

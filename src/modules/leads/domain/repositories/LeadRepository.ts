@@ -46,6 +46,14 @@ export interface AssignLeadData {
   assignedByUserId: string | null;
   assignmentType: AssignmentType;
   campaignAssignmentId?: string | null;
+  /**
+   * When set, updates denormalized hierarchy ownership with the assignment
+   * (including null clears for Direct Admin Callers).
+   */
+  ownership?: {
+    ownerManagerId: string | null;
+    ownerTeamLeadId: string | null;
+  };
 }
 
 export interface ListLeadsFilter {

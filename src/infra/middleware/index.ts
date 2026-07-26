@@ -50,8 +50,7 @@ export default auth((request) => {
 
   const hadSessionCookie = cookies.has(SESSION_COOKIE_NAME);
   const destination = new URL(hadSessionCookie ? "/session-expired" : "/login", nextUrl);
-  if (!hadSessionCookie) {
-    destination.searchParams.set("callbackUrl", `${nextUrl.pathname}${nextUrl.search}`);
-  }
+  // Preserve the intended destination through session-expired → login → post-login redirect.
+  destination.searchParams.set("callbackUrl", `${nextUrl.pathname}${nextUrl.search}`);
   return NextResponse.redirect(destination);
 });

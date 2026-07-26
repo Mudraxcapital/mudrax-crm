@@ -45,10 +45,14 @@ export default async function ProfilePage() {
                       : "Active"}
                 </dd>
               </div>
-              {user.roleName === "Caller" && user.assignedTeamLeadName ? (
+              {user.roleName === "Caller" ? (
                 <div className="flex justify-between gap-3">
-                  <dt>Team Lead</dt>
-                  <dd className="text-foreground">{user.assignedTeamLeadName}</dd>
+                  <dt>Reports to</dt>
+                  <dd className="text-foreground">
+                    {user.assignedTeamLeadName?.trim()
+                      ? user.assignedTeamLeadName
+                      : "Direct Admin"}
+                  </dd>
                 </div>
               ) : null}
               {user.roleName === "Team Lead" && user.reportingManagerName ? (

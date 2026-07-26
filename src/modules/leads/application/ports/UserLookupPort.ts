@@ -12,6 +12,10 @@ export interface UserLookupSummary {
   status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
   fullName?: string;
   email?: string;
+  /** Present when looked up via the users adapter — used for hierarchy ownership. */
+  roleName?: string | null;
+  assignedTeamLeadId?: string | null;
+  reportingManagerId?: string | null;
 }
 
 export interface UserLookupPort {

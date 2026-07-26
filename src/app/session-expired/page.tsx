@@ -1,6 +1,16 @@
 import Link from "next/link";
+import { safeCallbackUrl } from "@/modules/auth";
 
-export default function SessionExpiredPage() {
+interface SessionExpiredPageProps {
+  searchParams: Promise<{ callbackUrl?: string }>;
+}
+
+export default async function SessionExpiredPage({ searchParams }: SessionExpiredPageProps) {
+  const { callbackUrl } = await searchParams;
+  const safe = safeCallbackUrl(callbackUrl);
+  const loginHref =
+    safe === "/" ? "/login" : `/login?callbackUrl=${encodeURIComponent(safe)}`;
+
   return (
     <div
       className="flex min-h-screen items-center justify-center px-4"
@@ -16,7 +26,7 @@ export default function SessionExpiredPage() {
           For your security, you have been signed out after a period of inactivity. Please sign in
           again to continue.
         </p>
-        <Link href="/login" className="mx-btn mx-btn-primary mt-6 inline-flex">
+        <Link href={loginHref} className="mx-btn mx-btn-primary mt-6 inline-flex">
           Sign in again
         </Link>
       </div>

@@ -3,6 +3,7 @@
 import { useActionState, useState, type ReactNode } from "react";
 import type { CreateUserFormAction, UserFormState } from "../controllers/createUser.action";
 import { FIXED_USER_ROLES, USER_STATUSES } from "../../domain/entities/User";
+import { CallerReportingFields } from "./CallerReportingFields";
 
 const initialState: UserFormState = {};
 const inputClass = "mx-input";
@@ -47,7 +48,7 @@ export function UserForm({
 
       <p className="text-muted text-xs">
         Employee ID is generated automatically (MCS0001, MCS0002, …). Hierarchy: Admin → Manager →
-        Team Lead → Caller.
+        Team Lead → Caller. Admins may also create Direct Admin Callers (freelancers).
       </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -113,22 +114,11 @@ export function UserForm({
       </div>
 
       {role === "Caller" ? (
-        <Field label="Assigned team lead *" htmlFor="assignedTeamLeadId">
-          <select
-            id="assignedTeamLeadId"
-            name="assignedTeamLeadId"
-            required
-            className={inputClass}
-            defaultValue={defaultAssignedTeamLeadId ?? ""}
-          >
-            <option value="">Select team lead…</option>
-            {teamLeads.map((lead) => (
-              <option key={lead.id} value={lead.id}>
-                {lead.fullName} ({lead.employeeId})
-              </option>
-            ))}
-          </select>
-        </Field>
+        <CallerReportingFields
+          teamLeads={teamLeads}
+          allowDirectAdmin={allowAdminRole}
+          defaultAssignedTeamLeadId={defaultAssignedTeamLeadId}
+        />
       ) : null}
 
       {role === "Team Lead" ? (

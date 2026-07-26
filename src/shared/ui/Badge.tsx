@@ -52,11 +52,11 @@ export function statusTone(status: string): BadgeTone {
   return "neutral";
 }
 
-/** Account status badges — Active / Disabled / Suspended / Locked. */
+/** Account status badges — Active / Disabled / Suspended. */
 export function accountStatusTone(status: string): BadgeTone {
   const s = status.toUpperCase();
   if (s === "ACTIVE") return "success";
-  if (s === "SUSPENDED" || s === "LOCKED") return "warning";
+  if (s === "SUSPENDED") return "warning";
   return "danger";
 }
 
@@ -65,6 +65,5 @@ export function accountStatusLabel(status: string): string {
   if (s === "ACTIVE") return "Active";
   if (s === "SUSPENDED") return "Suspended";
   if (s === "INACTIVE") return "Disabled";
-  if (s === "LOCKED") return "Locked";
   return status;
 }

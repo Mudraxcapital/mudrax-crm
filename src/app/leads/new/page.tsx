@@ -10,7 +10,7 @@ import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 export default async function SingleLeadPage() {
   const { authContext } = await requirePermission("lead.create");
 
-  const [sourcesRaw, assignees, fields] = await Promise.all([
+  const [sourcesRaw, assigneesRaw, fields] = await Promise.all([
     leadCatalogs.listSources(authContext.organizationId),
     listUserSummaries(authContext.organizationId),
     listActiveLeadFields(authContext.organizationId),
@@ -18,6 +18,10 @@ export default async function SingleLeadPage() {
 
   const sources = excludeTestCatalogRows(sourcesRaw);
   const defaultLeadSourceId = sources[0]?.id;
+  const visibleIds = authContext.hierarchy.visibleUserIds;
+  const assignees = visibleIds
+    ? assigneesRaw.filter((user) => visibleIds.includes(user.id))
+    : assigneesRaw;
 
   return (
     <PageSection>

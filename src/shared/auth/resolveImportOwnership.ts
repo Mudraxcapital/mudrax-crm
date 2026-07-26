@@ -81,21 +81,39 @@ export async function resolveImportOwnership(input: {
   }
 
   let ownerTeamLeadId = authContext.hierarchy.teamLeadId;
+  let hasHierarchicalCaller = false;
+  let hasDirectAdminCaller = false;
 
   for (const userId of candidateIds) {
     try {
       const user = await getUser(userId);
+      if (user.roleName === "Caller" && !user.assignedTeamLeadId) {
+        hasDirectAdminCaller = true;
+        continue;
+      }
       if (user.roleName === "Team Lead") {
+        hasHierarchicalCaller = true;
         ownerTeamLeadId = user.id;
         break;
       }
       if (user.assignedTeamLeadId) {
+        hasHierarchicalCaller = true;
         ownerTeamLeadId = user.assignedTeamLeadId;
         break;
       }
     } catch {
       // Skip unresolved assignees.
     }
+  }
+
+  // Direct Admin Callers are Admin-scoped — never place them in a Manager book.
+  if (hasDirectAdminCaller && !hasHierarchicalCaller) {
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+  if (hasDirectAdminCaller && hasHierarchicalCaller) {
+    throw new Error(
+      "Cannot mix Direct Admin Callers (freelancers) with Team Lead Callers in one import.",
+    );
   }
 
   return { ownerManagerId, ownerTeamLeadId };

@@ -8,7 +8,6 @@
 // Account status + sessionVersion are enforced here centrally via
 // `assertAccountSessionValid` so every authenticated request rejects
 // Disabled / Suspended / revoked sessions without scattered checks.
-// Failed-login lockout is intentionally not used.
 // ============================================================================
 
 import { cache } from "react";
@@ -24,10 +23,14 @@ import {
 } from "@/modules/rbac";
 import type { AuthorizationContext } from "@/modules/rbac";
 import { assertAccountSessionValid, getAccountSessionState } from "@/modules/users";
+import { accountStatusToClearReason } from "@/modules/auth/domain/sessionClearReason";
 import { isCallerAllowedPath } from "./callerAccess";
 
-/** Route Handler that may mutate the session cookie (Server Components cannot). */
-export const CLEAR_STALE_SESSION_PATH = "/api/auth/clear-session";
+/**
+ * Public page that POSTs a Server Action to clear the Auth.js cookie.
+ * Server Components cannot mutate cookies — they redirect here instead.
+ */
+export const CLEAR_STALE_SESSION_PATH = "/clear-session";
 
 export interface CurrentUser {
   session: Session;
@@ -46,7 +49,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     session.user.sessionId || null,
   );
   if (!valid) {
-    // Disabled / Suspended / locked / revoked session / sessionVersion mismatch.
+    // Disabled / Suspended / revoked session / sessionVersion mismatch.
     return null;
   }
 
@@ -58,6 +61,26 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   return { session, authContext };
 });
 
+/**
+ * If a JWT cookie is present but no longer a valid staff session, redirect to
+ * the POST-based clear flow (preserving Disabled / Suspended reasons).
+ * Returns normally when there is no session to clear.
+ */
+export async function redirectIfStaleSession(): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return;
+  }
+
+  const state = await getAccountSessionState(session.user.id);
+  if (state && state.status !== "ACTIVE") {
+    redirect(
+      `${CLEAR_STALE_SESSION_PATH}?reason=${accountStatusToClearReason(state.status)}`,
+    );
+  }
+  redirect(CLEAR_STALE_SESSION_PATH);
+}
+
 /** Redirects anonymous requests to /login. Use at the top of a protected Server Component/layout. */
 export async function requireAuth(): Promise<CurrentUser> {
   const current = await getCurrentUser();
@@ -65,17 +88,8 @@ export async function requireAuth(): Promise<CurrentUser> {
     return current;
   }
 
-  // Orphaned JWT (reseed / deleted / disabled): clear via Route Handler.
-  const session = await auth();
-  if (session?.user?.id) {
-    const state = await getAccountSessionState(session.user.id);
-    if (state && state.status !== "ACTIVE") {
-      const reason = state.status === "SUSPENDED" ? "suspended" : "disabled";
-      redirect(`${CLEAR_STALE_SESSION_PATH}?reason=${reason}`);
-    }
-    redirect(CLEAR_STALE_SESSION_PATH);
-  }
-
+  // Orphaned JWT (reseed / deleted / disabled): clear via POST Server Action bridge.
+  await redirectIfStaleSession();
   redirect("/login");
 }
 

@@ -46,7 +46,9 @@ export default async function RootLayout({
     current?.session.user.mustChangePassword &&
     !pathname.startsWith("/change-password") &&
     !pathname.startsWith("/api/auth") &&
-    !pathname.startsWith("/login")
+    !pathname.startsWith("/login") &&
+    !pathname.startsWith("/clear-session") &&
+    !pathname.startsWith("/session-expired")
   ) {
     redirect("/change-password");
   }

@@ -43,7 +43,7 @@ export default async function UsersPage() {
     <PageSection>
       <PageHeader
         title="User Management"
-        description="Create employees, assign roles in the Admin → Manager → Team Lead → Caller hierarchy, and manage account status."
+        description="Create employees, assign roles in the Admin → Manager → Team Lead → Caller hierarchy (plus Direct Admin Callers for freelancers), and manage account status."
         breadcrumbs={[{ label: "User Management" }]}
         actions={
           <>
@@ -61,7 +61,7 @@ export default async function UsersPage() {
               <CreatePanel
                 triggerLabel="Add employee"
                 title="Add employee"
-                description="Employee ID is assigned automatically. Reporting lines are required for Team Leads and Callers."
+                description="Employee ID is assigned automatically. Team Leads need a Manager; Callers need a Team Lead, or Admin may assign Direct Admin (freelancer)."
                 width="lg"
               >
                 <UserForm

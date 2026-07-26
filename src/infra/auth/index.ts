@@ -10,6 +10,7 @@ import {
   InvalidCredentialsError,
 } from "@/modules/auth";
 import { authConfig } from "./config";
+import { clientIpFromForwarded } from "./clientIp";
 
 /** Surfaced to loginAction — credentials were valid but account is not Active. */
 class AccountDisabledSignIn extends CredentialsSignin {
@@ -39,7 +40,7 @@ export const { auth, signIn, signOut, handlers } = NextAuth({
           const user = await authenticateUser({
             email,
             password,
-            ipAddress: request.headers.get("x-forwarded-for"),
+            ipAddress: clientIpFromForwarded(request.headers.get("x-forwarded-for")),
             userAgent: request.headers.get("user-agent"),
           });
           return {

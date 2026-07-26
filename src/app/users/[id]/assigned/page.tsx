@@ -110,8 +110,12 @@ export default async function EmployeeAssignedCustomersPage({
             <Badge tone={statusTone(user.status)} dot>
               {user.status}
             </Badge>
-            {user.assignedTeamLeadName ? (
-              <Badge tone="info">TL: {user.assignedTeamLeadName}</Badge>
+            {user.roleName === "Caller" ? (
+              <Badge tone="info">
+                {user.assignedTeamLeadName
+                  ? `TL: ${user.assignedTeamLeadName}`
+                  : "Direct Admin"}
+              </Badge>
             ) : null}
           </div>
         }

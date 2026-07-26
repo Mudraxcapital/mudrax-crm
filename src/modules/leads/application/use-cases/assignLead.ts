@@ -10,12 +10,42 @@
 import type { LeadRepository } from "../../domain/repositories/LeadRepository";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
 import type { AssignmentType } from "../../domain/entities/LeadAssignment";
-import type { UserLookupPort } from "../ports/UserLookupPort";
+import type { UserLookupPort, UserLookupSummary } from "../ports/UserLookupPort";
 import { InvalidAssigneeReferenceError, LeadNotFoundError } from "../../domain/errors/LeadErrors";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
 import type { AssignLeadInput } from "../validators/leadSchemas";
 import { toLeadDto, type LeadDto } from "../dto/LeadDto";
 import { loadCatalogLookups } from "./catalogLookups";
+
+/** Direct Admin Callers clear Manager/TL ownership; hierarchical Callers inherit it. */
+async function resolveAssigneeOwnership(
+  userLookup: UserLookupPort,
+  user: UserLookupSummary,
+): Promise<{ ownerManagerId: string | null; ownerTeamLeadId: string | null } | undefined> {
+  if (!user.roleName) return undefined;
+
+  if (user.roleName === "Caller" && !user.assignedTeamLeadId) {
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+  if (user.roleName === "Team Lead") {
+    return {
+      ownerManagerId: user.reportingManagerId ?? null,
+      ownerTeamLeadId: user.id,
+    };
+  }
+  if (user.roleName === "Caller" && user.assignedTeamLeadId) {
+    const teamLead = await userLookup.findById(user.assignedTeamLeadId);
+    return {
+      ownerManagerId: teamLead?.reportingManagerId ?? null,
+      ownerTeamLeadId: user.assignedTeamLeadId,
+    };
+  }
+  if (user.roleName === "Manager") {
+    return { ownerManagerId: user.id, ownerTeamLeadId: null };
+  }
+  // Admin / unknown — leave existing ownership columns unchanged.
+  return undefined;
+}
 
 export interface AssignLeadCommand {
   id: string;
@@ -50,6 +80,8 @@ export function makeAssignLead(
         ? "MANUAL_REASSIGNMENT"
         : "INITIAL";
 
+    const ownership = await resolveAssigneeOwnership(userLookup, user);
+
     const updated = await repository.assignWithAudit(
       id,
       {
@@ -57,6 +89,7 @@ export function makeAssignLead(
         assignedByUserId: actor.actorType === "USER" ? actor.actorId : null,
         assignmentType,
         campaignAssignmentId: campaignAssignmentId ?? null,
+        ownership,
       },
       actor,
       correlationId,

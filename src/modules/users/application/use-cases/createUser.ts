@@ -52,6 +52,7 @@ export function makeCreateUser(
       role,
       hierarchy,
       actorUserId: actor.actorId ?? "",
+      actorRoles,
       assignedTeamLeadId: input.assignedTeamLeadId || null,
       reportingManagerId: input.reportingManagerId || null,
     });

@@ -154,11 +154,16 @@ export async function createLeadAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  let resolvedOwnerManagerId = ownerManagerId;
   let ownerTeamLeadId = authContext.hierarchy.teamLeadId;
   if (parsed.data.currentAssigneeUserId) {
     try {
       const assignee = await getUser(parsed.data.currentAssigneeUserId);
-      if (assignee.roleName === "Team Lead") {
+      if (assignee.roleName === "Caller" && !assignee.assignedTeamLeadId) {
+        // Direct Admin Caller — Admin-scoped book only.
+        resolvedOwnerManagerId = null;
+        ownerTeamLeadId = null;
+      } else if (assignee.roleName === "Team Lead") {
         ownerTeamLeadId = assignee.id;
       } else if (assignee.assignedTeamLeadId) {
         ownerTeamLeadId = assignee.assignedTeamLeadId;
@@ -174,7 +179,7 @@ export async function createLeadAction(
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
-      ownerManagerId,
+      ownerManagerId: resolvedOwnerManagerId,
       ownerTeamLeadId,
     });
     leadId = lead.id;

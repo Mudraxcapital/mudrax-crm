@@ -17,8 +17,6 @@ export interface UserDto {
   status: UserStatus;
   displayStatus: UserStatus;
   mustChangePassword: boolean;
-  lockedUntil: string | null;
-  lockedReason: string | null;
   profilePhotoUrl: string | null;
   assignedTeamLeadId: string | null;
   reportingManagerId: string | null;
@@ -103,10 +101,8 @@ export function toUserDto(
     email: user.email,
     phone: user.phone,
     status: user.status,
-    displayStatus: accountDisplayStatus(user.status, user.lockedUntil),
+    displayStatus: accountDisplayStatus(user.status),
     mustChangePassword: user.mustChangePassword,
-    lockedUntil: user.lockedUntil?.toISOString() ?? null,
-    lockedReason: user.lockedReason,
     profilePhotoUrl: user.profilePhotoUrl,
     assignedTeamLeadId: user.assignedTeamLeadId,
     reportingManagerId: user.reportingManagerId,
@@ -131,7 +127,7 @@ export function toUserListItemDto(item: UserListItem): UserListItemDto {
     email: item.email,
     phone: item.phone,
     status: item.status,
-    displayStatus: accountDisplayStatus(item.status, item.lockedUntil),
+    displayStatus: accountDisplayStatus(item.status),
     profilePhotoUrl: item.profilePhotoUrl,
     roleName: item.roleName,
     assignedTeamLeadId: item.assignedTeamLeadId,

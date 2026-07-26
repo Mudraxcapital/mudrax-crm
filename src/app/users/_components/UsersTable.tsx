@@ -46,9 +46,11 @@ function avatarFallback(name: string) {
     .join("");
 }
 
-/** Reporting line shown in the list: Manager for Team Leads, Team Lead for Callers. */
+/** Reporting line shown in the list: Manager for Team Leads, Team Lead / Direct Admin for Callers. */
 function reportingTo(row: UserRow): string {
-  if (row.roleName === "Caller") return row.assignedTeamLeadName ?? "—";
+  if (row.roleName === "Caller") {
+    return row.assignedTeamLeadName?.trim() ? row.assignedTeamLeadName : "Direct Admin";
+  }
   if (row.roleName === "Team Lead") return row.reportingManagerName ?? "—";
   return "—";
 }

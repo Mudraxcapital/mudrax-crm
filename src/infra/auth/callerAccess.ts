@@ -12,6 +12,7 @@ export const PATHNAME_HEADER = "x-mudrax-pathname";
 const ALWAYS_ALLOWED = [
   "/unauthorized",
   "/session-expired",
+  "/clear-session",
   "/login",
   "/change-password",
   "/profile",

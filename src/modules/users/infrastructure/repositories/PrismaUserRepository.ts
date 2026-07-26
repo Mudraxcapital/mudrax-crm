@@ -82,7 +82,6 @@ export class PrismaUserRepository implements UserRepository {
         status: true,
         sessionVersion: true,
         mustChangePassword: true,
-        lockedUntil: true,
       },
     });
     if (!row) return null;
@@ -91,18 +90,7 @@ export class PrismaUserRepository implements UserRepository {
       status: row.status as UserStatus,
       sessionVersion: row.sessionVersion,
       mustChangePassword: row.mustChangePassword,
-      lockedUntil: row.lockedUntil,
     };
-  }
-
-  async countRecentFailedLoginAttempts(email: string, sinceMinutesAgo: number): Promise<number> {
-    return this.prisma.loginAttempt.count({
-      where: {
-        emailTried: email.toLowerCase(),
-        succeeded: false,
-        occurredAt: { gte: new Date(Date.now() - sinceMinutesAgo * 60_000) },
-      },
-    });
   }
 
   async recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void> {
@@ -611,8 +599,6 @@ export class PrismaUserRepository implements UserRepository {
           status: data.status,
           profilePhotoUrl: data.profilePhotoUrl,
           mustChangePassword: data.mustChangePassword,
-          lockedUntil: data.lockedUntil,
-          lockedReason: data.lockedReason,
           assignedTeamLeadId: data.assignedTeamLeadId,
           reportingManagerId: data.reportingManagerId,
           updatedByUserId: data.updatedByUserId,
@@ -839,8 +825,6 @@ export class PrismaUserRepository implements UserRepository {
           status: data.status,
           profilePhotoUrl: data.profilePhotoUrl,
           mustChangePassword: data.mustChangePassword,
-          lockedUntil: data.lockedUntil,
-          lockedReason: data.lockedReason,
           assignedTeamLeadId: data.assignedTeamLeadId,
           reportingManagerId: data.reportingManagerId,
           updatedByUserId: data.updatedByUserId,

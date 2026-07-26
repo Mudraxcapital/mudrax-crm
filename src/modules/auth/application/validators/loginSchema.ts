@@ -6,11 +6,15 @@
 // ============================================================================
 
 import { z } from "zod";
+import { safeCallbackUrl } from "./safeCallbackUrl";
 
 export const loginSchema = z.object({
   email: z.email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
-  callbackUrl: z.string().optional(),
+  callbackUrl: z
+    .string()
+    .optional()
+    .transform((value) => safeCallbackUrl(value)),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

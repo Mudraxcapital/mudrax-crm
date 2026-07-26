@@ -197,7 +197,6 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             <Row label="Phone" value={user.phone ?? "—"} />
             <Row label="Role" value={user.roleName ?? "—"} />
             <Row label="Account status" value={accountStatusLabel(user.displayStatus)} />
-            {user.lockedReason ? <Row label="Lock reason" value={user.lockedReason} /> : null}
             <Row
               label="Last login"
               value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}
@@ -209,16 +208,22 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
         <Card>
           <CardHeader
             title="Reporting hierarchy"
-            description="Admin → Manager → Team Lead → Caller"
+            description="Admin → Manager → Team Lead → Caller (or Direct Admin Caller)"
           />
           <CardBody className="space-y-2 text-sm">
-            <Row label="Reporting manager" value={user.reportingManagerName ?? "—"} />
-            <Row
-              label="Assigned team lead"
-              value={
-                user.roleName === "Caller" ? (user.assignedTeamLeadName ?? "—") : "—"
-              }
-            />
+            {user.roleName === "Caller" && !user.assignedTeamLeadId ? (
+              <Row label="Reports to" value="Direct Admin" />
+            ) : (
+              <>
+                <Row label="Reporting manager" value={user.reportingManagerName ?? "—"} />
+                <Row
+                  label="Assigned team lead"
+                  value={
+                    user.roleName === "Caller" ? (user.assignedTeamLeadName ?? "—") : "—"
+                  }
+                />
+              </>
+            )}
           </CardBody>
         </Card>
       </div>
@@ -329,7 +334,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function summarizeState(state: Record<string, unknown>): string {
-  const keys = ["status", "role", "email", "phone", "fullName", "mustChangePassword", "lockedUntil"];
+  const keys = ["status", "role", "email", "phone", "fullName", "mustChangePassword"];
   const parts: string[] = [];
   for (const key of keys) {
     if (state[key] !== undefined && state[key] !== null) {

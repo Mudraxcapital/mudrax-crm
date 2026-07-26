@@ -64,7 +64,8 @@ export default async function LeadsPage({
     fieldFilters.priority = priority;
   }
 
-  const callers = await listUsers({ role: "Caller", status: "ACTIVE", limit: 2_000 }).catch(() =>
+  const visibleIds = authContext.hierarchy.visibleUserIds;
+  const callersRaw = await listUsers({ role: "Caller", status: "ACTIVE", limit: 2_000 }).catch(() =>
     listUserSummaries(authContext.organizationId).then((users) =>
       users.map((user) => ({
         id: user.id,
@@ -73,6 +74,9 @@ export default async function LeadsPage({
       })),
     ),
   );
+  const callers = visibleIds
+    ? callersRaw.filter((user) => visibleIds.includes(user.id))
+    : callersRaw;
 
   let resolvedAssigneeId = assignedToUserId;
   if (!resolvedAssigneeId && callerName) {
@@ -101,7 +105,7 @@ export default async function LeadsPage({
     searchableCustomKeys: searchableKeys,
   };
 
-  const [leads, totalLeadCount, sources, stages, lostReasons, assignees, savedViews, campaigns] =
+  const [leads, totalLeadCount, sources, stages, lostReasons, assigneesRaw, savedViews, campaigns] =
     await Promise.all([
       listLeads(authContext.organizationId, { ...filter, limit: 10_000 }),
       countLeads(authContext.organizationId, filter),
@@ -114,6 +118,9 @@ export default async function LeadsPage({
         ? listCampaigns(authContext.organizationId, managerBookFilter(authContext))
         : Promise.resolve([]),
     ]);
+  const assignees = visibleIds
+    ? assigneesRaw.filter((user) => visibleIds.includes(user.id))
+    : assigneesRaw;
 
   const exportQs = new URLSearchParams();
   if (search) exportQs.set("search", search);

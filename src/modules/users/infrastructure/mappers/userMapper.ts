@@ -51,8 +51,6 @@ export function toUserAuthProfile(row: PrismaUser): UserAuthProfile {
     status: row.status as UserStatus,
     sessionVersion: row.sessionVersion,
     mustChangePassword: row.mustChangePassword,
-    lockedUntil: row.lockedUntil,
-    lockedReason: row.lockedReason,
   };
 }
 

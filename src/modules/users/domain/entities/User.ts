@@ -17,10 +17,7 @@ export function isAccountLoginAllowed(status: UserStatus): boolean {
 }
 
 /** Display status for badges (Active / Disabled / Suspended). */
-export function accountDisplayStatus(
-  status: UserStatus,
-  _lockedUntil?: Date | null,
-): UserStatus {
+export function accountDisplayStatus(status: UserStatus): UserStatus {
   return status;
 }
 

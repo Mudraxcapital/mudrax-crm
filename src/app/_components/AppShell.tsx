@@ -13,7 +13,13 @@ import { callerNavAsNavGroups } from "./callerNav";
 import { NavIconSvg } from "./NavIcons";
 import { LoginDurationTimer } from "@/modules/caller-workspace/presentation/components/LoginDurationTimer";
 
-const BARE_PREFIXES = ["/login", "/session-expired", "/unauthorized", "/change-password"];
+const BARE_PREFIXES = [
+  "/login",
+  "/session-expired",
+  "/clear-session",
+  "/unauthorized",
+  "/change-password",
+];
 
 export interface AppShellUser {
   fullName: string;

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/infra/auth/session";
 import { signOut } from "@/infra/auth";
+import { clientIpFromForwarded } from "@/infra/auth/clientIp";
 import {
   changeOwnPassword,
   changeOwnPasswordSchema,
@@ -16,7 +17,7 @@ export interface ChangePasswordState {
 
 async function clientIp(): Promise<string | null> {
   const headerStore = await headers();
-  return headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  return clientIpFromForwarded(headerStore.get("x-forwarded-for"));
 }
 
 /**

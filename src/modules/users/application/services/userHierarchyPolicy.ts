@@ -49,15 +49,25 @@ export function assertCanCreateRole(
   }
 }
 
+function actorIsAdmin(hierarchy: HierarchyScope, actorRoles?: string[]): boolean {
+  return (
+    hierarchy.primaryRole === "Admin" ||
+    hierarchy.unrestricted === true ||
+    (!!actorRoles && actorRoles.includes("Admin"))
+  );
+}
+
 /**
  * Validates / normalizes hierarchy edges on create.
  * - Team Lead must report to a Manager or Admin (forced to actor Manager when Manager creates).
- * - Caller must belong to a Team Lead (forced to self when Team Lead creates).
+ * - Caller must belong to a Team Lead (forced to self when Team Lead creates),
+ *   except Admin may create Direct Admin Callers (freelancer) with no Team Lead.
  */
 export function normalizeHierarchyOnCreate(input: {
   role: FixedUserRole;
   hierarchy: HierarchyScope;
   actorUserId: string;
+  actorRoles?: string[];
   assignedTeamLeadId?: string | null;
   reportingManagerId?: string | null;
 }): { assignedTeamLeadId: string | null; reportingManagerId: string | null } {
@@ -79,13 +89,21 @@ export function normalizeHierarchyOnCreate(input: {
       hierarchy.primaryRole === "Team Lead"
         ? actorUserId
         : (input.assignedTeamLeadId ?? null);
+
+    // Freelancer / independent agent — Admin-only, no Team Lead or Manager edge.
     if (!assignedTeamLeadId) {
-      throw new InvalidUserHierarchyError("Caller must belong to exactly one Team Lead.");
+      if (!actorIsAdmin(hierarchy, input.actorRoles)) {
+        throw new InvalidUserHierarchyError(
+          "Caller must belong to exactly one Team Lead (or be created by Admin as Direct Admin).",
+        );
+      }
+      return { assignedTeamLeadId: null, reportingManagerId: null };
     }
+
     if (
       hierarchy.visibleUserIds &&
       !hierarchy.visibleUserIds.includes(assignedTeamLeadId) &&
-      hierarchy.primaryRole !== "Admin"
+      !actorIsAdmin(hierarchy, input.actorRoles)
     ) {
       throw new InvalidUserHierarchyError(
         "Caller must be assigned to a Team Lead inside your hierarchy.",
@@ -112,6 +130,7 @@ export function normalizeHierarchyOnUpdate(input: {
   role: FixedUserRole;
   hierarchy: HierarchyScope;
   actorUserId: string;
+  actorRoles?: string[];
   assignedTeamLeadId?: string | null;
   reportingManagerId?: string | null;
 }): { assignedTeamLeadId: string | null; reportingManagerId: string | null } {

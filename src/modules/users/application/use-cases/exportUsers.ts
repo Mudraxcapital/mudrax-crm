@@ -34,11 +34,13 @@ function buildRows(
   return users.map((user) => {
     const reportingTo =
       user.roleName === "Caller"
-        ? (user.assignedTeamLeadName ?? "")
+        ? user.assignedTeamLeadName?.trim()
+          ? user.assignedTeamLeadName
+          : "Direct Admin"
         : user.roleName === "Team Lead"
           ? (user.reportingManagerName ?? "")
           : "";
-    const status = accountDisplayStatus(user.status, user.lockedUntil);
+    const status = accountDisplayStatus(user.status);
     return {
       "Employee ID": user.employeeId,
       "Employee Name": user.fullName,

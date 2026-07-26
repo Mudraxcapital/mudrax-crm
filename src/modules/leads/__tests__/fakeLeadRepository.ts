@@ -207,6 +207,12 @@ export class FakeLeadRepository implements LeadRepository {
     const updated: Lead = {
       ...existing,
       currentAssigneeUserId: data.assignedToUserId,
+      ...(data.ownership
+        ? {
+            ownerManagerId: data.ownership.ownerManagerId,
+            ownerTeamLeadId: data.ownership.ownerTeamLeadId,
+          }
+        : {}),
       updatedAt: now,
     };
     this.leads.set(id, updated);

@@ -340,7 +340,15 @@ export class PrismaLeadRepository implements LeadRepository {
 
       const afterRow = await tx.lead.update({
         where: { id },
-        data: { currentAssigneeUserId: data.assignedToUserId },
+        data: {
+          currentAssigneeUserId: data.assignedToUserId,
+          ...(data.ownership
+            ? {
+                ownerManagerId: data.ownership.ownerManagerId,
+                ownerTeamLeadId: data.ownership.ownerTeamLeadId,
+              }
+            : {}),
+        },
       });
       const after = toLead(afterRow);
 

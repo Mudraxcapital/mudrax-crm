@@ -15,8 +15,6 @@ export interface UserAuthProfile {
   status: UserStatus;
   sessionVersion: number;
   mustChangePassword: boolean;
-  lockedUntil: Date | null;
-  lockedReason: string | null;
 }
 
 /** Lightweight projection for session validity checks (every authenticated request). */
@@ -25,7 +23,6 @@ export interface AccountSessionState {
   status: UserStatus;
   sessionVersion: number;
   mustChangePassword: boolean;
-  lockedUntil: Date | null;
 }
 
 /** Membership pointers used by RBAC Data Scope resolution. */

@@ -5,6 +5,7 @@ import { FIXED_USER_ROLES, USER_STATUSES } from "../../domain/entities/User";
 import type { UserDto } from "../../application/dto/UserDto";
 import type { UserFormState } from "../controllers/updateUser.action";
 import type { HierarchyOption } from "./UserForm";
+import { CallerReportingFields } from "./CallerReportingFields";
 
 const inputClass = "mx-input";
 
@@ -170,22 +171,12 @@ export function EditUserForm({
       </div>
 
       {!isSelf && role === "Caller" ? (
-        <Field label="Assigned team lead *" htmlFor="assignedTeamLeadId">
-          <select
-            id="assignedTeamLeadId"
-            name="assignedTeamLeadId"
-            required
-            className={inputClass}
-            defaultValue={user.assignedTeamLeadId ?? ""}
-          >
-            <option value="">Select team lead…</option>
-            {teamLeads.map((lead) => (
-              <option key={lead.id} value={lead.id}>
-                {lead.fullName} ({lead.employeeId})
-              </option>
-            ))}
-          </select>
-        </Field>
+        <CallerReportingFields
+          teamLeads={teamLeads}
+          allowDirectAdmin={allowAdminRole}
+          defaultAssignedTeamLeadId={user.assignedTeamLeadId}
+          defaultDirectAdmin={!user.assignedTeamLeadId}
+        />
       ) : null}
 
       {!isSelf && role === "Team Lead" ? (

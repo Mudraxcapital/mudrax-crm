@@ -24,56 +24,36 @@ const passwordField = z
     }
   });
 
-export const createUserSchema = z
-  .object({
-    fullName: z.string().trim().min(1, "Full name is required.").max(200),
-    email: z.string().trim().email("Valid email is required.").max(320),
-    phone: z.string().trim().min(1, "Phone is required.").max(20),
-    password: passwordField,
-    role: roleSchema,
-    status: statusSchema.default("ACTIVE"),
-    profilePhotoUrl: z.string().trim().url().max(500).optional().or(z.literal("")),
-    assignedTeamLeadId: z.string().uuid().optional().or(z.literal("")),
-    reportingManagerId: z.string().uuid().optional().or(z.literal("")),
-  })
-  .superRefine((value, ctx) => {
-    if (value.role === "Caller" && !value.assignedTeamLeadId) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["assignedTeamLeadId"],
-        message: "Assigned Team Lead is required for Callers.",
-      });
-    }
-    // Team Lead → Manager is enforced in normalizeHierarchyOnCreate (Managers
-    // auto-bind to self; Admins must supply reportingManagerId).
-  });
+export const createUserSchema = z.object({
+  fullName: z.string().trim().min(1, "Full name is required.").max(200),
+  email: z.string().trim().email("Valid email is required.").max(320),
+  phone: z.string().trim().min(1, "Phone is required.").max(20),
+  password: passwordField,
+  role: roleSchema,
+  status: statusSchema.default("ACTIVE"),
+  profilePhotoUrl: z.string().trim().url().max(500).optional().or(z.literal("")),
+  // Empty = Direct Admin Caller (Admin-only); Managers/TLs enforced in hierarchy policy.
+  assignedTeamLeadId: z.string().uuid().optional().or(z.literal("")),
+  reportingManagerId: z.string().uuid().optional().or(z.literal("")),
+});
 
-export const updateUserSchema = z
-  .object({
-    fullName: z.string().trim().min(1).max(200).optional(),
-    email: z.string().trim().email().max(320).optional(),
-    phone: z.string().trim().min(1).max(20).optional(),
-    role: roleSchema.optional(),
-    status: statusSchema.optional(),
-    profilePhotoUrl: z.string().trim().url().max(500).nullable().optional().or(z.literal("")),
-    assignedTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
-    reportingManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
-    /** Required when demoting a Team Lead who still has Callers. */
-    reassignCallersToTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
-    /** Required when demoting a Manager who still has Team Leads. */
-    reassignTeamLeadsToManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
-    /** Required when changing role for a user who still owns assigned Leads. */
-    reassignLeadsToUserId: z.string().uuid().nullable().optional().or(z.literal("")),
-  })
-  .superRefine((value, ctx) => {
-    if (value.role === "Caller" && value.assignedTeamLeadId === "") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["assignedTeamLeadId"],
-        message: "Assigned Team Lead is required for Callers.",
-      });
-    }
-  });
+export const updateUserSchema = z.object({
+  fullName: z.string().trim().min(1).max(200).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  phone: z.string().trim().min(1).max(20).optional(),
+  role: roleSchema.optional(),
+  status: statusSchema.optional(),
+  profilePhotoUrl: z.string().trim().url().max(500).nullable().optional().or(z.literal("")),
+  // Empty / null = Direct Admin Caller when role is Caller (Admin-only via policy).
+  assignedTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
+  reportingManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
+  /** Required when demoting a Team Lead who still has Callers. */
+  reassignCallersToTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
+  /** Required when demoting a Manager who still has Team Leads. */
+  reassignTeamLeadsToManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
+  /** Required when changing role for a user who still owns assigned Leads. */
+  reassignLeadsToUserId: z.string().uuid().nullable().optional().or(z.literal("")),
+});
 
 /** Self-service profile — name / phone only (no role, status, hierarchy). */
 export const updateOwnProfileSchema = z.object({

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/infra/auth";
-import { CLEAR_STALE_SESSION_PATH, getCurrentUser } from "@/infra/auth/session";
+import { getCurrentUser, redirectIfStaleSession } from "@/infra/auth/session";
 import { LoginForm } from "@/modules/auth/presentation/components/LoginForm";
+import { safeCallbackUrl } from "@/modules/auth";
 import { ThemeToggle } from "@/shared/ui/ThemeProvider";
 
 interface LoginPageProps {
@@ -23,19 +23,18 @@ const PASSWORD_CHANGED_BANNER =
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   // Only bounce home when the JWT still maps to a live staff user.
-  // Orphaned JWTs (e.g. after a user reseed) are cleared via a Route Handler —
+  // Orphaned JWTs are cleared via /clear-session (POST Server Action bridge) —
   // Server Components cannot mutate cookies.
   const current = await getCurrentUser();
   if (current) {
     redirect("/");
   }
 
-  const session = await auth();
-  if (session?.user?.id) {
-    redirect(CLEAR_STALE_SESSION_PATH);
-  }
+  // Mirror requireAuth: preserve Disabled / Suspended reason on the login banner.
+  await redirectIfStaleSession();
 
   const { callbackUrl, reason, passwordChanged } = await searchParams;
+  const safeCallback = safeCallbackUrl(callbackUrl);
   const initialError =
     reason === "disabled"
       ? ACCOUNT_DISABLED_BANNER
@@ -95,7 +94,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <p className="text-muted mt-1 text-sm">Sign in to continue to your workspace.</p>
           </div>
           <div className="mx-card p-6 sm:p-7">
-            <LoginForm callbackUrl={callbackUrl} initialError={initialError} />
+            <LoginForm callbackUrl={safeCallback} initialError={initialError} />
           </div>
         </div>
       </section>

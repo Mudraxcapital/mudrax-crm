@@ -217,6 +217,7 @@ export function makeUpdateUser(
       role: nextRole,
       hierarchy,
       actorUserId: actor.actorId ?? userId,
+      actorRoles,
       assignedTeamLeadId:
         input.assignedTeamLeadId === undefined
           ? existing.assignedTeamLeadId
@@ -229,9 +230,7 @@ export function makeUpdateUser(
     const assignedTeamLeadId = nextRole === "Caller" ? normalized.assignedTeamLeadId : null;
     const reportingManagerId = nextRole === "Team Lead" ? normalized.reportingManagerId : null;
 
-    if (nextRole === "Caller" && !assignedTeamLeadId) {
-      throw new InvalidUserHierarchyError("Assigned Team Lead is required for Callers.");
-    }
+    // Caller with null TL = Direct Admin (Admin-only) — allowed by normalizeHierarchyOnUpdate.
     if (nextRole === "Team Lead" && !reportingManagerId) {
       throw new InvalidUserHierarchyError("Reporting Manager is required for Team Leads.");
     }

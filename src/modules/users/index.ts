@@ -85,6 +85,10 @@ export {
   LastActiveAdminError,
   UserDeleteBlockedError,
 } from "./domain/errors/UserErrors";
+export {
+  isDirectAdminCaller,
+  callerReportsToLabel,
+} from "./application/services/callerReporting";
 
 const userRepository = new PrismaUserRepository(prisma);
 const roleAssignment = new RbacRoleAssignmentAdapter();
@@ -98,7 +102,9 @@ const userAuthUseCases = makeUserAuthUseCases(userRepository);
 export const getUserAuthProfileByEmail = userAuthUseCases.getUserAuthProfileByEmail;
 export const getUserScopeContext = userAuthUseCases.getUserScopeContext;
 export const getAccountSessionState = userAuthUseCases.getAccountSessionState;
+export const checkAccountSession = userAuthUseCases.checkAccountSession;
 export const assertAccountSessionValid = userAuthUseCases.assertAccountSessionValid;
+export type { AccountSessionCheck } from "./application/use-cases/authLookups";
 export const recordLoginAttempt = userAuthUseCases.recordLoginAttempt;
 export const touchLastLogin = userAuthUseCases.touchLastLogin;
 export const createLoginSession = userAuthUseCases.createLoginSession;

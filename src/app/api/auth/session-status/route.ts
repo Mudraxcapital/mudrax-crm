@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@/infra/auth";
-import { assertAccountSessionValid, getAccountSessionState } from "@/modules/users";
+import { checkAccountSession } from "@/modules/users";
 
 export async function GET() {
   const session = await auth();
@@ -14,25 +14,21 @@ export async function GET() {
     return NextResponse.json({ ok: false, reason: "unauthenticated" }, { status: 401 });
   }
 
-  const valid = await assertAccountSessionValid(
+  const result = await checkAccountSession(
     session.user.id,
     session.user.sessionVersion,
     session.user.sessionId || null,
   );
 
-  if (!valid) {
-    const state = await getAccountSessionState(session.user.id);
-    if (state && state.status !== "ACTIVE") {
-      const reason = state.status === "SUSPENDED" ? "suspended" : "disabled";
-      return NextResponse.json({ ok: false, reason }, { status: 403 });
-    }
-    return NextResponse.json({ ok: false, reason: "session_revoked" }, { status: 401 });
+  if (!result.ok) {
+    const status = result.reason === "session_revoked" ? 401 : 403;
+    return NextResponse.json({ ok: false, reason: result.reason }, { status });
   }
 
   return NextResponse.json({
     ok: true,
-    status: valid.status,
-    sessionVersion: valid.sessionVersion,
-    mustChangePassword: valid.mustChangePassword,
+    status: result.state.status,
+    sessionVersion: result.state.sessionVersion,
+    mustChangePassword: result.state.mustChangePassword,
   });
 }

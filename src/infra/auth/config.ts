@@ -31,6 +31,7 @@ export const SESSION_COOKIE_NAME = isProduction
 export const PUBLIC_PATH_PREFIXES = [
   "/login",
   "/session-expired",
+  "/clear-session",
   "/unauthorized",
   "/api/auth",
   "/_next",

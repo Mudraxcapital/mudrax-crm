@@ -95,4 +95,40 @@ describe("assignLead", () => {
       }),
     ).rejects.toBeInstanceOf(InvalidAssigneeReferenceError);
   });
+
+  it("clears Manager/Team Lead ownership when assigning a Direct Admin Caller", async () => {
+    const freelancer = "freelancer-1";
+    userLookup.users.set(freelancer, {
+      id: freelancer,
+      organizationId: ORG_ID,
+      status: "ACTIVE",
+      roleName: "Caller",
+      assignedTeamLeadId: null,
+      reportingManagerId: null,
+    });
+
+    // Seed an existing Manager-owned lead, then reassign to freelancer.
+    const owned = await repository.createWithAudit(
+      {
+        organizationId: ORG_ID,
+        customerId: "customer-2",
+        leadSourceId: SOURCE_WEBSITE.id,
+        currentStageId: STAGE_NEW.id,
+        fullNameSnapshot: "Freelancer Lead",
+        ownerManagerId: "mgr-1",
+        ownerTeamLeadId: "tl-1",
+      },
+      { actorType: "USER", actorId: "actor-1" },
+    );
+
+    const dto = await assignLead({
+      id: owned.id,
+      input: { assignedToUserId: freelancer },
+      actor: { actorType: "USER", actorId: "admin-1" },
+    });
+
+    expect(dto.currentAssigneeUserId).toBe(freelancer);
+    expect(dto.ownerManagerId).toBeNull();
+    expect(dto.ownerTeamLeadId).toBeNull();
+  });
 });
