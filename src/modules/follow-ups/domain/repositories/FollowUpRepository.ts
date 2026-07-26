@@ -37,9 +37,15 @@ export interface ReassignFollowUpData {
 
 export interface ListFollowUpsFilter {
   leadId?: string;
+  /** Restricts to Follow-ups on any of these Leads (customer profile, bulk). */
+  leadIds?: string[];
   status?: FollowUpStatus;
   /** Restricts to Follow-ups currently assigned to one of these Users — used to enforce RBAC Data Scope (SELF/TEAM/BRANCH) at the presentation boundary. */
   assignedToUserIds?: string[];
+  /** Inclusive lower bound on scheduledFor (calendar date-range queries). */
+  scheduledFrom?: Date;
+  /** Inclusive upper bound on scheduledFor (calendar date-range queries). */
+  scheduledTo?: Date;
   limit?: number;
   offset?: number;
 }

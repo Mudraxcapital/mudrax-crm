@@ -16,7 +16,12 @@ import {
   InvalidLeadReferenceError,
   listFollowUps,
 } from "@/modules/follow-ups";
-import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { getLead, LeadNotFoundError } from "@/modules/leads";
+import {
+  assertCanAccessLead,
+  LeadAccessDeniedError,
+} from "@/shared/auth/assertCanAccessLead";
+import { followUpListFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET() {
   const current = await getCurrentUser();
@@ -27,17 +32,15 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const ownership = leadHierarchyFilter(current.authContext);
-  const filter = ownership.assignedToUserIds?.length
-    ? { assignedToUserIds: ownership.assignedToUserIds }
-    : ownership.ownerManagerId || ownership.ownerTeamLeadId
-      ? {
-          // Follow-ups inherit visibility via assignee tree when hierarchy is set.
-          assignedToUserIds: current.authContext.hierarchy.visibleUserIds ?? undefined,
-        }
-      : undefined;
+  const filter = followUpListFilter(current.authContext, {
+    permissionCode: "follow_up.view",
+    actorUserId: current.session.user.id,
+  });
 
-  const followUps = await listFollowUps(current.authContext.organizationId, filter);
+  const followUps = await listFollowUps(current.authContext.organizationId, {
+    ...filter,
+    limit: 10_000,
+  });
   return NextResponse.json({ data: followUps });
 }
 
@@ -60,6 +63,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    const lead = await getLead(parsed.data.leadId);
+    assertCanAccessLead(current.authContext, lead, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
     const followUp = await createFollowUp({
       organizationId: current.authContext.organizationId,
       input: parsed.data,
@@ -69,7 +77,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (
       error instanceof InvalidLeadReferenceError ||
-      error instanceof InvalidAssigneeReferenceError
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof LeadNotFoundError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }

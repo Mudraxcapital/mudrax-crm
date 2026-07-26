@@ -83,8 +83,15 @@ export class PrismaFollowUpRepository implements FollowUpRepository {
   ): Prisma.FollowUpWhereInput {
     const where: Prisma.FollowUpWhereInput = { organizationId };
     if (filter?.leadId) where.leadId = filter.leadId;
+    if (filter?.leadIds?.length) where.leadId = { in: filter.leadIds };
     if (filter?.status) where.status = filter.status;
     if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
+    if (filter?.scheduledFrom || filter?.scheduledTo) {
+      where.scheduledFor = {
+        ...(filter.scheduledFrom ? { gte: filter.scheduledFrom } : {}),
+        ...(filter.scheduledTo ? { lte: filter.scheduledTo } : {}),
+      };
+    }
     return where;
   }
 

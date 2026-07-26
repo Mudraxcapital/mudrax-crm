@@ -1,12 +1,13 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { assertOwnsManagerData } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
 import { EditCustomerForm } from "@/modules/customers/presentation/components/EditCustomerForm";
 import { updateCustomerAction } from "@/modules/customers/presentation/controllers/updateCustomer.action";
 
 export default async function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission("customer.update");
+  const { authContext } = await requirePermission("customer.update");
   const { id } = await params;
 
   let customer;
@@ -17,6 +18,14 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
       notFound();
     }
     throw error;
+  }
+
+  if (!assertOwnsManagerData(authContext.hierarchy, customer.ownerManagerId)) {
+    notFound();
+  }
+
+  if (customer.mergedIntoCustomerId || customer.status === "MERGED") {
+    redirect(`/customers/${customer.mergedIntoCustomerId ?? id}`);
   }
 
   const boundAction = updateCustomerAction.bind(null, id);

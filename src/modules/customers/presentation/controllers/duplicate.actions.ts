@@ -11,7 +11,6 @@ import {
   mergeCustomers,
   mergeCustomersSchema,
 } from "@/modules/customers";
-import { repointLeadsCustomer } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
 
 export type DuplicateFormState = { error?: string; success?: string };
@@ -23,9 +22,10 @@ export async function detectDuplicatesAction(): Promise<void> {
 }
 
 export async function dismissDuplicateAction(candidateId: string): Promise<void> {
-  const { session } = await requirePermission("customer.merge");
+  const { session, authContext } = await requirePermission("customer.merge");
   try {
     await dismissDuplicateCandidate({
+      organizationId: authContext.organizationId,
       candidateId,
       reviewedByUserId: session.user.id,
     });
@@ -59,10 +59,6 @@ export async function mergeCustomersAction(
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
     });
-    await repointLeadsCustomer(
-      parsed.data.mergedAwayCustomerId,
-      parsed.data.survivingCustomerId,
-    );
   } catch (error) {
     if (
       error instanceof CustomerMergeError ||
@@ -77,5 +73,7 @@ export async function mergeCustomersAction(
   revalidatePath("/customers");
   revalidatePath("/customers/duplicates");
   revalidatePath(`/customers/${parsed.data.survivingCustomerId}`);
+  revalidatePath(`/customers/${parsed.data.mergedAwayCustomerId}`);
+  revalidatePath("/leads");
   return { success: "Customers merged." };
 }

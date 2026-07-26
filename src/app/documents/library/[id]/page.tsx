@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { getCustomer } from "@/modules/customers";
 import {
   DocumentNotFoundError,
   getCurrentDocumentVerification,
@@ -11,12 +12,14 @@ import {
   listDocumentTypes,
   listDocumentVersions,
 } from "@/modules/documents";
+import { getLead } from "@/modules/leads";
 import { DocumentMetadataForm } from "@/modules/documents/presentation/components/DocumentMetadataForm";
 import { DocumentVerificationForm } from "@/modules/documents/presentation/components/DocumentVerificationForm";
 import { DocumentVersionForm } from "@/modules/documents/presentation/components/DocumentVersionForm";
 import { createDocumentVersionAction } from "@/modules/documents/presentation/controllers/createDocumentVersion.action";
 import { updateDocumentMetadataAction } from "@/modules/documents/presentation/controllers/updateDocumentMetadata.action";
 import { updateVerificationStatusAction } from "@/modules/documents/presentation/controllers/updateVerificationStatus.action";
+import { resolveDisplayName } from "@/shared/ui/displayName";
 
 export default async function DocumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,13 +39,24 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
     notFound();
   }
 
-  const [preview, versions, verification, documentTypes, auditLog] = await Promise.all([
+  const [preview, versions, verification, documentTypes, auditLog, owner] = await Promise.all([
     getDocumentPreview(id),
     listDocumentVersions(id),
     getCurrentDocumentVerification(id),
     listDocumentTypes(authContext.organizationId),
     listDocumentAuditLog(id),
+    document.ownerType === "CUSTOMER"
+      ? getCustomer(document.ownerId).catch(() => null)
+      : getLead(document.ownerId).catch(() => null),
   ]);
+  const ownerName = resolveDisplayName(
+    owner
+      ? "fullNameSnapshot" in owner
+        ? owner.fullNameSnapshot
+        : owner.fullName
+      : null,
+  );
+  const ownerLabel = document.ownerType === "CUSTOMER" ? "Customer" : "Lead";
 
   const boundVersionAction = createDocumentVersionAction.bind(null, id);
   const boundMetadataAction = updateDocumentMetadataAction.bind(null, id);
@@ -57,7 +71,7 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
       <div>
         <h1 className="text-xl font-semibold tracking-tight">{document.documentTypeName ?? "Document"}</h1>
         <p className="text-muted mt-1 text-sm">
-          {document.ownerType} · {document.status} · Verification{" "}
+          {ownerName} ({ownerLabel}) · {document.status} · Verification{" "}
           {document.latestVerificationStatus ?? "—"}
         </p>
       </div>

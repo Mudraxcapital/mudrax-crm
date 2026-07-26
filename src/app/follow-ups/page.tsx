@@ -1,27 +1,33 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import { listFollowUps } from "@/modules/follow-ups";
-import { listLeads } from "@/modules/leads";
+import { getLeadsByIds } from "@/modules/leads";
 import { completeFollowUpAction } from "@/modules/follow-ups/presentation/controllers/completeFollowUp.action";
 import { CompleteFollowUpForm } from "@/modules/follow-ups/presentation/components/CompleteFollowUpForm";
+import { followUpListFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { nameFromMap } from "@/shared/ui/displayName";
 
 export default async function FollowUpsPage() {
   const { session, authContext } = await requirePermission("follow_up.view");
   const canComplete = hasPermission(authContext, "follow_up.complete");
 
-  const scope = getPermissionScope(authContext, "follow_up.view");
-  const filter = scope === "SELF" ? { assignedToUserIds: [session.user.id] } : undefined;
+  const filter = followUpListFilter(authContext, {
+    permissionCode: "follow_up.view",
+    actorUserId: session.user.id,
+  });
 
-  const [followUps, leads] = await Promise.all([
-    listFollowUps(authContext.organizationId, filter),
-    listLeads(authContext.organizationId),
-  ]);
+  const followUps = await listFollowUps(authContext.organizationId, {
+    ...filter,
+    limit: 10_000,
+  });
+  const leadIds = [...new Set(followUps.map((followUp) => followUp.leadId))];
+  const leads = leadIds.length > 0 ? await getLeadsByIds(leadIds) : [];
   const leadNameById = new Map(leads.map((lead) => [lead.id, lead.fullNameSnapshot]));
 
   return (
     <div className="mx-page flex flex-col gap-6">
-<div>
+      <div>
         <h1 className="text-xl font-semibold tracking-tight">Follow-ups</h1>
         <p className="text-muted mt-1 text-sm">
           Scheduled callback/reminder tasks across your portfolio of Leads.
@@ -46,7 +52,7 @@ export default async function FollowUpsPage() {
                         href={`/leads/${followUp.leadId}`}
                         className="text-sm font-medium text-accent hover:text-accent hover:underline underline-offset-4"
                       >
-                        {leadNameById.get(followUp.leadId) ?? followUp.leadId}
+                        {nameFromMap(leadNameById, followUp.leadId, "Lead")}
                       </Link>
                       <p className="text-muted mt-0.5 text-xs">
                         {followUp.triggerType === "CALL_LATER" ? "Call Later" : "Follow-up"} ·{" "}

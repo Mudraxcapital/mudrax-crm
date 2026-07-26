@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { getCustomer } from "@/modules/customers";
+import { getLead } from "@/modules/leads";
 import {
   CallAttemptNotFoundError,
   getCallAttempt,
@@ -10,6 +12,7 @@ import {
   listCallOutcomes,
   listCallRecordings,
 } from "@/modules/telephony";
+import { getUser } from "@/modules/users";
 import { CallStatusForm } from "@/modules/telephony/presentation/components/CallStatusForm";
 import { CallNoteForm } from "@/modules/telephony/presentation/components/CallNoteForm";
 import { CallRecordingForm } from "@/modules/telephony/presentation/components/CallRecordingForm";
@@ -17,6 +20,7 @@ import { updateCallAttemptStatusAction } from "@/modules/telephony/presentation/
 import { addCallNoteAction } from "@/modules/telephony/presentation/controllers/addCallNote.action";
 import { updateCallNoteAction } from "@/modules/telephony/presentation/controllers/updateCallNote.action";
 import { createCallRecordingAction } from "@/modules/telephony/presentation/controllers/createCallRecording.action";
+import { resolveDisplayName } from "@/shared/ui/displayName";
 
 export default async function TelephonyCallDetailPage({
   params,
@@ -36,11 +40,14 @@ export default async function TelephonyCallDetailPage({
     throw error;
   }
 
-  const [outcomes, notes, recordings, auditLog] = await Promise.all([
+  const [outcomes, notes, recordings, auditLog, lead, customer, agent] = await Promise.all([
     listCallOutcomes(authContext.organizationId),
     listCallNotes(id),
     listCallRecordings(id),
     listCallAttemptAuditLog(id),
+    call.leadId ? getLead(call.leadId).catch(() => null) : Promise.resolve(null),
+    call.customerId ? getCustomer(call.customerId).catch(() => null) : Promise.resolve(null),
+    call.agentUserId ? getUser(call.agentUserId).catch(() => null) : Promise.resolve(null),
   ]);
 
   const canUpdate = hasPermission(authContext, "call.update");
@@ -50,6 +57,10 @@ export default async function TelephonyCallDetailPage({
   const boundUpdateStatus = updateCallAttemptStatusAction.bind(null, id);
   const boundAddNote = addCallNoteAction.bind(null, id);
   const boundCreateRecording = createCallRecordingAction.bind(null, id);
+
+  const leadName = resolveDisplayName(lead?.fullNameSnapshot, null, "Lead");
+  const customerName = resolveDisplayName(customer?.fullName, null, "Customer");
+  const agentName = resolveDisplayName(agent?.fullName, null, "Agent");
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -63,6 +74,7 @@ export default async function TelephonyCallDetailPage({
         </h1>
         <p className="text-muted mt-1 text-sm">
           Initiated {new Date(call.initiatedAt).toLocaleString()}
+          {call.agentUserId ? ` · Agent ${agentName}` : ""}
         </p>
       </div>
 
@@ -76,13 +88,16 @@ export default async function TelephonyCallDetailPage({
           <dt className="text-muted">Duration</dt>
           <dd>{call.durationSeconds !== null ? `${call.durationSeconds}s` : "—"}</dd>
           <dt className="text-muted">Provider Call Id</dt>
-          <dd>{call.providerCallId ?? "—"}</dd>
+          <dd className="font-mono text-xs">{call.providerCallId ?? "—"}</dd>
           {call.leadId ? (
             <>
               <dt className="text-muted">Lead</dt>
               <dd>
-                <Link href={`/leads/${call.leadId}`} className="text-accent hover:underline underline-offset-4">
-                  View Lead
+                <Link
+                  href={`/leads/${call.leadId}`}
+                  className="text-accent hover:underline underline-offset-4"
+                >
+                  {leadName}
                 </Link>
               </dd>
             </>
@@ -95,7 +110,7 @@ export default async function TelephonyCallDetailPage({
                   href={`/customers/${call.customerId}`}
                   className="text-accent hover:underline underline-offset-4"
                 >
-                  View Customer
+                  {customerName}
                 </Link>
               </dd>
             </>

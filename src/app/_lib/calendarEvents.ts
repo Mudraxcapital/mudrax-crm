@@ -28,6 +28,13 @@ export async function listCalendarEvents(
     includeCalls?: boolean;
     includeDeadlines?: boolean;
     assignedToUserIds?: string[];
+    agentUserId?: string;
+    agentUserIds?: string[];
+    leadFilter?: {
+      ownerManagerId?: string;
+      ownerTeamLeadId?: string;
+      assignedToUserIds?: string[];
+    };
   } = {},
 ): Promise<CalendarEvent[]> {
   const {
@@ -35,26 +42,38 @@ export async function listCalendarEvents(
     includeCalls = true,
     includeDeadlines = true,
     assignedToUserIds,
+    agentUserId,
+    agentUserIds,
+    leadFilter,
   } = options;
 
   const [followUps, calls, leads] = await Promise.all([
     includeFollowUps
       ? listFollowUps(organizationId, {
           assignedToUserIds,
-          limit: 500,
+          scheduledFrom: range.from,
+          scheduledTo: range.to,
+          // Month-scoped query — high ceiling for dense books, not a silent drop.
+          limit: 50_000,
         })
       : Promise.resolve([]),
     includeCalls
       ? listCallAttempts(organizationId, {
           initiatedFrom: range.from,
           initiatedTo: range.to,
-          limit: 500,
+          agentUserId,
+          agentUserIds,
+          limit: 50_000,
         })
       : Promise.resolve([]),
     includeDeadlines
       ? listLeads(organizationId, {
-          assignedToUserIds,
-          limit: 500,
+          ...leadFilter,
+          assignedToUserIds: leadFilter?.assignedToUserIds ?? assignedToUserIds,
+          hasNextAction: true,
+          nextActionFrom: range.from,
+          nextActionTo: range.to,
+          limit: 50_000,
         })
       : Promise.resolve([]),
   ]);
@@ -63,14 +82,13 @@ export async function listCalendarEvents(
 
   for (const followUp of followUps) {
     const at = new Date(followUp.scheduledFor);
-    if (at < range.from || at > range.to) continue;
     const isMeeting = followUp.triggerType === "CALL_LATER";
     events.push({
       id: `fu-${followUp.id}`,
       type: isMeeting ? "meeting" : "follow_up",
       title: isMeeting ? "Call Later" : "Follow-up",
       startsAt: at,
-      href: `/follow-ups/${followUp.id}`,
+      href: `/leads/${followUp.leadId}`,
       meta: followUp.status,
     });
   }
@@ -90,7 +108,6 @@ export async function listCalendarEvents(
   for (const lead of leads) {
     if (!lead.nextActionAt) continue;
     const at = new Date(lead.nextActionAt);
-    if (at < range.from || at > range.to) continue;
     events.push({
       id: `deadline-${lead.id}`,
       type: "deadline",
@@ -103,4 +120,12 @@ export async function listCalendarEvents(
 
   events.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   return events;
+}
+
+/** Local calendar day key (YYYY-MM-DD) matching toLocale* day grouping. */
+export function localDayKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }

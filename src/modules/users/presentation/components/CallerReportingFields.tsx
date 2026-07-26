@@ -40,7 +40,7 @@ export function CallerReportingFields({
           <option value="">Select team lead…</option>
           {teamLeads.map((lead) => (
             <option key={lead.id} value={lead.id}>
-              {lead.fullName} ({lead.employeeId})
+              {lead.fullName}
             </option>
           ))}
         </select>
@@ -96,7 +96,7 @@ export function CallerReportingFields({
             <option value="">Select team lead…</option>
             {teamLeads.map((lead) => (
               <option key={lead.id} value={lead.id}>
-                {lead.fullName} ({lead.employeeId})
+                {lead.fullName}
               </option>
             ))}
           </select>

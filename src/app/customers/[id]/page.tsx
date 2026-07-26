@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { assertOwnsManagerData, hasPermission } from "@/modules/rbac";
-import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
+import { CustomerNotFoundError, getCustomer, listCustomers } from "@/modules/customers";
 import { listActiveLeadFields, listLeadsByCustomer } from "@/modules/leads";
 import { listLoanApplications } from "@/modules/loan-applications";
 import { listDocumentsByCustomer } from "@/modules/documents";
@@ -12,6 +12,7 @@ import { listNotifications } from "@/modules/notifications";
 import { listFollowUps } from "@/modules/follow-ups";
 import { listCustomerTimeline } from "@/modules/activity-timeline";
 import { MergeCustomersForm } from "@/modules/customers/presentation/components/MergeCustomersForm";
+import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { authContext } = await requirePermission("customer.view");
@@ -31,8 +32,9 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     notFound();
   }
 
+  // Permanent tombstone redirect — merged-away IDs always resolve to the survivor.
   if (customer.mergedIntoCustomerId) {
-    // Permanent redirect tombstone — send operators to the survivor.
+    redirect(`/customers/${customer.mergedIntoCustomerId}`);
   }
 
   const canUpdate = hasPermission(authContext, "customer.update");
@@ -43,35 +45,44 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const canViewNotifications = hasPermission(authContext, "notification.view");
   const canViewFollowUps = hasPermission(authContext, "follow_up.view");
 
-  const [leads, loanApps, documents, calls, notifications, allFollowUps, timeline, leadFields] =
-    await Promise.all([
-      listLeadsByCustomer(id),
-      canViewLoans
-        ? listLoanApplications(authContext.organizationId, { customerId: id, limit: 50 })
-        : Promise.resolve([]),
-      canViewDocs ? listDocumentsByCustomer(id) : Promise.resolve([]),
-      canViewCalls ? listCallHistoryByCustomer(id) : Promise.resolve([]),
-      canViewNotifications
-        ? listNotifications(authContext.organizationId, {
-            recipientType: "CUSTOMER",
-            recipientId: id,
-            limit: 50,
-          })
-        : Promise.resolve([]),
-      canViewFollowUps
-        ? listFollowUps(authContext.organizationId, { limit: 200 })
-        : Promise.resolve([]),
-      listCustomerTimeline(id, authContext.organizationId, 40),
-      listActiveLeadFields(authContext.organizationId),
-    ]);
+  const book = managerBookFilter(authContext);
+  const leads = await listLeadsByCustomer(id);
+  const leadIds = leads.map((lead) => lead.id);
+
+  const [
+    loanApps,
+    documents,
+    calls,
+    notifications,
+    followUps,
+    timeline,
+    leadFields,
+    allCustomers,
+  ] = await Promise.all([
+    canViewLoans
+      ? listLoanApplications(authContext.organizationId, { customerId: id, limit: 50 })
+      : Promise.resolve([]),
+    canViewDocs ? listDocumentsByCustomer(id) : Promise.resolve([]),
+    canViewCalls ? listCallHistoryByCustomer(id) : Promise.resolve([]),
+    canViewNotifications
+      ? listNotifications(authContext.organizationId, {
+          recipientType: "CUSTOMER",
+          recipientId: id,
+          limit: 50,
+        })
+      : Promise.resolve([]),
+    canViewFollowUps && leadIds.length > 0
+      ? listFollowUps(authContext.organizationId, { leadIds, limit: 500 })
+      : Promise.resolve([]),
+    listCustomerTimeline(id, authContext.organizationId, 40),
+    listActiveLeadFields(authContext.organizationId),
+    canMerge ? listCustomers(authContext.organizationId, book) : Promise.resolve([]),
+  ]);
   const visibleLeadFieldKeys = new Set(
     leadFields
       .filter((field) => field.isVisible && field.section !== "hidden")
       .map((field) => field.internalKey),
   );
-
-  const leadIds = new Set(leads.map((lead) => lead.id));
-  const followUps = allFollowUps.filter((item) => leadIds.has(item.leadId));
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -92,17 +103,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           <p className="text-muted text-sm">
             {customer.identityConfidence} · {customer.status}
           </p>
-          {customer.mergedIntoCustomerId ? (
-            <p className="text-sm">
-              Merged into{" "}
-              <Link
-                href={`/customers/${customer.mergedIntoCustomerId}`}
-                className="text-accent hover:underline underline-offset-4"
-              >
-                surviving customer
-              </Link>
-            </p>
-          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {canMerge ? (
@@ -110,7 +110,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               Duplicates
             </Link>
           ) : null}
-          {canUpdate ? (
+          {canUpdate && customer.status === "ACTIVE" ? (
             <Link href={`/customers/${customer.id}/edit`} className="mx-btn mx-btn-primary mx-btn-sm">
               Edit
             </Link>
@@ -243,7 +243,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             followUps.map((followUp) => (
               <Row
                 key={followUp.id}
-                href="/follow-ups"
+                href={`/leads/${followUp.leadId}`}
                 primary={`${followUp.triggerType} · ${followUp.status}`}
                 secondary={new Date(followUp.scheduledFor).toLocaleString()}
               />
@@ -277,10 +277,17 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Merge into this Customer</h2>
           <p className="text-muted mt-1 text-xs">
-            Provide the duplicate Customer ID to merge away (audited, irreversible).
+            Choose the duplicate customer to merge away (audited, irreversible). Surviving record:{" "}
+            <span className="text-foreground font-medium">{customer.fullName}</span>
           </p>
           <div className="mt-4">
-            <MergeCustomersForm survivingCustomerId={customer.id} />
+            <MergeCustomersForm
+              survivingCustomerId={customer.id}
+              survivingLabel={customer.fullName}
+              customers={allCustomers
+                .filter((item) => item.id !== customer.id)
+                .map((item) => ({ id: item.id, fullName: item.fullName }))}
+            />
           </div>
         </section>
       ) : null}

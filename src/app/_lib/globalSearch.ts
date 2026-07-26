@@ -142,17 +142,19 @@ export async function globalSearch(
     });
   }
 
+  const customerNameById = new Map(customers.map((customer) => [customer.id, customer.fullName]));
   for (const { item, score } of rankByFuzzy(
     q,
     loanApps,
     (app) =>
-      `${app.id} ${app.customerId} ${app.applicationStatusName ?? ""} ${app.applicationStatusBucket ?? ""}`,
+      `${customerNameById.get(app.customerId) ?? ""} ${app.applicationStatusName ?? ""} ${app.applicationStatusBucket ?? ""} ${app.id}`,
     0.15,
   )) {
+    const customerName = customerNameById.get(item.customerId) ?? "Customer";
     hits.push({
       entity: "loan_application",
       id: item.id,
-      title: `Application ${item.id.slice(0, 8)}`,
+      title: customerName,
       subtitle: `Loan Application · ${item.applicationStatusName ?? item.applicationStatusBucket ?? "—"}`,
       href: `/loan-applications/${item.id}`,
       score,

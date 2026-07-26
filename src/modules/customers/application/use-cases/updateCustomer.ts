@@ -8,7 +8,10 @@
 
 import type { CustomerRepository } from "../../domain/repositories/CustomerRepository";
 import type { CustomerAuditActor } from "../../domain/entities/CustomerAuditRecord";
-import { CustomerNotFoundError } from "../../domain/errors/CustomerErrors";
+import {
+  CustomerNotFoundError,
+  InvalidCustomerStateError,
+} from "../../domain/errors/CustomerErrors";
 import type { UpdateCustomerInput } from "../validators/customerSchemas";
 import { toCustomerDto, type CustomerDto } from "../dto/CustomerDto";
 
@@ -26,6 +29,9 @@ export function makeUpdateCustomer(repository: CustomerRepository) {
     const existing = await repository.findById(id);
     if (!existing) {
       throw new CustomerNotFoundError(id);
+    }
+    if (existing.customer.status === "MERGED") {
+      throw new InvalidCustomerStateError("Merged customers are tombstones and cannot be edited.");
     }
 
     const updated = await repository.updateWithAudit(

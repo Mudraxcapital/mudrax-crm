@@ -20,6 +20,7 @@ import { removeCampaignMemberAction } from "@/modules/campaigns/presentation/con
 import { assignCampaignLeadsAction } from "@/modules/campaigns/presentation/controllers/assignCampaignLeads.action";
 import { TabNav } from "@/shared/ui/Tabs";
 import { EmployeeLink } from "@/shared/ui/EmployeeLink";
+import { nameFromMap } from "@/shared/ui/displayName";
 import { CampaignLeadsTable } from "../_components/CampaignLeadsTable";
 
 export default async function CampaignDetailPage({
@@ -117,7 +118,7 @@ export default async function CampaignDetailPage({
     const count = leads.filter((lead) => lead.currentAssigneeUserId === member.userId).length;
     return {
       userId: member.userId,
-      name: userNameById.get(member.userId) ?? member.userId,
+      name: nameFromMap(userNameById, member.userId),
       count,
     };
   });
@@ -133,7 +134,7 @@ export default async function CampaignDetailPage({
           <h1 className="text-xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="text-muted mt-1 text-sm">
             {campaign.status} · Source {sourceFromDescription} · Created by{" "}
-            {userNameById.get(campaign.createdByUserId) ?? campaign.createdByUserId}
+            {nameFromMap(userNameById, campaign.createdByUserId)}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -230,7 +231,7 @@ export default async function CampaignDetailPage({
                   <span>
                     <EmployeeLink
                       userId={member.userId}
-                      name={userNameById.get(member.userId) ?? member.userId}
+                      name={nameFromMap(userNameById, member.userId)}
                       campaignId={id}
                     />{" "}
                     <span className="text-muted">(weight {member.allocationWeight})</span>
@@ -289,7 +290,7 @@ export default async function CampaignDetailPage({
                 <option value="">All assigned callers</option>
                 {activeMembers.map((member) => (
                   <option key={member.userId} value={member.userId}>
-                    {userNameById.get(member.userId) ?? member.userId}
+                    {nameFromMap(userNameById, member.userId)}
                   </option>
                 ))}
               </select>
@@ -318,7 +319,7 @@ export default async function CampaignDetailPage({
               Showing customers assigned to{" "}
               <EmployeeLink
                 userId={employeeId}
-                name={userNameById.get(employeeId) ?? employeeId}
+                name={nameFromMap(userNameById, employeeId)}
                 campaignId={id}
               />
               .
@@ -330,10 +331,9 @@ export default async function CampaignDetailPage({
               fullNameSnapshot: lead.fullNameSnapshot,
               phoneSnapshot: lead.phoneSnapshot,
               currentStageName: lead.currentStageName,
-              assignedAgent:
-                lead.currentAssigneeUserId
-                  ? (userNameById.get(lead.currentAssigneeUserId) ?? lead.currentAssigneeUserId)
-                  : "Unassigned",
+              assignedAgent: lead.currentAssigneeUserId
+                ? nameFromMap(userNameById, lead.currentAssigneeUserId)
+                : "Unassigned",
               assignedAgentUserId: lead.currentAssigneeUserId,
               campaignId: id,
               nextActionAt: lead.nextActionAt,
@@ -358,7 +358,7 @@ export default async function CampaignDetailPage({
                   }))}
                   members={activeMembers.map((member) => ({
                     userId: member.userId,
-                    fullName: userNameById.get(member.userId) ?? member.userId,
+                    fullName: nameFromMap(userNameById, member.userId),
                   }))}
                 />
               </div>

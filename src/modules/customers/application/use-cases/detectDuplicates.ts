@@ -20,7 +20,17 @@ export function makeDetectDuplicates(repository: CustomerRepository) {
     created: DuplicateCandidateDto[];
     existing: DuplicateCandidateDto[];
   }> {
-    const customers = await repository.listWithIdentifiers(organizationId, { limit: 500 });
+    // Page through the full active customer set — no arbitrary scan ceiling.
+    const PAGE_SIZE = 1_000;
+    const customers: Awaited<ReturnType<CustomerRepository["listWithIdentifiers"]>> = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const page = await repository.listWithIdentifiers(organizationId, {
+        limit: PAGE_SIZE,
+        offset,
+      });
+      customers.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
     const created: DuplicateCandidateDto[] = [];
     const existing: DuplicateCandidateDto[] = [];
     const seenPairs = new Set<string>();
@@ -117,11 +127,16 @@ export function makeListDuplicateCandidates(repository: CustomerRepository) {
 
 export function makeDismissDuplicateCandidate(repository: CustomerRepository) {
   return async function dismissDuplicateCandidate(command: {
+    organizationId: string;
     candidateId: string;
     reviewedByUserId: string;
   }): Promise<DuplicateCandidateDto> {
     const existing = await repository.findDuplicateCandidate(command.candidateId);
     if (!existing) {
+      throw new DuplicateCandidateNotFoundError(command.candidateId);
+    }
+    const customerA = await repository.findById(existing.customerAId);
+    if (!customerA || customerA.customer.organizationId !== command.organizationId) {
       throw new DuplicateCandidateNotFoundError(command.candidateId);
     }
     const updated = await repository.updateDuplicateCandidateStatus(

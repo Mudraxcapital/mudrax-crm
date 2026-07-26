@@ -90,7 +90,7 @@ export default async function TelephonyAgentSessionsPage() {
                     className="border-b border-border last:border-0"
                   >
                     <td className="px-4 py-3">
-                      {userNameById.get(agentSession.userId) ?? agentSession.userId}
+                      {userNameById.get(agentSession.userId) ?? "Unknown"}
                     </td>
                     <td className="px-4 py-3">{agentSession.status}</td>
                     <td className="px-4 py-3">{new Date(agentSession.loginAt).toLocaleString()}</td>

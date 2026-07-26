@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
+import { getCustomer } from "@/modules/customers";
 import {
   getNotification,
   listNotificationDeliveries,
   listNotificationHistory,
   NotificationNotFoundError,
 } from "@/modules/notifications";
+import { getUser } from "@/modules/users";
+import { resolveDisplayName } from "@/shared/ui/displayName";
 
 export default async function NotificationDetailPage({
   params,
@@ -24,10 +27,17 @@ export default async function NotificationDetailPage({
     throw error;
   }
 
-  const [deliveries, history] = await Promise.all([
+  const [deliveries, history, recipient] = await Promise.all([
     listNotificationDeliveries(authContext.organizationId, id),
     listNotificationHistory(authContext.organizationId, id),
+    notification.recipientType === "USER"
+      ? getUser(notification.recipientId).catch(() => null)
+      : getCustomer(notification.recipientId).catch(() => null),
   ]);
+
+  const recipientName = resolveDisplayName(recipient?.fullName);
+  const recipientLabel =
+    notification.recipientType === "CUSTOMER" ? "Customer" : "User";
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -45,10 +55,11 @@ export default async function NotificationDetailPage({
       <section className="rounded-xl border border-border p-6 text-sm ">
         <dl className="grid grid-cols-2 gap-y-2">
           <dt className="text-muted">Template</dt>
-          <dd>{notification.templateCode ?? notification.templateId}</dd>
+          <dd>{notification.templateCode ?? "—"}</dd>
           <dt className="text-muted">Recipient</dt>
           <dd>
-            {notification.recipientType} · {notification.recipientId}
+            {recipientName}
+            <span className="text-muted ml-1 text-xs">({recipientLabel})</span>
           </dd>
           <dt className="text-muted">Created</dt>
           <dd>{new Date(notification.createdAt).toLocaleString()}</dd>
@@ -78,8 +89,8 @@ export default async function NotificationDetailPage({
                   <p className="text-muted mt-1 text-xs">{delivery.failureReason}</p>
                 ) : null}
                 {delivery.retryOfDeliveryId ? (
-                  <p className="text-muted mt-1 text-xs">
-                    Retry of {delivery.retryOfDeliveryId}
+                  <p className="text-muted mt-1 font-mono text-xs">
+                    Retry of delivery: {delivery.retryOfDeliveryId}
                   </p>
                 ) : null}
               </li>

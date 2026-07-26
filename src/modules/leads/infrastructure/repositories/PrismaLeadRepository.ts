@@ -122,6 +122,18 @@ export class PrismaLeadRepository implements LeadRepository {
     return groups.map((group) => ({ stageId: group.currentStageId, count: group._count._all }));
   }
 
+  async countGroupedBySource(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "leadSourceId">,
+  ): Promise<{ sourceId: string; count: number }[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["leadSourceId"],
+      where: this.buildWhere(organizationId, filter),
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({ sourceId: group.leadSourceId, count: group._count._all }));
+  }
+
   async countGroupedByCampaign(
     organizationId: string,
     filter?: Omit<ListLeadsFilter, "campaignId">,
@@ -148,6 +160,15 @@ export class PrismaLeadRepository implements LeadRepository {
     if (filter?.ownerManagerId) where.ownerManagerId = filter.ownerManagerId;
     if (filter?.ownerTeamLeadId) where.ownerTeamLeadId = filter.ownerTeamLeadId;
     if (filter?.assignedToUserIds) where.currentAssigneeUserId = { in: filter.assignedToUserIds };
+    if (filter?.nextActionFrom || filter?.nextActionTo) {
+      // Range predicates exclude null nextActionAt rows in SQL.
+      where.nextActionAt = {
+        ...(filter.nextActionFrom ? { gte: filter.nextActionFrom } : {}),
+        ...(filter.nextActionTo ? { lte: filter.nextActionTo } : {}),
+      };
+    } else if (filter?.hasNextAction) {
+      where.nextActionAt = { not: null };
+    }
 
     const and: Prisma.LeadWhereInput[] = [];
 

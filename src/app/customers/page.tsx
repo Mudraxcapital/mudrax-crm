@@ -18,7 +18,7 @@ export default async function CustomersPage() {
 
   const [customers, totalCount] = await Promise.all([
     listCustomers(authContext.organizationId, { limit: 10_000, ...book }),
-    countCustomers(authContext.organizationId),
+    countCustomers(authContext.organizationId, book),
   ]);
 
   return (

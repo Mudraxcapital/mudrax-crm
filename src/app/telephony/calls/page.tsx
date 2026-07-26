@@ -7,6 +7,7 @@ import { listUserSummaries } from "@/modules/users";
 import { listCallAttempts } from "@/modules/telephony";
 import { ClickToCallForm } from "@/modules/telephony/presentation/components/ClickToCallForm";
 import { initiateClickToCallAction } from "@/modules/telephony/presentation/controllers/initiateClickToCall.action";
+import { nameFromMap } from "@/shared/ui/displayName";
 
 export default async function TelephonyCallsPage() {
   const { session, authContext } = await requirePermission("call.view");
@@ -21,6 +22,9 @@ export default async function TelephonyCallsPage() {
     listCustomers(authContext.organizationId),
     listUserSummaries(authContext.organizationId),
   ]);
+  const leadNameById = new Map(leads.map((lead) => [lead.id, lead.fullNameSnapshot]));
+  const customerNameById = new Map(customers.map((customer) => [customer.id, customer.fullName]));
+  const agentNameById = new Map(assignees.map((user) => [user.id, user.fullName]));
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -37,6 +41,8 @@ export default async function TelephonyCallsPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-muted border-b border-border">
+              <th className="px-4 py-3 font-medium">Contact</th>
+              <th className="px-4 py-3 font-medium">Agent</th>
               <th className="px-4 py-3 font-medium">Direction</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Outcome</th>
@@ -47,30 +53,42 @@ export default async function TelephonyCallsPage() {
           <tbody>
             {calls.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-muted px-4 py-6 text-center">
+                <td colSpan={7} className="text-muted px-4 py-6 text-center">
                   No Calls yet.
                 </td>
               </tr>
             ) : (
-              calls.map((call) => (
-                <tr
-                  key={call.id}
-                  className="border-b border-border last:border-0"
-                >
-                  <td className="px-4 py-3">{call.direction}</td>
-                  <td className="px-4 py-3">{call.status}</td>
-                  <td className="px-4 py-3">{call.callOutcomeName ?? "—"}</td>
-                  <td className="px-4 py-3">{new Date(call.initiatedAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/telephony/calls/${call.id}`}
-                      className="text-sm text-accent hover:text-accent hover:underline underline-offset-4"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))
+              calls.map((call) => {
+                const contact =
+                  (call.leadId && nameFromMap(leadNameById, call.leadId, "")) ||
+                  (call.customerId && nameFromMap(customerNameById, call.customerId, "")) ||
+                  "—";
+                return (
+                  <tr
+                    key={call.id}
+                    className="border-b border-border last:border-0"
+                  >
+                    <td className="px-4 py-3 font-medium">{contact}</td>
+                    <td className="px-4 py-3">
+                      {call.agentUserId
+                        ? nameFromMap(agentNameById, call.agentUserId)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3">{call.direction}</td>
+                    <td className="px-4 py-3">{call.status}</td>
+                    <td className="px-4 py-3">{call.callOutcomeName ?? "—"}</td>
+                    <td className="px-4 py-3">{new Date(call.initiatedAt).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/telephony/calls/${call.id}`}
+                        className="text-sm text-accent hover:text-accent hover:underline underline-offset-4"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -47,7 +47,13 @@ export function LeadsWorkspace({
               <div>
                 <h3 className="text-sm font-medium">Merge leads</h3>
                 <div className="mt-3">
-                  <MergeLeadsForm lostReasons={lostReasons} />
+                  <MergeLeadsForm
+                    lostReasons={lostReasons}
+                    leads={rows.map((row) => ({
+                      id: row.id,
+                      fullName: row.fullNameSnapshot,
+                    }))}
+                  />
                 </div>
               </div>
             ) : null}

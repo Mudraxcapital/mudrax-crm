@@ -64,6 +64,19 @@ export class FakeLeadRepository implements LeadRepository {
           filter.assignedToUserIds!.includes(lead.currentAssigneeUserId),
       );
     }
+    if (filter?.hasNextAction) {
+      results = results.filter((lead) => lead.nextActionAt != null);
+    }
+    if (filter?.nextActionFrom) {
+      results = results.filter(
+        (lead) => lead.nextActionAt != null && lead.nextActionAt >= filter.nextActionFrom!,
+      );
+    }
+    if (filter?.nextActionTo) {
+      results = results.filter(
+        (lead) => lead.nextActionAt != null && lead.nextActionAt <= filter.nextActionTo!,
+      );
+    }
     if (filter?.search) {
       const q = filter.search.toLowerCase();
       results = results.filter(
@@ -132,6 +145,18 @@ export class FakeLeadRepository implements LeadRepository {
       counts.set(lead.campaignId, (counts.get(lead.campaignId) ?? 0) + 1);
     }
     return [...counts.entries()].map(([campaignId, count]) => ({ campaignId, count }));
+  }
+
+  async countGroupedBySource(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "leadSourceId">,
+  ): Promise<{ sourceId: string; count: number }[]> {
+    const leads = await this.list(organizationId, { ...filter, limit: undefined, offset: undefined });
+    const counts = new Map<string, number>();
+    for (const lead of leads) {
+      counts.set(lead.leadSourceId, (counts.get(lead.leadSourceId) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([sourceId, count]) => ({ sourceId, count }));
   }
 
   async countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]> {

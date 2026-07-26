@@ -9,7 +9,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { CustomerNotFoundError, updateCustomer, updateCustomerSchema } from "@/modules/customers";
+import {
+  CustomerNotFoundError,
+  InvalidCustomerStateError,
+  updateCustomer,
+  updateCustomerSchema,
+} from "@/modules/customers";
 import type { CustomerFormState } from "./createCustomer.action";
 
 export async function updateCustomerAction(
@@ -35,7 +40,10 @@ export async function updateCustomerAction(
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof CustomerNotFoundError) {
+    if (
+      error instanceof CustomerNotFoundError ||
+      error instanceof InvalidCustomerStateError
+    ) {
       return { error: error.message };
     }
     throw error;

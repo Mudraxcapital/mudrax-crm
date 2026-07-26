@@ -6,7 +6,11 @@
 // No separate activity table — no DB redesign.
 // ============================================================================
 
-import { listRecentLeadActivity, type LeadAuditRecord } from "@/modules/leads";
+import {
+  listLeadsByCustomer,
+  listRecentLeadActivity,
+  type LeadAuditRecord,
+} from "@/modules/leads";
 import { listRecentFollowUpActivity, type FollowUpAuditRecord } from "@/modules/follow-ups";
 import { listRecentCampaignActivity, type CampaignAuditRecord } from "@/modules/campaigns";
 import { listRecentTelephonyActivity } from "@/modules/telephony";
@@ -137,15 +141,18 @@ export async function listCustomerTimeline(
   organizationId: string,
   limit = 50,
 ): Promise<TimelineEntry[]> {
-  const [orgTimeline, customerAudit] = await Promise.all([
-    listUnifiedTimeline(organizationId, limit * 2, {
+  const [orgTimeline, customerAudit, customerLeads] = await Promise.all([
+    listUnifiedTimeline(organizationId, Math.max(limit * 4, 100), {
       includeLeads: true,
       includeFollowUps: true,
       includeCampaigns: false,
       includeCalls: true,
     }),
     listCustomerAuditLog(customerId),
+    listLeadsByCustomer(customerId),
   ]);
+
+  const customerLeadIds = new Set(customerLeads.map((lead) => lead.id));
 
   const customerEntries: TimelineEntry[] = customerAudit.map((record) => ({
     id: record.id,
@@ -159,7 +166,13 @@ export async function listCustomerTimeline(
     occurredAt: record.occurredAt,
   }));
 
-  const related = orgTimeline.filter((entry) => entry.customerId === customerId);
+  // Include Follow-ups / Calls / Leads linked via customerId or any of the
+  // customer's Lead identities (Follow-up audit rows only carry leadId).
+  const related = orgTimeline.filter(
+    (entry) =>
+      entry.customerId === customerId ||
+      (entry.leadId != null && customerLeadIds.has(entry.leadId)),
+  );
   const merged = [...customerEntries, ...related];
   merged.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
   return merged.slice(0, limit);

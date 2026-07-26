@@ -54,7 +54,7 @@ export default async function LeadImportPage() {
       ]);
       const activeMembers = members.filter((member) => member.isActive);
       const agentNames = activeMembers.map(
-        (member) => users.find((user) => user.id === member.userId)?.fullName ?? member.userId,
+        (member) => users.find((user) => user.id === member.userId)?.fullName ?? "Unknown",
       );
       return {
         id: campaign.id,
@@ -176,14 +176,14 @@ export default async function LeadImportPage() {
                     <tr key={batch.id} className="border-t border-border">
                       <td className="px-4 py-2 font-medium">{batch.sourceFileName}</td>
                       <td className="px-4 py-2">
-                        {userNameById.get(batch.uploadedByUserId) ?? batch.uploadedByUserId}
+                        {userNameById.get(batch.uploadedByUserId) ?? "Unknown"}
                       </td>
                       <td className="px-4 py-2">
                         {new Date(batch.createdAt).toLocaleString()}
                       </td>
                       <td className="px-4 py-2">
                         {batch.campaignId
-                          ? (campaignNameById.get(batch.campaignId) ?? batch.campaignId)
+                          ? (campaignNameById.get(batch.campaignId) ?? "Unknown campaign")
                           : "—"}
                       </td>
                       <td className="px-4 py-2">{batch.createdRowCount}</td>

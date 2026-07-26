@@ -17,11 +17,15 @@ const inputClass = "mx-input";
 export function OfferWorkspace({
   banks,
   products,
+  customers,
+  leads,
   canEligibility,
   canManage,
 }: {
   banks: { id: string; name: string }[];
   products: { id: string; name: string; bankId: string }[];
+  customers: { id: string; fullName: string }[];
+  leads: { id: string; fullName: string }[];
   canEligibility: boolean;
   canManage: boolean;
 }) {
@@ -31,7 +35,7 @@ export function OfferWorkspace({
   const [offerState, offerAction, offerPending] = useActionState(createLoanOfferAction, {});
   const [decideState, decideAction, decidePending] = useActionState(
     async (prev: LoanApplicationsFormState | undefined, fd: FormData) => {
-      if (!offerId) return { error: "Enter an offer id to accept/reject." };
+      if (!offerId) return { error: "Create or enter an offer before accepting or rejecting." };
       return decideLoanOfferAction(offerId, prev, fd);
     },
     {},
@@ -54,7 +58,14 @@ export function OfferWorkspace({
           <h2 className="text-sm font-medium">1. Eligibility Snapshot</h2>
           <form action={eligAction} className="mt-4 flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <input name="customerId" placeholder="Customer ID" required className={inputClass} />
+              <select name="customerId" required className={inputClass} defaultValue="">
+                <option value="">Select customer…</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.fullName}
+                  </option>
+                ))}
+              </select>
               <select name="decision" required className={inputClass}>
                 <option value="ELIGIBLE">ELIGIBLE</option>
                 <option value="CONDITIONAL">CONDITIONAL</option>
@@ -80,7 +91,8 @@ export function OfferWorkspace({
               <p className="text-sm text-red-600">{eligState.error}</p>
             ) : eligState.snapshotId ? (
               <p className="text-sm text-green-700 dark:text-green-400">
-                Snapshot created: {eligState.snapshotId}
+                Snapshot created.{" "}
+                <span className="text-muted font-mono text-xs">ID: {eligState.snapshotId}</span>
               </p>
             ) : null}
             <button
@@ -99,15 +111,30 @@ export function OfferWorkspace({
           <section className="rounded-xl border border-border p-6">
             <h2 className="text-sm font-medium">2. Generate Offer</h2>
             <form action={offerAction} className="mt-4 flex flex-col gap-4">
-              <input name="leadId" placeholder="Lead ID" required className={inputClass} />
+              <select name="leadId" required className={inputClass} defaultValue="">
+                <option value="">Select lead…</option>
+                {leads.map((lead) => (
+                  <option key={lead.id} value={lead.id}>
+                    {lead.fullName}
+                  </option>
+                ))}
+              </select>
               <input
                 name="eligibilitySnapshotId"
-                placeholder="Eligibility Snapshot ID"
-                required
-                defaultValue={eligibilityId}
+                type="hidden"
+                value={eligibilityId}
                 key={eligibilityId}
-                className={inputClass}
               />
+              {!eligibilityId ? (
+                <p className="text-muted text-xs">
+                  Create an eligibility snapshot first — it will be linked automatically.
+                </p>
+              ) : (
+                <p className="text-muted text-xs">
+                  Linked eligibility snapshot:{" "}
+                  <span className="font-mono">{eligibilityId}</span>
+                </p>
+              )}
               <select name="bankId" required className={inputClass}>
                 <option value="">Bank</option>
                 {banks.map((b) => (
@@ -149,12 +176,13 @@ export function OfferWorkspace({
                 <p className="text-sm text-red-600">{offerState.error}</p>
               ) : offerState.offerId ? (
                 <p className="text-sm text-green-700 dark:text-green-400">
-                  Offer created: {offerState.offerId}
+                  Offer created.{" "}
+                  <span className="text-muted font-mono text-xs">ID: {offerState.offerId}</span>
                 </p>
               ) : null}
               <button
                 type="submit"
-                disabled={offerPending}
+                disabled={offerPending || !eligibilityId}
                 className="bg-foreground text-background self-start rounded-lg px-4 py-2 text-sm disabled:opacity-60"
               >
                 {offerPending ? "Saving…" : "Create offer"}
@@ -165,12 +193,13 @@ export function OfferWorkspace({
           <section className="rounded-xl border border-border p-6">
             <h2 className="text-sm font-medium">3. Accept / Reject Offer</h2>
             <form action={decideAction} className="mt-4 flex flex-col gap-4">
-              <input
-                value={offerId}
-                onChange={(e) => setOfferId(e.target.value)}
-                placeholder="Offer ID"
-                className={inputClass}
-              />
+              {offerId ? (
+                <p className="text-muted text-xs">
+                  Selected offer: <span className="font-mono">{offerId}</span>
+                </p>
+              ) : (
+                <p className="text-muted text-xs">Generate an offer above to continue.</p>
+              )}
               <select name="decision" required className={inputClass}>
                 <option value="ACCEPT">Accept (creates Application)</option>
                 <option value="REJECT">Reject</option>
@@ -180,7 +209,7 @@ export function OfferWorkspace({
               ) : null}
               <button
                 type="submit"
-                disabled={decidePending}
+                disabled={decidePending || !offerId}
                 className="bg-foreground text-background self-start rounded-lg px-4 py-2 text-sm disabled:opacity-60"
               >
                 {decidePending ? "Saving…" : "Confirm"}

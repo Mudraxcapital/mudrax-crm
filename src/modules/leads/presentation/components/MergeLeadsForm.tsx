@@ -8,30 +8,42 @@ const initial: ProductivityFormState = {};
 export function MergeLeadsForm({
   defaultSurvivingId,
   lostReasons,
+  leads = [],
 }: {
   defaultSurvivingId?: string;
   lostReasons: Array<{ id: string; name: string }>;
+  leads?: Array<{ id: string; fullName: string }>;
 }) {
   const [state, action, pending] = useActionState(mergeLeadsAction, initial);
 
   return (
     <form action={action} className="flex flex-col gap-3">
       <label className="text-sm">
-        Surviving Lead ID
-        <input
+        Surviving lead
+        <select
           name="survivingLeadId"
           required
           defaultValue={defaultSurvivingId}
-          className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-xs"
-        />
+          className="mt-1 w-full mx-input"
+        >
+          <option value="">Select lead…</option>
+          {leads.map((lead) => (
+            <option key={lead.id} value={lead.id}>
+              {lead.fullName}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="text-sm">
-        Merged-away Lead ID
-        <input
-          name="mergedAwayLeadId"
-          required
-          className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-xs"
-        />
+        Lead to merge away
+        <select name="mergedAwayLeadId" required className="mt-1 w-full mx-input" defaultValue="">
+          <option value="">Select lead…</option>
+          {leads.map((lead) => (
+            <option key={lead.id} value={lead.id}>
+              {lead.fullName}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="text-sm">
         Lost Reason
@@ -49,11 +61,7 @@ export function MergeLeadsForm({
       </label>
       {state.error ? <p className="text-sm text-red-600">{state.error}</p> : null}
       {state.success ? <p className="text-sm text-green-700">{state.success}</p> : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="mx-btn mx-btn-secondary"
-      >
+      <button type="submit" disabled={pending} className="mx-btn mx-btn-secondary">
         {pending ? "Merging…" : "Merge Leads"}
       </button>
     </form>

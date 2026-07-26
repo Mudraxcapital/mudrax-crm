@@ -193,17 +193,15 @@ export function UsersTable({
     },
     {
       id: "fullName",
-      header: "Employee Name",
+      header: "Name",
       accessor: (r) => r.fullName,
-      cell: (r) => <span className="font-medium">{r.fullName}</span>,
-      minWidth: 160,
-    },
-    {
-      id: "employeeId",
-      header: "Employee ID",
-      accessor: (r) => r.employeeId,
-      cell: (r) => <span className="font-mono text-xs">{r.employeeId}</span>,
-      minWidth: 110,
+      cell: (r) => (
+        <div className="flex min-w-0 flex-col">
+          <span className="font-medium">{r.fullName}</span>
+          <span className="text-muted font-mono text-[11px]">ID: {r.employeeId}</span>
+        </div>
+      ),
+      minWidth: 180,
     },
     {
       id: "role",
@@ -212,14 +210,6 @@ export function UsersTable({
       cell: (r) => <Badge tone="neutral">{r.roleName ?? "—"}</Badge>,
       minWidth: 110,
     },
-    {
-      id: "reportingTo",
-      header: "Reporting To",
-      accessor: (r) => reportingTo(r),
-      minWidth: 150,
-    },
-    { id: "phone", header: "Phone", accessor: (r) => r.phone, minWidth: 120 },
-    { id: "email", header: "Email", accessor: (r) => r.email, minWidth: 180 },
     {
       id: "status",
       header: "Status",
@@ -233,6 +223,14 @@ export function UsersTable({
         );
       },
       minWidth: 110,
+    },
+    { id: "phone", header: "Phone", accessor: (r) => r.phone, minWidth: 120 },
+    { id: "email", header: "Email", accessor: (r) => r.email, minWidth: 180 },
+    {
+      id: "reportingTo",
+      header: "Reporting To",
+      accessor: (r) => reportingTo(r),
+      minWidth: 150,
     },
     {
       id: "lastLoginAt",
@@ -381,7 +379,7 @@ export function UsersTable({
             className="mx-input"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Name, employee ID, phone, or email"
+            placeholder="Search by name, phone, email, or employee ID"
           />
         </label>
         <label className="flex min-w-[9rem] flex-col gap-1 text-xs">

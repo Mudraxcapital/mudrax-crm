@@ -1,45 +1,71 @@
 import Link from "next/link";
-import { requireAuth } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
-import { listCalendarEvents } from "../_lib/calendarEvents";
+import { requirePermission } from "@/infra/auth/session";
+import { hasPermission } from "@/modules/rbac";
+import { listCalendarEvents, localDayKey } from "../_lib/calendarEvents";
+import {
+  agentHierarchyFilter,
+  followUpListFilter,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
 import { Card, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
 import { EmptyState } from "@/shared/ui/EmptyState";
 
+function parseMonthParam(monthParam: string | undefined): Date {
+  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+    const year = Number(monthParam.slice(0, 4));
+    const monthIndex = Number(monthParam.slice(5, 7)) - 1;
+    return new Date(year, monthIndex, 1, 0, 0, 0, 0);
+  }
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+}
+
 export default async function CalendarPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { session, authContext } = await requireAuth();
+  const { session, authContext } = await requirePermission("follow_up.view");
   const params = await searchParams;
   const monthParam = typeof params.month === "string" ? params.month : undefined;
 
-  const base = monthParam ? new Date(`${monthParam}-01T00:00:00.000Z`) : new Date();
-  const from = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1));
-  const to = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0, 23, 59, 59));
+  const from = parseMonthParam(monthParam);
+  const to = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const leadScope = getPermissionScope(authContext, "lead.view");
-  const followUpScope = getPermissionScope(authContext, "follow_up.view");
-  const selfScope =
-    leadScope === "SELF" || followUpScope === "SELF" ? [session.user.id] : undefined;
+  const followUpFilter = followUpListFilter(authContext, {
+    permissionCode: "follow_up.view",
+    actorUserId: session.user.id,
+  });
+  const leadFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.view",
+    actorUserId: session.user.id,
+  });
+  const agentFilter = agentHierarchyFilter(authContext);
 
   const events = await listCalendarEvents(
     authContext.organizationId,
     { from, to },
     {
-      includeFollowUps: hasPermission(authContext, "follow_up.view"),
+      includeFollowUps: true,
       includeCalls: hasPermission(authContext, "call.view"),
       includeDeadlines: hasPermission(authContext, "lead.view"),
-      assignedToUserIds: selfScope,
+      assignedToUserIds: followUpFilter.assignedToUserIds,
+      agentUserId: agentFilter.agentUserId,
+      agentUserIds: agentFilter.agentUserIds,
+      leadFilter: {
+        ownerManagerId: leadFilter.ownerManagerId,
+        ownerTeamLeadId: leadFilter.ownerTeamLeadId,
+        assignedToUserIds: leadFilter.assignedToUserIds,
+      },
     },
   );
 
   const byDay = new Map<string, typeof events>();
   for (const event of events) {
-    const key = event.startsAt.toISOString().slice(0, 10);
+    const key = localDayKey(event.startsAt);
     const list = byDay.get(key) ?? [];
     list.push(event);
     byDay.set(key, list);
@@ -48,10 +74,11 @@ export default async function CalendarPage({
   const monthLabel = from.toLocaleString("en-IN", {
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
   });
-  const prev = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() - 1, 1));
-  const next = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1));
+  const prev = new Date(from.getFullYear(), from.getMonth() - 1, 1);
+  const next = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+  const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+  const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
   const dayEntries = [...byDay.entries()];
 
   return (
@@ -61,12 +88,12 @@ export default async function CalendarPage({
         description={`Follow-ups, calls, meetings, and deadlines — ${monthLabel}`}
         actions={
           <>
-            <Link href={`/calendar?month=${prev.toISOString().slice(0, 7)}`}>
+            <Link href={`/calendar?month=${prevKey}`}>
               <Button variant="secondary" size="sm">
                 Previous
               </Button>
             </Link>
-            <Link href={`/calendar?month=${next.toISOString().slice(0, 7)}`}>
+            <Link href={`/calendar?month=${nextKey}`}>
               <Button variant="secondary" size="sm">
                 Next
               </Button>

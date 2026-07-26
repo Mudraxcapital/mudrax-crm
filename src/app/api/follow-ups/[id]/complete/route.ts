@@ -13,6 +13,7 @@ import {
   FollowUpNotFoundError,
   FollowUpNotOpenError,
 } from "@/modules/follow-ups";
+import { requireFollowUpAccess } from "@/shared/auth/requireFollowUpAccess";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -38,6 +39,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   try {
+    await requireFollowUpAccess(current.authContext, id, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
     const followUp = await completeFollowUp({
       id,
       completedByUserId: current.session.user.id,

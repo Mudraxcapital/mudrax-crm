@@ -24,8 +24,12 @@ export default async function CrmDashboardPage() {
   const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns] = await Promise.all([
     canViewCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
     canViewLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
-    canViewLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
-    canViewLeads ? getLeadsBySource(authContext.organizationId) : Promise.resolve([]),
+    canViewLeads
+      ? getLeadsByStage(authContext.organizationId, leadFilter)
+      : Promise.resolve([]),
+    canViewLeads
+      ? getLeadsBySource(authContext.organizationId, leadFilter)
+      : Promise.resolve([]),
     canViewCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
   ]);
 

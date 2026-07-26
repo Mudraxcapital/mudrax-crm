@@ -62,10 +62,9 @@ export function EditUserForm({
         </p>
       ) : null}
 
-      <div className="rounded-md border border-border bg-surface-sunken/40 px-3 py-2 text-sm">
-        <span className="text-muted">Employee ID </span>
-        <span className="font-mono font-medium">{user.employeeId}</span>
-      </div>
+      <p className="text-muted text-xs">
+        Employee ID: <span className="font-mono text-foreground">{user.employeeId}</span>
+      </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Employee name *" htmlFor="fullName">
@@ -191,7 +190,7 @@ export function EditUserForm({
             <option value="">Select manager…</option>
             {managers.map((manager) => (
               <option key={manager.id} value={manager.id}>
-                {manager.fullName} ({manager.employeeId})
+                {manager.fullName}
               </option>
             ))}
           </select>
@@ -212,7 +211,7 @@ export function EditUserForm({
               .filter((lead) => lead.id !== user.id)
               .map((lead) => (
                 <option key={lead.id} value={lead.id}>
-                  {lead.fullName} ({lead.employeeId})
+                  {lead.fullName}
                 </option>
               ))}
           </select>
@@ -236,7 +235,7 @@ export function EditUserForm({
               .filter((manager) => manager.id !== user.id)
               .map((manager) => (
                 <option key={manager.id} value={manager.id}>
-                  {manager.fullName} ({manager.employeeId})
+                  {manager.fullName}
                 </option>
               ))}
           </select>

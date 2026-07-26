@@ -114,7 +114,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     <PageSection>
       <PageHeader
         title={user.fullName}
-        description={`${user.employeeId} · ${user.roleName ?? "No role"}`}
+        description={user.roleName ?? "No role"}
         breadcrumbs={[
           { label: "User Management", href: "/users" },
           { label: user.fullName },
@@ -192,11 +192,11 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             {canManage ? (
               <ProfilePhotoForm userId={user.id} hasPhoto={!!user.profilePhotoUrl} />
             ) : null}
-            <Row label="Employee ID" value={user.employeeId} />
             <Row label="Email" value={user.email} />
             <Row label="Phone" value={user.phone ?? "—"} />
             <Row label="Role" value={user.roleName ?? "—"} />
             <Row label="Account status" value={accountStatusLabel(user.displayStatus)} />
+            <Row label="Employee ID" value={user.employeeId} mono />
             <Row
               label="Last login"
               value={user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}
@@ -324,11 +324,19 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="flex justify-between gap-4 border-b border-border/60 py-1.5 last:border-0">
       <span className="text-muted">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <span className={`text-right font-medium ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
     </div>
   );
 }

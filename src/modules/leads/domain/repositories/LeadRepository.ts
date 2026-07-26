@@ -76,6 +76,12 @@ export interface ListLeadsFilter {
   fieldFilters?: Record<string, string>;
   /** Internal keys marked searchable — used to widen global/advanced search. */
   searchableCustomKeys?: string[];
+  /** Inclusive lower bound on nextActionAt (calendar deadline queries). */
+  nextActionFrom?: Date;
+  /** Inclusive upper bound on nextActionAt (calendar deadline queries). */
+  nextActionTo?: Date;
+  /** When true, only leads with a non-null nextActionAt are returned. */
+  hasNextAction?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -99,6 +105,14 @@ export interface LeadRepository {
     organizationId: string,
     filter?: Omit<ListLeadsFilter, "currentStageId">,
   ): Promise<{ stageId: string; count: number }[]>;
+  /**
+   * Hierarchy-aware source totals in one GROUP BY (CRM dashboard charts).
+   * `leadSourceId` on the filter is ignored.
+   */
+  countGroupedBySource(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "leadSourceId">,
+  ): Promise<{ sourceId: string; count: number }[]>;
   /**
    * Hierarchy-aware campaign totals in one GROUP BY (pipeline campaign picker).
    * `campaignId` on the filter is ignored.

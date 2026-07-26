@@ -5,7 +5,7 @@
 // and "Leads by Source" widgets.
 // ============================================================================
 
-import type { LeadRepository } from "../../domain/repositories/LeadRepository";
+import type { LeadRepository, ListLeadsFilter } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
 import { loadCatalogLookups } from "./catalogLookups";
 
@@ -26,9 +26,14 @@ export function makeGetLeadsByStage(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
 ) {
-  return async function getLeadsByStage(organizationId: string): Promise<LeadsByStageEntry[]> {
+  return async function getLeadsByStage(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "currentStageId">,
+  ): Promise<LeadsByStageEntry[]> {
     const [counts, catalogs] = await Promise.all([
-      repository.countByStage(organizationId),
+      filter
+        ? repository.countGroupedByStage(organizationId, filter)
+        : repository.countByStage(organizationId),
       loadCatalogLookups(catalogRepository, organizationId),
     ]);
 
@@ -48,9 +53,14 @@ export function makeGetLeadsBySource(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
 ) {
-  return async function getLeadsBySource(organizationId: string): Promise<LeadsBySourceEntry[]> {
+  return async function getLeadsBySource(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "leadSourceId">,
+  ): Promise<LeadsBySourceEntry[]> {
     const [counts, catalogs] = await Promise.all([
-      repository.countBySource(organizationId),
+      filter
+        ? repository.countGroupedBySource(organizationId, filter)
+        : repository.countBySource(organizationId),
       loadCatalogLookups(catalogRepository, organizationId),
     ]);
 

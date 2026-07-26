@@ -11,10 +11,10 @@ import { hasPermission } from "@/modules/rbac";
 import {
   FollowUpNotFoundError,
   FollowUpNotOpenError,
-  getFollowUp,
   updateFollowUp,
   updateFollowUpSchema,
 } from "@/modules/follow-ups";
+import { requireFollowUpAccess } from "@/shared/auth/requireFollowUpAccess";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,7 +31,10 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
   const { id } = await params;
   try {
-    const followUp = await getFollowUp(id);
+    const { followUp } = await requireFollowUpAccess(current.authContext, id, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
     return NextResponse.json({ data: followUp });
   } catch (error) {
     if (error instanceof FollowUpNotFoundError) {
@@ -61,6 +64,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
+    await requireFollowUpAccess(current.authContext, id, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
     const followUp = await updateFollowUp({
       id,
       input: parsed.data,

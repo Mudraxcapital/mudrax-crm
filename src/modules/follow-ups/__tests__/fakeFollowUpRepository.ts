@@ -40,11 +40,25 @@ export class FakeFollowUpRepository implements FollowUpRepository {
       (followUp) => followUp.organizationId === organizationId,
     );
     if (filter?.leadId) results = results.filter((followUp) => followUp.leadId === filter.leadId);
+    if (filter?.leadIds?.length) {
+      const allowed = new Set(filter.leadIds);
+      results = results.filter((followUp) => allowed.has(followUp.leadId));
+    }
     if (filter?.status) results = results.filter((followUp) => followUp.status === filter.status);
     if (filter?.assignedToUserIds) {
       results = results.filter((followUp) =>
         filter.assignedToUserIds!.includes(followUp.currentAssigneeUserId),
       );
+    }
+    if (filter?.scheduledFrom) {
+      results = results.filter((followUp) => followUp.scheduledFor >= filter.scheduledFrom!);
+    }
+    if (filter?.scheduledTo) {
+      results = results.filter((followUp) => followUp.scheduledFor <= filter.scheduledTo!);
+    }
+    const limit = filter?.limit;
+    if (typeof limit === "number") {
+      results = results.slice(filter?.offset ?? 0, (filter?.offset ?? 0) + limit);
     }
     return results;
   }

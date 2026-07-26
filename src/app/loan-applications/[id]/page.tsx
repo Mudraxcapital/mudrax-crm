@@ -2,14 +2,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { getCustomer } from "@/modules/customers";
 import {
-  getLoanApplication, LoanApplicationNotFoundError,
+  getLoanApplication,
+  LoanApplicationNotFoundError,
 } from "@/modules/loan-applications";
+import { getUser } from "@/modules/users";
 import { DecideApplicationForm } from "@/modules/loan-applications/presentation/components/DecideApplicationForm";
 import { decideLoanApplicationAction } from "@/modules/loan-applications/presentation/controllers/decideLoanApplication.action";
 import { SubmitApplicationButton } from "@/modules/loan-applications/presentation/components/SubmitApplicationButton";
+import { resolveDisplayName } from "@/shared/ui/displayName";
 
-export default async function LoanApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LoanApplicationDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const { authContext } = await requirePermission("loan_application.view");
   const canDecide = hasPermission(authContext, "loan_application.decide");
@@ -23,15 +31,27 @@ export default async function LoanApplicationDetailPage({ params }: { params: Pr
     throw error;
   }
 
+  const [customer, officer] = await Promise.all([
+    getCustomer(app.customerId).catch(() => null),
+    getUser(app.createdByUserId).catch(() => null),
+  ]);
+  const customerName = resolveDisplayName(customer?.fullName);
+  const officerName = resolveDisplayName(officer?.fullName);
+
   return (
     <div className="mx-page flex flex-col gap-6">
-      <Link href="/loan-applications" className="text-sm text-accent hover:underline underline-offset-4">← Applications</Link>
+      <Link
+        href="/loan-applications"
+        className="text-sm text-accent hover:underline underline-offset-4"
+      >
+        ← Applications
+      </Link>
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Application</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{customerName}</h1>
         <p className="text-muted mt-1 text-sm">
           {app.applicationStatusName} · {app.requestedAmount} · {app.requestedTenureMonths} months
         </p>
-        <p className="text-muted-foreground mt-1 font-mono text-xs">Officer: {app.createdByUserId}</p>
+        <p className="text-muted mt-1 text-sm">Officer: {officerName}</p>
       </div>
 
       <section className="mx-card p-5">
@@ -50,7 +70,9 @@ export default async function LoanApplicationDetailPage({ params }: { params: Pr
         <SubmitApplicationButton applicationId={app.id} />
       ) : null}
 
-      {canDecide && (app.applicationStatusBucket === "SUBMITTED" || app.applicationStatusBucket === "UNDER_BANK_REVIEW") ? (
+      {canDecide &&
+      (app.applicationStatusBucket === "SUBMITTED" ||
+        app.applicationStatusBucket === "UNDER_BANK_REVIEW") ? (
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Decision</h2>
           <div className="mt-4">

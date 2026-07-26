@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { listCustomers } from "@/modules/customers";
+import { listLeads } from "@/modules/leads";
 import { listLoanApplications } from "@/modules/loan-applications";
 import { listLoanProducts } from "@/modules/loan-products";
 import { LoanApplicationForm } from "@/modules/loan-applications/presentation/components/LoanApplicationForm";
 import { createLoanApplicationAction } from "@/modules/loan-applications/presentation/controllers/createLoanApplication.action";
+import { nameFromMap } from "@/shared/ui/displayName";
 
 export default async function LoanApplicationsPage() {
   const { authContext } = await requirePermission("loan_application.view");
   const canCreate = hasPermission(authContext, "loan_application.create");
-  const [apps, products] = await Promise.all([
+  const [apps, products, customers, leads] = await Promise.all([
     listLoanApplications(authContext.organizationId),
     listLoanProducts(authContext.organizationId, { status: "ACTIVE" }),
+    listCustomers(authContext.organizationId),
+    listLeads(authContext.organizationId),
   ]);
+  const customerNameById = new Map(customers.map((customer) => [customer.id, customer.fullName]));
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -28,6 +34,7 @@ export default async function LoanApplicationsPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-muted border-b border-border">
+              <th className="px-4 py-3 font-medium">Customer</th>
               <th className="px-4 py-3 font-medium">Amount</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Tenure</th>
@@ -36,9 +43,10 @@ export default async function LoanApplicationsPage() {
           </thead>
           <tbody>
             {apps.length === 0 ? (
-              <tr><td colSpan={4} className="text-muted px-4 py-6 text-center">No applications yet.</td></tr>
+              <tr><td colSpan={5} className="text-muted px-4 py-6 text-center">No applications yet.</td></tr>
             ) : apps.map((a) => (
               <tr key={a.id} className="border-b border-border last:border-0">
+                <td className="px-4 py-3 font-medium">{nameFromMap(customerNameById, a.customerId)}</td>
                 <td className="px-4 py-3">{a.requestedAmount}</td>
                 <td className="px-4 py-3">{a.applicationStatusName ?? a.applicationStatusBucket}</td>
                 <td className="px-4 py-3">{a.requestedTenureMonths}m</td>
@@ -54,7 +62,19 @@ export default async function LoanApplicationsPage() {
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Create Application</h2>
           <div className="mt-4">
-            <LoanApplicationForm action={createLoanApplicationAction} products={products} />
+            <LoanApplicationForm
+              action={createLoanApplicationAction}
+              products={products}
+              customers={customers.map((customer) => ({
+                id: customer.id,
+                fullName: customer.fullName,
+              }))}
+              leads={leads.map((lead) => ({
+                id: lead.id,
+                fullName: lead.fullNameSnapshot,
+                customerId: lead.customerId,
+              }))}
+            />
           </div>
         </section>
       ) : null}

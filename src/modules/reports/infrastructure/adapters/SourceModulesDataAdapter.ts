@@ -59,8 +59,8 @@ export class SourceModulesDataAdapter implements SourceDataPort {
     ] = await Promise.all([
       countCustomers(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
       countLeads(organizationId, leadScope),
-      getLeadsByStage(organizationId),
-      getLeadsBySource(organizationId),
+      getLeadsByStage(organizationId, leadScope),
+      getLeadsBySource(organizationId, leadScope),
       listCampaigns(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
       getTelephonyDashboard(organizationId),
       getDocumentsDashboard(organizationId),

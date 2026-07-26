@@ -184,7 +184,7 @@ export default async function LeadsPage({
           currentStageName: lead.currentStageName,
           assignedAgent: lead.currentAssigneeUserId
             ? (assignees.find((user) => user.id === lead.currentAssigneeUserId)?.fullName ??
-              lead.currentAssigneeUserId)
+              "Unknown")
             : "Unassigned",
           lastCallAt: null,
           nextActionAt: lead.nextActionAt,

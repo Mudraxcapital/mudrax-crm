@@ -50,8 +50,19 @@ export function makeMergeCustomers(repository: CustomerRepository) {
           `Duplicate Candidate ${input.duplicateCandidateId} was not found.`,
         );
       }
+      const pair = new Set([candidate.customerAId, candidate.customerBId]);
+      if (
+        !pair.has(input.survivingCustomerId) ||
+        !pair.has(input.mergedAwayCustomerId)
+      ) {
+        throw new CustomerMergeError(
+          "Merge customers must match the duplicate candidate pair.",
+        );
+      }
     }
 
+    // All related Customer FK repoints (Leads, Loans, Documents, Calls,
+    // Notifications, …) run inside repository.mergeWithAudit's transaction.
     const result = await repository.mergeWithAudit(
       {
         survivingCustomerId: input.survivingCustomerId,

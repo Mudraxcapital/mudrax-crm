@@ -344,6 +344,8 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
       const beforeSurvivor = toCustomer(survivorRow);
       const beforeMergedAway = toCustomer(mergedAwayRow);
+      const fromId = data.mergedAwayCustomerId;
+      const toId = data.survivingCustomerId;
 
       for (const identifier of mergedAwayRow.identifiers) {
         if (identifier.status !== "ACTIVE") continue;
@@ -363,22 +365,166 @@ export class PrismaCustomerRepository implements CustomerRepository {
         }
         await tx.customerIdentifier.update({
           where: { id: identifier.id },
-          data: { customerId: data.survivingCustomerId },
+          data: { customerId: toId },
         });
       }
 
+      // Repoint every module-owned Customer FK inside this same transaction so
+      // merge never leaves orphan historical references (customers.md).
+      await tx.lead.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: toId },
+      });
+      await tx.loanApplication.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: toId },
+      });
+      await tx.eligibilitySnapshot.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: toId },
+      });
+      await tx.loanAccount.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: toId },
+      });
+      await tx.callAttempt.updateMany({
+        where: { customerId: fromId },
+        data: { customerId: toId },
+      });
+      await tx.notification.updateMany({
+        where: { recipientType: "CUSTOMER", recipientId: fromId },
+        data: { recipientId: toId },
+      });
+
+      // Co-applicant unique(loanApplicationId, customerId) — drop conflicts, then move.
+      const mergedCoApplicants = await tx.coApplicant.findMany({ where: { customerId: fromId } });
+      for (const row of mergedCoApplicants) {
+        const conflict = await tx.coApplicant.findUnique({
+          where: {
+            loanApplicationId_customerId: {
+              loanApplicationId: row.loanApplicationId,
+              customerId: toId,
+            },
+          },
+        });
+        if (conflict) {
+          await tx.coApplicant.delete({ where: { id: row.id } });
+        } else {
+          await tx.coApplicant.update({
+            where: { id: row.id },
+            data: { customerId: toId },
+          });
+        }
+      }
+
+      // Polymorphic document owners (unique checklist ownerType+ownerId).
+      await tx.document.updateMany({
+        where: { ownerType: "CUSTOMER", ownerId: fromId },
+        data: { ownerId: toId },
+      });
+      const mergedChecklists = await tx.documentChecklist.findMany({
+        where: { ownerType: "CUSTOMER", ownerId: fromId },
+      });
+      for (const checklist of mergedChecklists) {
+        const survivorChecklist = await tx.documentChecklist.findUnique({
+          where: { ownerType_ownerId: { ownerType: "CUSTOMER", ownerId: toId } },
+        });
+        if (survivorChecklist) {
+          const items = await tx.checklistItem.findMany({
+            where: { documentChecklistId: checklist.id },
+          });
+          for (const item of items) {
+            const conflict = await tx.checklistItem.findUnique({
+              where: {
+                documentChecklistId_documentTypeId: {
+                  documentChecklistId: survivorChecklist.id,
+                  documentTypeId: item.documentTypeId,
+                },
+              },
+            });
+            if (conflict) {
+              await tx.checklistItem.delete({ where: { id: item.id } });
+            } else {
+              await tx.checklistItem.update({
+                where: { id: item.id },
+                data: { documentChecklistId: survivorChecklist.id },
+              });
+            }
+          }
+          await tx.documentBundle.updateMany({
+            where: { documentChecklistId: checklist.id },
+            data: { documentChecklistId: survivorChecklist.id },
+          });
+          await tx.documentChecklist.delete({ where: { id: checklist.id } });
+        } else {
+          await tx.documentChecklist.update({
+            where: { id: checklist.id },
+            data: { ownerId: toId },
+          });
+        }
+      }
+      await tx.documentBundle.updateMany({
+        where: { ownerType: "CUSTOMER", ownerId: fromId },
+        data: { ownerId: toId },
+      });
+
+      // Preference / subscription uniques — keep survivor rows on conflict.
+      const mergedPrefs = await tx.notificationPreference.findMany({
+        where: { recipientType: "CUSTOMER", recipientId: fromId },
+      });
+      for (const pref of mergedPrefs) {
+        const conflict = await tx.notificationPreference.findFirst({
+          where: {
+            recipientType: "CUSTOMER",
+            recipientId: toId,
+            eventCategory: pref.eventCategory,
+            channelType: pref.channelType,
+          },
+        });
+        if (conflict) {
+          await tx.notificationPreference.delete({ where: { id: pref.id } });
+        } else {
+          await tx.notificationPreference.update({
+            where: { id: pref.id },
+            data: { recipientId: toId },
+          });
+        }
+      }
+      const mergedSubs = await tx.notificationSubscription.findMany({
+        where: { recipientType: "CUSTOMER", recipientId: fromId },
+      });
+      for (const sub of mergedSubs) {
+        const conflict = await tx.notificationSubscription.findUnique({
+          where: {
+            recipientType_recipientId_topic: {
+              recipientType: "CUSTOMER",
+              recipientId: toId,
+              topic: sub.topic,
+            },
+          },
+        });
+        if (conflict) {
+          await tx.notificationSubscription.delete({ where: { id: sub.id } });
+        } else {
+          await tx.notificationSubscription.update({
+            where: { id: sub.id },
+            data: { recipientId: toId },
+          });
+        }
+      }
+
       await tx.customer.update({
-        where: { id: data.mergedAwayCustomerId },
+        where: { id: fromId },
         data: {
           status: "MERGED",
-          mergedIntoCustomerId: data.survivingCustomerId,
+          mergedIntoCustomerId: toId,
         },
       });
 
       const mergeRow = await tx.customerMerge.create({
         data: {
-          survivingCustomerId: data.survivingCustomerId,
-          mergedAwayCustomerId: data.mergedAwayCustomerId,
+          survivingCustomerId: toId,
+          mergedAwayCustomerId: fromId,
           duplicateCandidateId: data.duplicateCandidateId ?? null,
           mergedByUserId: data.mergedByUserId,
           reason: data.reason ?? null,
@@ -397,7 +543,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
       }
 
       const survivorAfter = await tx.customer.findUniqueOrThrow({
-        where: { id: data.survivingCustomerId },
+        where: { id: toId },
         include: { identifiers: { orderBy: { createdAt: "asc" } } },
       });
       const survivor = toCustomer(survivorAfter);
@@ -410,14 +556,14 @@ export class PrismaCustomerRepository implements CustomerRepository {
           action: "CustomerMerged",
           targetType: TARGET_TYPE_CUSTOMER,
           targetId: survivor.id,
-          correlationId: correlationId ?? data.mergedAwayCustomerId,
+          correlationId: correlationId ?? fromId,
           beforeState: {
             survivor: toAuditJson(beforeSurvivor),
             mergedAway: toAuditJson(beforeMergedAway),
           },
           afterState: {
             survivor: toAuditJson(survivor),
-            mergedAwayCustomerId: data.mergedAwayCustomerId,
+            mergedAwayCustomerId: fromId,
             mergeId: mergeRow.id,
           },
           recordHash: PLACEHOLDER_RECORD_HASH,

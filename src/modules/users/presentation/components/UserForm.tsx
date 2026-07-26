@@ -133,7 +133,7 @@ export function UserForm({
             <option value="">Select manager…</option>
             {managers.map((manager) => (
               <option key={manager.id} value={manager.id}>
-                {manager.fullName} ({manager.employeeId})
+                {manager.fullName}
               </option>
             ))}
           </select>

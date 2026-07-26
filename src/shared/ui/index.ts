@@ -34,4 +34,6 @@ export { BarList, RingStat } from "./Charts";
 export { DataTable } from "./DataTable";
 export type { DataColumn, DataTableProps } from "./DataTable";
 export { EmployeeLink } from "./EmployeeLink";
+export { SecondaryId } from "./SecondaryId";
+export { looksLikeUuid, nameFromMap, resolveDisplayName } from "./displayName";
 export { ThemeProvider, ThemeToggle, useTheme } from "./ThemeProvider";

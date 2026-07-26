@@ -6,6 +6,7 @@ import { listLeads } from "@/modules/leads";
 import { listDocuments, listDocumentTypes } from "@/modules/documents";
 import { UploadDocumentForm } from "@/modules/documents/presentation/components/UploadDocumentForm";
 import { uploadDocumentAction } from "@/modules/documents/presentation/controllers/uploadDocument.action";
+import { nameFromMap } from "@/shared/ui/displayName";
 
 export default async function DocumentsLibraryPage() {
   const { authContext } = await requirePermission("document.view");
@@ -16,6 +17,10 @@ export default async function DocumentsLibraryPage() {
     listDocumentTypes(authContext.organizationId),
     listCustomers(authContext.organizationId),
     listLeads(authContext.organizationId),
+  ]);
+  const ownerNameById = new Map<string, string>([
+    ...customers.map((customer) => [customer.id, customer.fullName] as const),
+    ...leads.map((lead) => [lead.id, lead.fullNameSnapshot] as const),
   ]);
 
   return (
@@ -57,8 +62,12 @@ export default async function DocumentsLibraryPage() {
                 >
                   <td className="px-4 py-3">{document.documentTypeName ?? "—"}</td>
                   <td className="px-4 py-3">
-                    {document.ownerType} ·{" "}
-                    <span className="font-mono text-xs">{document.ownerId.slice(0, 8)}…</span>
+                    <span className="font-medium">
+                      {nameFromMap(ownerNameById, document.ownerId)}
+                    </span>
+                    <span className="text-muted ml-1 text-xs">
+                      ({document.ownerType === "CUSTOMER" ? "Customer" : "Lead"})
+                    </span>
                   </td>
                   <td className="px-4 py-3">{document.status}</td>
                   <td className="px-4 py-3">{document.latestVerificationStatus ?? "—"}</td>

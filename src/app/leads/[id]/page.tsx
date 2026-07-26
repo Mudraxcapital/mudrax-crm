@@ -29,6 +29,8 @@ import { ReassignFollowUpForm } from "@/modules/follow-ups/presentation/componen
 import { createFollowUpAction } from "@/modules/follow-ups/presentation/controllers/createFollowUp.action";
 import { completeFollowUpAction } from "@/modules/follow-ups/presentation/controllers/completeFollowUp.action";
 import { reassignFollowUpAction } from "@/modules/follow-ups/presentation/controllers/reassignFollowUp.action";
+import { getCustomer } from "@/modules/customers";
+import { nameFromMap, resolveDisplayName } from "@/shared/ui/displayName";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { session, authContext } = await requirePermission("lead.view");
@@ -57,17 +59,27 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  const [stages, lostReasons, assigneesRaw, assignments, notes, auditLog, followUps, fields] =
-    await Promise.all([
-      leadCatalogs.listStages(authContext.organizationId),
-      leadCatalogs.listLostReasons(authContext.organizationId),
-      listUserSummaries(authContext.organizationId),
-      listLeadAssignmentHistory(id),
-      listLeadNotes(id),
-      listLeadAuditLog(id),
-      listFollowUpsByLead(id),
-      listActiveLeadFields(authContext.organizationId),
-    ]);
+  const [
+    stages,
+    lostReasons,
+    assigneesRaw,
+    assignments,
+    notes,
+    auditLog,
+    followUps,
+    fields,
+    customer,
+  ] = await Promise.all([
+    leadCatalogs.listStages(authContext.organizationId),
+    leadCatalogs.listLostReasons(authContext.organizationId),
+    listUserSummaries(authContext.organizationId),
+    listLeadAssignmentHistory(id),
+    listLeadNotes(id),
+    listLeadAuditLog(id),
+    listFollowUpsByLead(id),
+    listActiveLeadFields(authContext.organizationId),
+    getCustomer(lead.customerId).catch(() => null),
+  ]);
 
   const fieldValues: Record<string, string | undefined> = {
     full_name: lead.fullNameSnapshot,
@@ -89,7 +101,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     ? assigneesRaw.filter((user) => visibleIds.includes(user.id))
     : assigneesRaw;
   const assigneeOptions = assignees.map((user) => ({ id: user.id, fullName: user.fullName }));
-  const assigneeNameById = new Map(assigneeOptions.map((user) => [user.id, user.fullName]));
+  const assigneeNameById = new Map(
+    assigneesRaw.map((user) => [user.id, user.fullName] as const),
+  );
+  const customerName = resolveDisplayName(customer?.fullName, null, "Customer");
 
   const boundChangeStage = changeLeadStageAction.bind(null, id);
   const boundAssign = assignLeadAction.bind(null, id);
@@ -142,16 +157,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <dt className="text-muted">Current assignee</dt>
           <dd>
             {lead.currentAssigneeUserId
-              ? (assigneeNameById.get(lead.currentAssigneeUserId) ?? lead.currentAssigneeUserId)
+              ? nameFromMap(assigneeNameById, lead.currentAssigneeUserId, "Unassigned")
               : "Unassigned"}
+          </dd>
+          <dt className="text-muted">Customer</dt>
+          <dd>
+            <Link
+              href={`/customers/${lead.customerId}`}
+              className="text-accent hover:underline underline-offset-4"
+            >
+              {customerName}
+            </Link>
           </dd>
           <dt className="text-muted">Lost reason</dt>
           <dd>{lead.lostReasonName ?? "—"}</dd>
-          <dt className="text-muted">
-            <Link href={`/customers/${lead.customerId}`} className="text-accent hover:underline underline-offset-4">
-              View Customer
-            </Link>
-          </dt>
         </dl>
       </section>
 
@@ -190,8 +209,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 assignments.map((assignment) => (
                   <li key={assignment.id} className="flex justify-between">
                     <span>
-                      {assigneeNameById.get(assignment.assignedToUserId) ??
-                        assignment.assignedToUserId}{" "}
+                      {nameFromMap(assigneeNameById, assignment.assignedToUserId)}{" "}
                       <span className="text-muted">({assignment.assignmentType})</span>
                     </span>
                     <span className="text-muted">
@@ -270,8 +288,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                     </div>
                     <p className="text-muted mt-1 text-xs">
                       Assigned to{" "}
-                      {assigneeNameById.get(followUp.currentAssigneeUserId) ??
-                        followUp.currentAssigneeUserId}
+                      {nameFromMap(assigneeNameById, followUp.currentAssigneeUserId)}
                     </p>
                     {followUp.outcomeNotes ? (
                       <p className="mt-1 text-sm">{followUp.outcomeNotes}</p>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { listBanks } from "@/modules/banks";
+import { listCustomers } from "@/modules/customers";
+import { listLeads } from "@/modules/leads";
 import { listLoanProducts } from "@/modules/loan-products";
 import { OfferWorkspace } from "@/modules/loan-applications/presentation/components/OfferWorkspace";
 
@@ -9,9 +11,11 @@ export default async function LoanOffersPage() {
   const { authContext } = await requirePermission("loan_offer.manage");
   const canManage = hasPermission(authContext, "loan_offer.manage");
   const canEligibility = hasPermission(authContext, "eligibility.compute");
-  const [banks, products] = await Promise.all([
+  const [banks, products, customers, leads] = await Promise.all([
     listBanks(authContext.organizationId, { status: "ACTIVE" }),
     listLoanProducts(authContext.organizationId, { status: "ACTIVE" }),
+    listCustomers(authContext.organizationId),
+    listLeads(authContext.organizationId),
   ]);
 
   return (
@@ -24,7 +28,20 @@ export default async function LoanOffersPage() {
         </p>
       </div>
       {(canManage || canEligibility) ? (
-        <OfferWorkspace banks={banks} products={products} canEligibility={canEligibility} canManage={canManage} />
+        <OfferWorkspace
+          banks={banks}
+          products={products}
+          customers={customers.map((customer) => ({
+            id: customer.id,
+            fullName: customer.fullName,
+          }))}
+          leads={leads.map((lead) => ({
+            id: lead.id,
+            fullName: lead.fullNameSnapshot,
+          }))}
+          canEligibility={canEligibility}
+          canManage={canManage}
+        />
       ) : null}
     </div>
   );

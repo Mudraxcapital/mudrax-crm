@@ -11,6 +11,7 @@ import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
 import { BarList } from "@/shared/ui/Charts";
 import { Button } from "@/shared/ui/Button";
+import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 const QUICK_LINKS = [
   { href: "/customers", label: "Customers", desc: "Identity records", perm: "customer.view" },
@@ -64,12 +65,14 @@ export default async function Home({
   const canCustomers = hasPermission(authContext, "customer.view");
   const canLeads = hasPermission(authContext, "lead.view");
   const canCampaigns = hasPermission(authContext, "campaign.view");
+  const book = managerBookFilter(authContext);
+  const leadFilter = leadHierarchyFilter(authContext);
 
   const [totalCustomers, totalLeads, leadsByStage, campaigns] = await Promise.all([
-    canCustomers ? countCustomers(authContext.organizationId) : Promise.resolve(0),
-    canLeads ? countLeads(authContext.organizationId) : Promise.resolve(0),
-    canLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
-    canCampaigns ? listCampaigns(authContext.organizationId) : Promise.resolve([]),
+    canCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
+    canLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
+    canLeads ? getLeadsByStage(authContext.organizationId, leadFilter) : Promise.resolve([]),
+    canCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
   ]);
 
   const activeCampaigns = campaigns.filter((c) => c.status === "ACTIVE").length;

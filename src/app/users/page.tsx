@@ -61,7 +61,7 @@ export default async function UsersPage() {
               <CreatePanel
                 triggerLabel="Add employee"
                 title="Add employee"
-                description="Employee ID is assigned automatically. Team Leads need a Manager; Callers need a Team Lead, or Admin may assign Direct Admin (freelancer)."
+                description="Team Leads need a Manager; Callers need a Team Lead, or Admin may assign Direct Admin (freelancer). An employee ID is generated automatically for support use."
                 width="lg"
               >
                 <UserForm

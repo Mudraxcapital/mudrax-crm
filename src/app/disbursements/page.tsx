@@ -1,18 +1,28 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { listCustomers } from "@/modules/customers";
 import { listDisbursements, listCommissions } from "@/modules/disbursements";
+import { listLoanApplications } from "@/modules/loan-applications";
 import { RecordDisbursementForm } from "@/modules/disbursements/presentation/components/RecordDisbursementForm";
 import { recordDisbursementAction } from "@/modules/disbursements/presentation/controllers/recordDisbursement.action";
+import { nameFromMap } from "@/shared/ui/displayName";
 
 export default async function DisbursementsPage() {
   const { authContext } = await requirePermission("disbursement.view");
   const canRecord = hasPermission(authContext, "disbursement.record");
   const canCommission = hasPermission(authContext, "commission.view");
-  const [disbursements, commissions] = await Promise.all([
+  const [disbursements, commissions, applications, customers] = await Promise.all([
     listDisbursements(authContext.organizationId),
     canCommission ? listCommissions(authContext.organizationId) : Promise.resolve([]),
+    canRecord ? listLoanApplications(authContext.organizationId) : Promise.resolve([]),
+    canRecord ? listCustomers(authContext.organizationId) : Promise.resolve([]),
   ]);
+  const customerNameById = new Map(customers.map((customer) => [customer.id, customer.fullName]));
+  const applicationOptions = applications.map((app) => ({
+    id: app.id,
+    label: `${nameFromMap(customerNameById, app.customerId)} · ${app.requestedAmount} · ${app.applicationStatusName ?? app.applicationStatusBucket ?? "Application"}`,
+  }));
 
   return (
     <div className="mx-page flex flex-col gap-6">
@@ -65,7 +75,12 @@ export default async function DisbursementsPage() {
       {canRecord ? (
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Record Disbursement</h2>
-          <div className="mt-4"><RecordDisbursementForm action={recordDisbursementAction} /></div>
+          <div className="mt-4">
+            <RecordDisbursementForm
+              action={recordDisbursementAction}
+              applications={applicationOptions}
+            />
+          </div>
         </section>
       ) : null}
     </div>

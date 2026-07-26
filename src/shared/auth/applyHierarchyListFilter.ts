@@ -81,6 +81,38 @@ export function agentHierarchyFilter(authContext: AuthorizationContext): {
   return {};
 }
 
+/**
+ * Follow-up list filter — single source of truth for `/follow-ups`, Calendar,
+ * and `/api/follow-ups`. Follow-ups have no ownerManagerId column; visibility
+ * is enforced via current assignee against hierarchy + permission Data Scope.
+ */
+export function followUpListFilter(
+  authContext: AuthorizationContext,
+  options?: {
+    permissionCode?: string;
+    actorUserId?: string;
+  },
+): { assignedToUserIds?: string[] } {
+  const permissionCode = options?.permissionCode ?? "follow_up.view";
+  const scope = getPermissionScope(authContext, permissionCode);
+  const actorUserId = options?.actorUserId ?? authContext.userId;
+  const hierarchy = authContext.hierarchy;
+
+  if (scope === "SELF" || hierarchy.primaryRole === "Caller") {
+    return { assignedToUserIds: [actorUserId] };
+  }
+
+  if (hierarchy.unrestricted || hierarchy.primaryRole === "Admin") {
+    return {};
+  }
+
+  if (hierarchy.visibleUserIds?.length) {
+    return { assignedToUserIds: hierarchy.visibleUserIds };
+  }
+
+  return {};
+}
+
 /** Report / analytics filter fragment from hierarchy. */
 export function reportHierarchyFilter(authContext: AuthorizationContext): {
   ownerManagerId?: string | null;

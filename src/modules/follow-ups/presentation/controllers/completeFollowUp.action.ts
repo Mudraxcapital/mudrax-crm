@@ -64,5 +64,6 @@ export async function completeFollowUpAction(
 
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/follow-ups");
+  revalidatePath("/calendar");
   return {};
 }
