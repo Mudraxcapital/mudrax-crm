@@ -11,8 +11,11 @@ import {
   assignLead,
   assignLeadSchema,
   InvalidAssigneeReferenceError,
-  LeadNotFoundError,
 } from "@/modules/leads";
+import {
+  LeadAccessDeniedError,
+  requireAccessibleLead,
+} from "@/modules/leads/presentation/controllers/requireLeadAccess";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -38,6 +41,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   try {
+    await requireAccessibleLead(current.authContext, id, {
+      permissionCode: "lead.reassign",
+      actorUserId: current.session.user.id,
+    });
     const lead = await assignLead({
       id,
       input: parsed.data,
@@ -45,8 +52,8 @@ export async function POST(request: Request, { params }: RouteParams) {
     });
     return NextResponse.json({ data: lead });
   } catch (error) {
-    if (error instanceof LeadNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof LeadAccessDeniedError) {
+      return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     if (error instanceof InvalidAssigneeReferenceError) {
       return NextResponse.json({ error: error.message }, { status: 422 });

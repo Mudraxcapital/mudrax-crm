@@ -18,6 +18,7 @@ import { makeAssignLead } from "./application/use-cases/assignLead";
 import {
   makeCountLeads,
   makeGetLead,
+  makeGetLeadsByIds,
   makeListLeads,
   makeListLeadsByCustomer,
 } from "./application/use-cases/getLead";
@@ -256,7 +257,12 @@ export const updateLead = makeUpdateLead(leadRepository, leadCatalogRepository, 
 export const changeLeadStage = makeChangeLeadStage(leadRepository, leadCatalogRepository);
 export const assignLead = makeAssignLead(leadRepository, leadCatalogRepository, userLookup);
 export const getLead = makeGetLead(leadRepository, leadCatalogRepository, leadFieldRepository);
+export const getLeadsByIds = makeGetLeadsByIds(leadRepository, leadCatalogRepository);
 export const listLeads = makeListLeads(leadRepository, leadCatalogRepository, leadFieldRepository);
+export const countLeadsByCampaign = (
+  organizationId: string,
+  filter?: Omit<import("./domain/repositories/LeadRepository").ListLeadsFilter, "campaignId">,
+) => leadRepository.countGroupedByCampaign(organizationId, filter);
 export const listLeadsByCustomer = makeListLeadsByCustomer(
   leadRepository,
   leadCatalogRepository,

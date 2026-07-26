@@ -30,9 +30,17 @@ import {
   type DuplicateDetectionSummary,
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
-import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import {
+  managerBookFilter,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
 import { resolveImportOwnership } from "@/shared/auth/resolveImportOwnership";
 import { requireOwnerManagerId } from "@/modules/rbac";
+import {
+  LeadAccessDeniedError,
+  requireAccessibleLead,
+  requireAccessibleLeads,
+} from "./requireLeadAccess";
 
 export type ProductivityFormState = {
   error?: string;
@@ -94,6 +102,7 @@ export async function createSavedViewAction(
       currentStageId: optional(formData.get("currentStageId")),
       leadSourceId: optional(formData.get("leadSourceId")),
       assignedToUserId: optional(formData.get("assignedToUserId")),
+      campaignId: optional(formData.get("campaignId")),
     },
   });
   if (!parsed.success) {
@@ -115,60 +124,6 @@ export async function deleteSavedViewAction(id: string): Promise<void> {
     throw error;
   }
   revalidatePath("/leads");
-}
-
-export async function importLeadsCsvAction(
-  _prev: ProductivityFormState | undefined,
-  formData: FormData,
-): Promise<ProductivityFormState> {
-  const { session, authContext } = await requirePermission("lead.import");
-  const parsed = importLeadsCsvSchema.safeParse({
-    leadSourceId: formData.get("leadSourceId"),
-    campaignId: formData.get("campaignId") || undefined,
-    sourceFileName: formData.get("sourceFileName") || "leads.csv",
-    csvText: formData.get("csvText"),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
-  }
-  try {
-    const ownership = await resolveImportOwnership({
-      authContext,
-      campaignId: parsed.data.campaignId,
-    });
-    const batch = await importLeadsCsv({
-      organizationId: authContext.organizationId,
-      input: parsed.data,
-      actor: { actorType: "USER", actorId: session.user.id },
-      ownerManagerId: ownership.ownerManagerId,
-      ownerTeamLeadId: ownership.ownerTeamLeadId,
-    });
-    revalidatePath("/leads");
-    revalidatePath("/leads/import");
-    return {
-      success: `Added ${batch.createdRowCount} Lead(s) from Excel; ${batch.duplicateRowCount} duplicate match(es).`,
-      summary: {
-        created: batch.createdRowCount,
-        duplicates: batch.duplicateRowCount,
-        skipped: batch.skippedDuplicateCount,
-        invalid: batch.skippedInvalidCount,
-        updated: batch.updatedCount,
-        replaced: batch.replacedCount,
-        archived: batch.archivedCount,
-        failed: batch.failedCount,
-        total: batch.totalRowCount,
-        campaignId: batch.campaignId,
-        assignedAgentIds: batch.assignedAgentIds,
-        distributionStrategy: batch.distributionStrategy,
-        auditNotes: batch.auditNotes,
-        sampleErrors: batch.errors.slice(0, 8),
-        newFieldsCreated: [],
-        failedCsv: buildFailedRowsCsv(batch.errors),
-      },
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Add from Excel failed." };
-  }
 }
 
 export async function importLeadsFileAction(input: {
@@ -332,6 +287,10 @@ export async function importLeadsFileAction(input: {
       campaignNameToId,
       ownerManagerId: ownership.ownerManagerId,
       ownerTeamLeadId: ownership.ownerTeamLeadId,
+      existingLeadsFilter: visibleLeadsFilter(authContext, {
+        permissionCode: "lead.import",
+        actorUserId: session.user.id,
+      }),
     });
     revalidatePath("/leads");
     revalidatePath("/leads/import");
@@ -391,6 +350,10 @@ export async function previewImportDuplicatesAction(input: {
     rows: parsed.data.rows,
     columnMapping: parsed.data.columnMapping,
     matchMode: parsed.data.matchMode,
+    existingLeadsFilter: visibleLeadsFilter(authContext, {
+      permissionCode: "lead.import",
+      actorUserId: authContext.userId,
+    }),
   });
   return { summary, reportCsv: buildDuplicateReportCsv(summary) };
 }
@@ -485,6 +448,10 @@ export async function bulkAssignLeadsAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
   try {
+    await requireAccessibleLeads(authContext, parsed.data.leadIds, {
+      permissionCode: "lead.reassign",
+      actorUserId: session.user.id,
+    });
     const result = await bulkAssignLeads({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -496,7 +463,9 @@ export async function bulkAssignLeadsAction(
       success: `Assigned ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
     };
   } catch (error) {
-    if (error instanceof BulkOperationError) return { error: error.message };
+    if (error instanceof BulkOperationError || error instanceof LeadAccessDeniedError) {
+      return { error: error.message };
+    }
     throw error;
   }
 }
@@ -515,16 +484,27 @@ export async function bulkChangeLeadStageAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const result = await bulkChangeLeadStage({
-    organizationId: authContext.organizationId,
-    input: parsed.data,
-    actor: { actorType: "USER", actorId: session.user.id },
-  });
-  revalidatePath("/leads");
-  revalidatePath("/leads/pipeline");
-  return {
-    success: `Updated ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
-  };
+  try {
+    await requireAccessibleLeads(authContext, parsed.data.leadIds, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
+    const result = await bulkChangeLeadStage({
+      organizationId: authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return {
+      success: `Updated ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
+    };
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }
 
 export async function bulkCloseLeadsAction(
@@ -540,16 +520,27 @@ export async function bulkCloseLeadsAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
-  const result = await bulkCloseLeads({
-    organizationId: authContext.organizationId,
-    input: parsed.data,
-    actor: { actorType: "USER", actorId: session.user.id },
-  });
-  revalidatePath("/leads");
-  revalidatePath("/leads/pipeline");
-  return {
-    success: `Closed ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
-  };
+  try {
+    await requireAccessibleLeads(authContext, parsed.data.leadIds, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
+    const result = await bulkCloseLeads({
+      organizationId: authContext.organizationId,
+      input: parsed.data,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    return {
+      success: `Closed ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
+    };
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError || error instanceof BulkOperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }
 
 export async function mergeLeadsAction(
@@ -566,6 +557,14 @@ export async function mergeLeadsAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
   try {
+    await requireAccessibleLeads(
+      authContext,
+      [parsed.data.survivingLeadId, parsed.data.mergedAwayLeadId],
+      {
+        permissionCode: "lead.update",
+        actorUserId: session.user.id,
+      },
+    );
     await mergeLeads({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -575,7 +574,8 @@ export async function mergeLeadsAction(
     if (
       error instanceof LeadMergeError ||
       error instanceof LeadNotFoundError ||
-      error instanceof SavedViewNotFoundError
+      error instanceof SavedViewNotFoundError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };
     }
@@ -592,6 +592,17 @@ export async function changeLeadStageKanbanAction(input: {
   lostReasonId?: string;
 }): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.update");
+  try {
+    await requireAccessibleLead(authContext, input.leadId, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
   const result = await bulkChangeLeadStage({
     organizationId: authContext.organizationId,
     input: {

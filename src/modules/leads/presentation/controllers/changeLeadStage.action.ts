@@ -19,13 +19,14 @@ import {
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
 import type { LeadFormState } from "./createLead.action";
+import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
 
 export async function changeLeadStageAction(
   id: string,
   _previousState: LeadFormState | undefined,
   formData: FormData,
 ): Promise<LeadFormState> {
-  const { session } = await requirePermission("lead.update");
+  const { session, authContext } = await requirePermission("lead.update");
 
   const parsed = changeLeadStageSchema.safeParse({
     stageId: formData.get("stageId"),
@@ -37,6 +38,10 @@ export async function changeLeadStageAction(
   }
 
   try {
+    await requireAccessibleLead(authContext, id, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
     await changeLeadStage({
       id,
       input: parsed.data,
@@ -48,7 +53,8 @@ export async function changeLeadStageAction(
       error instanceof InvalidLeadStageReferenceError ||
       error instanceof InvalidLostReasonReferenceError ||
       error instanceof LeadAlreadyClosedError ||
-      error instanceof LostReasonRequiredError
+      error instanceof LostReasonRequiredError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };
     }

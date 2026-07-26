@@ -6,6 +6,7 @@
 // Drag-and-drop Lead Pipeline board (HTML5 DnD — no extra dependency).
 // ============================================================================
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { KanbanColumn } from "@/modules/leads";
@@ -24,22 +25,18 @@ export function LeadKanbanBoard({
   const [error, setError] = useState<string | null>(null);
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
+  const [pendingLostDrop, setPendingLostDrop] = useState<{
+    leadId: string;
+    stageId: string;
+  } | null>(null);
+  const [lostReasonId, setLostReasonId] = useState("");
 
-  function onDrop(stageId: string, closeOutcome: string | null) {
-    if (!draggingLeadId) return;
-    let lostReasonId: string | undefined;
-    if (closeOutcome === "LOST") {
-      lostReasonId = lostReasons[0]?.id;
-      if (!lostReasonId) {
-        setError("Configure a Lost Reason before moving Leads to Closed-Lost.");
-        return;
-      }
-    }
+  function commitStageChange(leadId: string, stageId: string, reasonId?: string) {
     startTransition(async () => {
       const result = await changeLeadStageKanbanAction({
-        leadId: draggingLeadId,
+        leadId,
         stageId,
-        lostReasonId,
+        lostReasonId: reasonId,
       });
       if (result.error) {
         setError(result.error);
@@ -49,7 +46,27 @@ export function LeadKanbanBoard({
       }
       setDraggingLeadId(null);
       setOverStageId(null);
+      setPendingLostDrop(null);
+      setLostReasonId("");
     });
+  }
+
+  function onDrop(stageId: string, closeOutcome: string | null) {
+    if (!draggingLeadId) return;
+    if (closeOutcome === "LOST") {
+      if (lostReasons.length === 0) {
+        setError("Configure a Lost Reason before moving Leads to Closed-Lost.");
+        setDraggingLeadId(null);
+        setOverStageId(null);
+        return;
+      }
+      // Require explicit Lost Reason — never silently default.
+      setPendingLostDrop({ leadId: draggingLeadId, stageId });
+      setLostReasonId("");
+      setError(null);
+      return;
+    }
+    commitStageChange(draggingLeadId, stageId);
   }
 
   return (
@@ -60,6 +77,65 @@ export function LeadKanbanBoard({
         </p>
       ) : null}
       {pending ? <p className="text-muted text-xs">Updating stage…</p> : null}
+
+      {pendingLostDrop ? (
+        <div
+          role="dialog"
+          aria-labelledby="kanban-lost-reason-title"
+          className="mx-card border-accent/30 flex flex-col gap-3 border p-4"
+        >
+          <h3 id="kanban-lost-reason-title" className="text-sm font-medium">
+            Select a Lost Reason
+          </h3>
+          <p className="text-muted text-xs">
+            Closed-Lost requires a Lost Reason — same as the Lead detail workflow.
+          </p>
+          <select
+            className="mx-input"
+            value={lostReasonId}
+            onChange={(event) => setLostReasonId(event.target.value)}
+            aria-label="Lost reason"
+          >
+            <option value="">— Select a reason —</option>
+            {lostReasons.map((reason) => (
+              <option key={reason.id} value={reason.id}>
+                {reason.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="bg-foreground text-background rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60"
+              disabled={!lostReasonId || pending}
+              onClick={() => {
+                if (!lostReasonId || !pendingLostDrop) return;
+                commitStageChange(
+                  pendingLostDrop.leadId,
+                  pendingLostDrop.stageId,
+                  lostReasonId,
+                );
+              }}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-border px-4 py-2 text-sm"
+              disabled={pending}
+              onClick={() => {
+                setPendingLostDrop(null);
+                setLostReasonId("");
+                setDraggingLeadId(null);
+                setOverStageId(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-scroll flex gap-3 overflow-x-auto pb-2">
         {columns.map((column) => (
           <section
@@ -83,6 +159,12 @@ export function LeadKanbanBoard({
                 </span>
               </div>
               <p className="text-muted-foreground mt-0.5 text-xs">{column.bucket}</p>
+              {column.totalCount > column.leads.length ? (
+                <p className="text-muted mt-1 text-[11px]">
+                  Showing {column.leads.length.toLocaleString()} of{" "}
+                  {column.totalCount.toLocaleString()}
+                </p>
+              ) : null}
             </header>
             <ul className="flex min-h-[140px] flex-col gap-2 p-2">
               {column.leads.map((lead) => (
@@ -99,12 +181,14 @@ export function LeadKanbanBoard({
                     draggingLeadId === lead.id && "opacity-60 ring-2 ring-accent/40",
                   )}
                 >
-                  <a
+                  <Link
                     href={`/leads/${lead.id}`}
                     className="font-medium tracking-tight hover:text-accent"
+                    onClick={(event) => event.stopPropagation()}
+                    draggable={false}
                   >
                     {lead.fullNameSnapshot}
-                  </a>
+                  </Link>
                   {lead.leadSourceName ? (
                     <p className="text-muted mt-1 text-xs">{lead.leadSourceName}</p>
                   ) : null}

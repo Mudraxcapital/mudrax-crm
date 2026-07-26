@@ -33,6 +33,23 @@ export function makeGetLead(
   };
 }
 
+/**
+ * Batch Lead load for bulk authorization. Skips custom field values (not needed
+ * for ownership checks) to keep memory and query cost low.
+ */
+export function makeGetLeadsByIds(
+  repository: LeadRepository,
+  catalogRepository: LeadCatalogRepository,
+) {
+  return async function getLeadsByIds(ids: string[]): Promise<LeadDto[]> {
+    if (ids.length === 0) return [];
+    const leads = await repository.findByIds(ids);
+    if (leads.length === 0) return [];
+    const catalogs = await loadCatalogLookups(catalogRepository, leads[0]!.organizationId);
+    return leads.map((lead) => toLeadDto(lead, catalogs));
+  };
+}
+
 export function makeListLeads(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import {
+  getPermissionScope,
   ownershipFilterFromHierarchy,
   type AuthorizationContext,
   type OwnershipQueryFilter,
@@ -28,6 +29,41 @@ export function leadHierarchyFilter(authContext: AuthorizationContext): Ownershi
     };
   }
   return ownershipFilterFromHierarchy(hierarchy, { forAssignees: false });
+}
+
+/**
+ * Hierarchy + permission Data Scope for Lead list / export / import / pipeline.
+ * Matches All Leads page visibility (Admin/Manager/Team Lead books; SELF → assignee).
+ */
+export function visibleLeadsFilter(
+  authContext: AuthorizationContext,
+  options?: {
+    permissionCode?: string;
+    actorUserId?: string;
+    /** Optional assignee filter from the UI (ignored when scope is SELF). */
+    assignedToUserId?: string;
+  },
+): OwnershipQueryFilter {
+  const permissionCode = options?.permissionCode ?? "lead.view";
+  const scope = getPermissionScope(authContext, permissionCode);
+  const hierarchyFilter = leadHierarchyFilter(authContext);
+  const actorUserId = options?.actorUserId ?? authContext.userId;
+
+  if (scope === "SELF" || hierarchyFilter.assignedToUserIds) {
+    return {
+      ...hierarchyFilter,
+      assignedToUserIds: hierarchyFilter.assignedToUserIds ?? [actorUserId],
+    };
+  }
+
+  if (options?.assignedToUserId) {
+    return {
+      ...hierarchyFilter,
+      assignedToUserIds: [options.assignedToUserId],
+    };
+  }
+
+  return hierarchyFilter;
 }
 
 /** Call / agent filter. */

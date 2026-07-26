@@ -1,13 +1,14 @@
 // ============================================================================
 // src/app/api/leads/export/route.ts
 //
-// Bulk Export (CSV) — requires `lead.view`.
+// Bulk Export (CSV) — requires `lead.view`. Hierarchy-scoped to match All Leads.
 // ============================================================================
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
-import { exportLeadsCsv } from "@/modules/leads";
+import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
+import { exportLeadsCsv, listActiveLeadFields } from "@/modules/leads";
+import { visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
   const current = await getCurrentUser();
@@ -23,17 +24,44 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const scope = getPermissionScope(current.authContext, "lead.view");
+  const search = url.searchParams.get("search") || undefined;
+  const currentStageId = url.searchParams.get("currentStageId") || undefined;
+  const leadSourceId = url.searchParams.get("leadSourceId") || undefined;
+  const campaignId = url.searchParams.get("campaignId") || undefined;
+  const assignedToUserId = url.searchParams.get("assignedToUserId") || undefined;
+  const priority = url.searchParams.get("priority") || undefined;
+
+  const activeFields = await listActiveLeadFields(current.authContext.organizationId);
+  const searchableKeys = activeFields
+    .filter((field) => field.isSearchable)
+    .map((field) => field.internalKey)
+    .filter((key) => key !== "full_name" && key !== "phone" && key !== "email");
+
+  const fieldFilters: Record<string, string> = {};
+  for (const field of activeFields.filter((item) => item.isFilterable)) {
+    const raw = url.searchParams.get(`ff_${field.internalKey}`);
+    if (raw && raw.trim()) {
+      fieldFilters[field.internalKey] = raw.trim();
+    }
+  }
+  if (priority && !fieldFilters.priority) {
+    fieldFilters.priority = priority;
+  }
+
+  const hierarchy = visibleLeadsFilter(current.authContext, {
+    permissionCode: "lead.view",
+    actorUserId: current.session.user.id,
+    assignedToUserId,
+  });
+
   const filter = {
-    search: url.searchParams.get("search") || undefined,
-    currentStageId: url.searchParams.get("currentStageId") || undefined,
-    leadSourceId: url.searchParams.get("leadSourceId") || undefined,
-    assignedToUserIds:
-      scope === "SELF"
-        ? [current.session.user.id]
-        : url.searchParams.get("assignedToUserId")
-          ? [url.searchParams.get("assignedToUserId")!]
-          : undefined,
+    search,
+    currentStageId,
+    leadSourceId,
+    campaignId,
+    ...hierarchy,
+    fieldFilters: Object.keys(fieldFilters).length > 0 ? fieldFilters : undefined,
+    searchableCustomKeys: searchableKeys,
   };
 
   const file = await exportLeadsCsv(current.authContext.organizationId, filter);

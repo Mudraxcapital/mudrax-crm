@@ -13,13 +13,14 @@ import { revalidatePath } from "next/cache";
 import { addLeadNote, createLeadNoteSchema, LeadNotFoundError } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
 import type { LeadFormState } from "./createLead.action";
+import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
 
 export async function addLeadNoteAction(
   leadId: string,
   _previousState: LeadFormState | undefined,
   formData: FormData,
 ): Promise<LeadFormState> {
-  const { session } = await requirePermission("lead.update");
+  const { session, authContext } = await requirePermission("lead.update");
 
   const parsed = createLeadNoteSchema.safeParse({ body: formData.get("body") });
   if (!parsed.success) {
@@ -27,6 +28,10 @@ export async function addLeadNoteAction(
   }
 
   try {
+    await requireAccessibleLead(authContext, leadId, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
     await addLeadNote({
       leadId,
       authorUserId: session.user.id,
@@ -34,7 +39,7 @@ export async function addLeadNoteAction(
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof LeadNotFoundError) {
+    if (error instanceof LeadNotFoundError || error instanceof LeadAccessDeniedError) {
       return { error: error.message };
     }
     throw error;

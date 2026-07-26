@@ -8,12 +8,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
+import { addLeadNote, createLeadNoteSchema, listLeadNotes } from "@/modules/leads";
 import {
-  addLeadNote,
-  createLeadNoteSchema,
-  LeadNotFoundError,
-  listLeadNotes,
-} from "@/modules/leads";
+  LeadAccessDeniedError,
+  requireAccessibleLead,
+} from "@/modules/leads/presentation/controllers/requireLeadAccess";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -29,8 +28,19 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
 
   const { id } = await params;
-  const notes = await listLeadNotes(id);
-  return NextResponse.json({ data: notes });
+  try {
+    await requireAccessibleLead(current.authContext, id, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
+    const notes = await listLeadNotes(id);
+    return NextResponse.json({ data: notes });
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError) {
+      return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+    }
+    throw error;
+  }
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
@@ -53,6 +63,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   try {
+    await requireAccessibleLead(current.authContext, id, {
+      permissionCode: "lead.update",
+      actorUserId: current.session.user.id,
+    });
     const note = await addLeadNote({
       leadId: id,
       authorUserId: current.session.user.id,
@@ -61,8 +75,8 @@ export async function POST(request: Request, { params }: RouteParams) {
     });
     return NextResponse.json({ data: note }, { status: 201 });
   } catch (error) {
-    if (error instanceof LeadNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof LeadAccessDeniedError) {
+      return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     throw error;
   }

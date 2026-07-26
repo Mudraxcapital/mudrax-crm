@@ -81,6 +81,13 @@ model Lead {
   @@index([campaignId])
   @@index([ownerManagerId])
   @@index([ownerTeamLeadId])
+  /// Hot-path composites for hierarchy-scoped list / pipeline / export queries.
+  @@index([organizationId, ownerManagerId])
+  @@index([organizationId, ownerTeamLeadId])
+  @@index([organizationId, currentAssigneeUserId])
+  @@index([organizationId, currentStageId])
+  @@index([organizationId, campaignId])
+  @@index([organizationId, createdAt])
   @@map("leads")
   @@schema("leads")
 }

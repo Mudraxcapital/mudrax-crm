@@ -15,6 +15,11 @@ import {
   updateFollowUpSchema,
 } from "@/modules/follow-ups";
 import { requirePermission } from "@/infra/auth/session";
+import { getLead, LeadNotFoundError } from "@/modules/leads";
+import {
+  assertCanAccessLead,
+  LeadAccessDeniedError,
+} from "@/shared/auth/assertCanAccessLead";
 import type { FollowUpFormState } from "./createFollowUp.action";
 
 export async function updateFollowUpAction(
@@ -23,7 +28,7 @@ export async function updateFollowUpAction(
   _previousState: FollowUpFormState | undefined,
   formData: FormData,
 ): Promise<FollowUpFormState> {
-  const { session } = await requirePermission("follow_up.create");
+  const { session, authContext } = await requirePermission("follow_up.create");
 
   const parsed = updateFollowUpSchema.safeParse({
     triggerType: formData.get("triggerType") || undefined,
@@ -35,13 +40,23 @@ export async function updateFollowUpAction(
   }
 
   try {
+    const lead = await getLead(leadId);
+    assertCanAccessLead(authContext, lead, {
+      permissionCode: "lead.view",
+      actorUserId: session.user.id,
+    });
     await updateFollowUp({
       id,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof FollowUpNotFoundError || error instanceof FollowUpNotOpenError) {
+    if (
+      error instanceof FollowUpNotFoundError ||
+      error instanceof FollowUpNotOpenError ||
+      error instanceof LeadNotFoundError ||
+      error instanceof LeadAccessDeniedError
+    ) {
       return { error: error.message };
     }
     throw error;

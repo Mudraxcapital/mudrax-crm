@@ -1,12 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import {
-  assertOwnsManagerData,
-  getPermissionScope,
-  hasPermission,
-  isCallerWorkspaceUser,
-} from "@/modules/rbac";
+import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
+import { canAccessLead } from "@/shared/auth/assertCanAccessLead";
 import {
   getLead,
   LeadNotFoundError,
@@ -52,20 +48,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     throw error;
   }
 
-  if (!assertOwnsManagerData(authContext.hierarchy, lead.ownerManagerId)) {
-    notFound();
-  }
   if (
-    authContext.hierarchy.primaryRole === "Team Lead" &&
-    lead.ownerTeamLeadId &&
-    lead.ownerTeamLeadId !== authContext.hierarchy.teamLeadId
+    !canAccessLead(authContext, lead, {
+      permissionCode: "lead.view",
+      actorUserId: session.user.id,
+    })
   ) {
     notFound();
-  }
-
-  const leadScope = getPermissionScope(authContext, "lead.view");
-  if (leadScope === "SELF" && lead.currentAssigneeUserId !== session.user.id) {
-    redirect("/unauthorized");
   }
 
   const [stages, lostReasons, assigneesRaw, assignments, notes, auditLog, followUps, fields] =

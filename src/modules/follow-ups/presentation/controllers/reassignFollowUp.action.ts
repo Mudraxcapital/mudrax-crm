@@ -16,6 +16,11 @@ import {
   reassignFollowUpSchema,
 } from "@/modules/follow-ups";
 import { requirePermission } from "@/infra/auth/session";
+import { getLead, LeadNotFoundError } from "@/modules/leads";
+import {
+  assertCanAccessLead,
+  LeadAccessDeniedError,
+} from "@/shared/auth/assertCanAccessLead";
 import type { FollowUpFormState } from "./createFollowUp.action";
 
 export async function reassignFollowUpAction(
@@ -24,7 +29,7 @@ export async function reassignFollowUpAction(
   _previousState: FollowUpFormState | undefined,
   formData: FormData,
 ): Promise<FollowUpFormState> {
-  const { session } = await requirePermission("follow_up.reassign");
+  const { session, authContext } = await requirePermission("follow_up.reassign");
 
   const parsed = reassignFollowUpSchema.safeParse({
     toUserId: formData.get("toUserId"),
@@ -36,6 +41,11 @@ export async function reassignFollowUpAction(
   }
 
   try {
+    const lead = await getLead(leadId);
+    assertCanAccessLead(authContext, lead, {
+      permissionCode: "lead.view",
+      actorUserId: session.user.id,
+    });
     await reassignFollowUp({
       id,
       input: parsed.data,
@@ -45,7 +55,9 @@ export async function reassignFollowUpAction(
     if (
       error instanceof FollowUpNotFoundError ||
       error instanceof FollowUpNotOpenError ||
-      error instanceof InvalidAssigneeReferenceError
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof LeadNotFoundError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };
     }

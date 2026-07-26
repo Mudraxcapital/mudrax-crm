@@ -43,8 +43,6 @@ export function AdvancedLeadSearch({
     assignedToUserId?: string;
     campaignId?: string;
     priority?: string;
-    dateFrom?: string;
-    dateTo?: string;
     fieldFilters?: Record<string, string>;
   };
 }) {
@@ -112,13 +110,6 @@ export function AdvancedLeadSearch({
             </option>
           ))}
         </Select>
-        <Input
-          type="date"
-          name="dateFrom"
-          defaultValue={current.dateFrom}
-          aria-label="Date from"
-        />
-        <Input type="date" name="dateTo" defaultValue={current.dateTo} aria-label="Date to" />
         {dynamicFilters.map((field) => (
           <Input
             key={field.id}

@@ -52,6 +52,13 @@ export class PrismaLeadRepository implements LeadRepository {
     return row ? toLead(row) : null;
   }
 
+  async findByIds(ids: string[]): Promise<Lead[]> {
+    if (ids.length === 0) return [];
+    const unique = [...new Set(ids)];
+    const rows = await this.prisma.lead.findMany({ where: { id: { in: unique } } });
+    return rows.map(toLead);
+  }
+
   async list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]> {
     const where = this.buildWhere(organizationId, filter);
     const rows = await this.prisma.lead.findMany({
@@ -101,6 +108,35 @@ export class PrismaLeadRepository implements LeadRepository {
       _count: { _all: true },
     });
     return groups.map((group) => ({ sourceId: group.leadSourceId, count: group._count._all }));
+  }
+
+  async countGroupedByStage(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "currentStageId">,
+  ): Promise<{ stageId: string; count: number }[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["currentStageId"],
+      where: this.buildWhere(organizationId, filter),
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({ stageId: group.currentStageId, count: group._count._all }));
+  }
+
+  async countGroupedByCampaign(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "campaignId">,
+  ): Promise<{ campaignId: string; count: number }[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["campaignId"],
+      where: {
+        ...this.buildWhere(organizationId, filter),
+        campaignId: { not: null },
+      },
+      _count: { _all: true },
+    });
+    return groups
+      .filter((group): group is typeof group & { campaignId: string } => group.campaignId != null)
+      .map((group) => ({ campaignId: group.campaignId, count: group._count._all }));
   }
 
   private buildWhere(organizationId: string, filter?: ListLeadsFilter): Prisma.LeadWhereInput {

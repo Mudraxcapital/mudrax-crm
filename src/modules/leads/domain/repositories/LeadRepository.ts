@@ -82,6 +82,8 @@ export interface ListLeadsFilter {
 
 export interface LeadRepository {
   findById(id: string): Promise<Lead | null>;
+  /** Batch lookup for bulk authorization / merge (order not guaranteed). */
+  findByIds(ids: string[]): Promise<Lead[]>;
   list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]>;
   listByCustomer(customerId: string): Promise<Lead[]>;
   /** Used after Customer Merge to keep Lead ownership pointing at the survivor. */
@@ -89,6 +91,22 @@ export interface LeadRepository {
   count(organizationId: string, filter?: ListLeadsFilter): Promise<number>;
   countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]>;
   countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]>;
+  /**
+   * Hierarchy-aware stage totals in one GROUP BY (Kanban column badges).
+   * `currentStageId` on the filter is ignored.
+   */
+  countGroupedByStage(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "currentStageId">,
+  ): Promise<{ stageId: string; count: number }[]>;
+  /**
+   * Hierarchy-aware campaign totals in one GROUP BY (pipeline campaign picker).
+   * `campaignId` on the filter is ignored.
+   */
+  countGroupedByCampaign(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "campaignId">,
+  ): Promise<{ campaignId: string; count: number }[]>;
 
   /** Creates the Lead (and, if provided, its initial Lead Assignment) plus a "created" Audit Record atomically. */
   createWithAudit(

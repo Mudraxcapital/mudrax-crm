@@ -55,7 +55,6 @@ const BLOCKED_PREFIXES = [
   "/api/telephony/missed-calls",
   "/api/leads/export",
   "/api/leads/pipeline",
-  "/api/leads/import",
 ] as const;
 
 const ALLOWED_PREFIXES = [

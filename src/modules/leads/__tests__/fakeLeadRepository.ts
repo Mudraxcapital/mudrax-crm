@@ -32,12 +32,24 @@ export class FakeLeadRepository implements LeadRepository {
     return this.leads.get(id) ?? null;
   }
 
+  async findByIds(ids: string[]): Promise<Lead[]> {
+    return ids
+      .map((id) => this.leads.get(id))
+      .filter((lead): lead is Lead => Boolean(lead));
+  }
+
   async list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]> {
     let results = [...this.leads.values()].filter((lead) => lead.organizationId === organizationId);
     if (filter?.customerId)
       results = results.filter((lead) => lead.customerId === filter.customerId);
     if (filter?.currentStageId) {
       results = results.filter((lead) => lead.currentStageId === filter.currentStageId);
+    }
+    if (filter?.leadSourceId) {
+      results = results.filter((lead) => lead.leadSourceId === filter.leadSourceId);
+    }
+    if (filter?.campaignId) {
+      results = results.filter((lead) => lead.campaignId === filter.campaignId);
     }
     if (filter?.ownerManagerId) {
       results = results.filter((lead) => lead.ownerManagerId === filter.ownerManagerId);
@@ -61,6 +73,10 @@ export class FakeLeadRepository implements LeadRepository {
           (lead.emailSnapshot?.toLowerCase().includes(q) ?? false),
       );
     }
+    const limit = filter?.limit;
+    if (typeof limit === "number") {
+      results = results.slice(filter?.offset ?? 0, (filter?.offset ?? 0) + limit);
+    }
     return results;
   }
 
@@ -80,7 +96,8 @@ export class FakeLeadRepository implements LeadRepository {
   }
 
   async count(organizationId: string, filter?: ListLeadsFilter): Promise<number> {
-    return (await this.list(organizationId, filter)).length;
+    const { limit: _limit, offset: _offset, ...rest } = filter ?? {};
+    return (await this.list(organizationId, rest)).length;
   }
 
   async countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]> {
@@ -90,6 +107,31 @@ export class FakeLeadRepository implements LeadRepository {
       counts.set(lead.currentStageId, (counts.get(lead.currentStageId) ?? 0) + 1);
     }
     return [...counts.entries()].map(([stageId, count]) => ({ stageId, count }));
+  }
+
+  async countGroupedByStage(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "currentStageId">,
+  ): Promise<{ stageId: string; count: number }[]> {
+    const leads = await this.list(organizationId, { ...filter, limit: undefined, offset: undefined });
+    const counts = new Map<string, number>();
+    for (const lead of leads) {
+      counts.set(lead.currentStageId, (counts.get(lead.currentStageId) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([stageId, count]) => ({ stageId, count }));
+  }
+
+  async countGroupedByCampaign(
+    organizationId: string,
+    filter?: Omit<ListLeadsFilter, "campaignId">,
+  ): Promise<{ campaignId: string; count: number }[]> {
+    const leads = await this.list(organizationId, { ...filter, limit: undefined, offset: undefined });
+    const counts = new Map<string, number>();
+    for (const lead of leads) {
+      if (!lead.campaignId) continue;
+      counts.set(lead.campaignId, (counts.get(lead.campaignId) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([campaignId, count]) => ({ campaignId, count }));
   }
 
   async countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]> {

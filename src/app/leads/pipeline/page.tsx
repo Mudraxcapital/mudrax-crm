@@ -1,11 +1,12 @@
+import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
-import { countLeads, getKanbanBoard, leadCatalogs } from "@/modules/leads";
+import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
+import { countLeadsByCampaign, getKanbanBoard, leadCatalogs } from "@/modules/leads";
 import { listCampaigns } from "@/modules/campaigns";
 import { LeadKanbanBoard } from "@/modules/leads/presentation/components/LeadKanbanBoard";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { TabNav } from "@/shared/ui/Tabs";
-import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { managerBookFilter, visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { CampaignPipelineFilter } from "./_components/CampaignPipelineFilter";
 
@@ -15,10 +16,16 @@ export default async function LeadPipelinePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { session, authContext } = await requirePermission("lead.view");
+  if (isCallerWorkspaceUser(authContext)) {
+    redirect("/caller/leads");
+  }
+
   const canImport = hasPermission(authContext, "lead.import");
   const canViewCampaigns = hasPermission(authContext, "campaign.view");
-  const scope = getPermissionScope(authContext, "lead.view");
-  const hierarchyFilter = leadHierarchyFilter(authContext);
+  const hierarchyFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.view",
+    actorUserId: session.user.id,
+  });
   const params = await searchParams;
 
   const rawCampaignId =
@@ -31,18 +38,23 @@ export default async function LeadPipelinePage({
     ? await listCampaigns(authContext.organizationId, managerBookFilter(authContext))
     : [];
 
-  const campaignOptions = await Promise.all(
-    excludeTestCatalogRows(campaigns).map(async (campaign) => ({
-      id: campaign.id,
-      name: campaign.name,
-      status: campaign.status,
-      leadCount: await countLeads(authContext.organizationId, {
-        campaignId: campaign.id,
-        ...hierarchyFilter,
-        ...(scope === "SELF" ? { assignedToUserIds: [session.user.id] } : {}),
-      }),
-    })),
+  const visibleCampaigns = excludeTestCatalogRows(campaigns);
+
+  // One GROUP BY for hierarchy-scoped campaign totals (no full Lead row load).
+  const campaignCounts =
+    visibleCampaigns.length > 0
+      ? await countLeadsByCampaign(authContext.organizationId, hierarchyFilter)
+      : [];
+  const countByCampaignId = new Map(
+    campaignCounts.map((entry) => [entry.campaignId, entry.count]),
   );
+
+  const campaignOptions = visibleCampaigns.map((campaign) => ({
+    id: campaign.id,
+    name: campaign.name,
+    status: campaign.status,
+    leadCount: countByCampaignId.get(campaign.id) ?? 0,
+  }));
 
   // Default to the campaign with the most leads (campaign-wise board).
   const defaultCampaignId =
@@ -62,7 +74,6 @@ export default async function LeadPipelinePage({
 
   const filter = {
     ...hierarchyFilter,
-    ...(scope === "SELF" ? { assignedToUserIds: [session.user.id] } : {}),
     ...(effectiveCampaignId ? { campaignId: effectiveCampaignId } : {}),
   };
 

@@ -32,28 +32,20 @@ export function makeGetKanbanBoard(
     organizationId: string,
     filter?: Omit<ListLeadsFilter, "currentStageId">,
   ): Promise<KanbanColumn[]> {
-    const [stages, leads, catalogs] = await Promise.all([
+    const [stages, leads, catalogs, stageCounts] = await Promise.all([
       catalogRepository.listStages(organizationId),
       repository.list(organizationId, {
         ...filter,
         limit: filter?.limit ?? KANBAN_CARD_LIMIT,
       }),
       loadCatalogLookups(catalogRepository, organizationId),
+      repository.countGroupedByStage(organizationId, filter),
     ]);
 
     const activeStages = stages
       .filter((stage) => stage.isActive)
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    const stageCounts = await Promise.all(
-      activeStages.map(async (stage) => ({
-        stageId: stage.id,
-        count: await repository.count(organizationId, {
-          ...filter,
-          currentStageId: stage.id,
-        }),
-      })),
-    );
     const countByStageId = new Map(stageCounts.map((entry) => [entry.stageId, entry.count]));
 
     return activeStages.map((stage) => {

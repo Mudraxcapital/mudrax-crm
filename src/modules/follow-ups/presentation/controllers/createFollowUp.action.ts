@@ -15,6 +15,11 @@ import {
   InvalidAssigneeReferenceError,
   InvalidLeadReferenceError,
 } from "@/modules/follow-ups";
+import { getLead, LeadNotFoundError } from "@/modules/leads";
+import {
+  assertCanAccessLead,
+  LeadAccessDeniedError,
+} from "@/shared/auth/assertCanAccessLead";
 
 export interface FollowUpFormState {
   error?: string;
@@ -39,6 +44,11 @@ export async function createFollowUpAction(
   }
 
   try {
+    const lead = await getLead(leadId);
+    assertCanAccessLead(authContext, lead, {
+      permissionCode: "lead.view",
+      actorUserId: session.user.id,
+    });
     await createFollowUp({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -47,7 +57,9 @@ export async function createFollowUpAction(
   } catch (error) {
     if (
       error instanceof InvalidLeadReferenceError ||
-      error instanceof InvalidAssigneeReferenceError
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof LeadNotFoundError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };
     }

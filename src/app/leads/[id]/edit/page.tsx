@@ -4,9 +4,10 @@ import { requirePermission } from "@/infra/auth/session";
 import { getLead, LeadNotFoundError, listActiveLeadFields } from "@/modules/leads";
 import { EditLeadForm } from "@/modules/leads/presentation/components/EditLeadForm";
 import { updateLeadAction } from "@/modules/leads/presentation/controllers/updateLead.action";
+import { canAccessLead } from "@/shared/auth/assertCanAccessLead";
 
 export default async function EditLeadPage({ params }: { params: Promise<{ id: string }> }) {
-  const { authContext } = await requirePermission("lead.update");
+  const { session, authContext } = await requirePermission("lead.update");
   const { id } = await params;
 
   let lead;
@@ -17,6 +18,16 @@ export default async function EditLeadPage({ params }: { params: Promise<{ id: s
       notFound();
     }
     throw error;
+  }
+
+  // Same ownership validation as Lead Detail — never edit outside hierarchy.
+  if (
+    !canAccessLead(authContext, lead, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    })
+  ) {
+    notFound();
   }
 
   const fields = await listActiveLeadFields(authContext.organizationId);

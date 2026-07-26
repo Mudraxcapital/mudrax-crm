@@ -9,12 +9,14 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import {
-  getLead,
   InvalidLeadSourceReferenceError,
-  LeadNotFoundError,
   updateLead,
   updateLeadSchema,
 } from "@/modules/leads";
+import {
+  LeadAccessDeniedError,
+  requireAccessibleLead,
+} from "@/modules/leads/presentation/controllers/requireLeadAccess";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,11 +33,14 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
   const { id } = await params;
   try {
-    const lead = await getLead(id);
+    const lead = await requireAccessibleLead(current.authContext, id, {
+      permissionCode: "lead.view",
+      actorUserId: current.session.user.id,
+    });
     return NextResponse.json({ data: lead });
   } catch (error) {
-    if (error instanceof LeadNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof LeadAccessDeniedError) {
+      return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     throw error;
   }
@@ -61,6 +66,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
+    await requireAccessibleLead(current.authContext, id, {
+      permissionCode: "lead.update",
+      actorUserId: current.session.user.id,
+    });
     const lead = await updateLead({
       id,
       input: parsed.data,
@@ -68,8 +77,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     });
     return NextResponse.json({ data: lead });
   } catch (error) {
-    if (error instanceof LeadNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof LeadAccessDeniedError) {
+      return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
     if (error instanceof InvalidLeadSourceReferenceError) {
       return NextResponse.json({ error: error.message }, { status: 422 });

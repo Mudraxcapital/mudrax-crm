@@ -10,7 +10,7 @@ export interface CallerOption {
 
 /**
  * Replaces raw "Assigned User ID" with name search + hidden UUID.
- * Works together with Campaign / Status / Source / Date filters on the form.
+ * Works together with Campaign / Status / Source filters on the form.
  */
 export function CallerNameAutocomplete({
   callers,

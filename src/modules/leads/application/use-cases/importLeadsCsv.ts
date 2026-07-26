@@ -6,7 +6,10 @@
 // ============================================================================
 
 import { parseCsv } from "@/shared/csv/csv";
-import type { LeadRepository } from "../../domain/repositories/LeadRepository";
+import type {
+  LeadRepository,
+  ListLeadsFilter,
+} from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
 import type { ImportBatchRepository } from "../../domain/repositories/ImportBatchRepository";
 import type { LeadNoteRepository } from "../../domain/repositories/LeadNoteRepository";
@@ -142,6 +145,11 @@ export function makeImportLeadsCsv(
     campaignNameToId?: Record<string, string>;
     ownerManagerId?: string | null;
     ownerTeamLeadId?: string | null;
+    /**
+     * Hierarchy scope for duplicate matching — Managers/Team Leads must not
+     * inspect Leads outside their book. Admin passes undefined (org-wide).
+     */
+    existingLeadsFilter?: ListLeadsFilter;
   }): Promise<ImportLeadsSummary> {
     const { organizationId, input, actor, campaignNameToId = {} } = command;
     const ownerManagerId = command.ownerManagerId ?? null;
@@ -222,7 +230,10 @@ export function makeImportLeadsCsv(
     const duplicateResolution = resolveDuplicateMode(input);
     const matchMode: DuplicateMatchMode = input.duplicateMatchMode ?? "phone";
 
-    const existingLeads = await leadRepository.list(organizationId, { limit: 100_000 });
+    const existingLeads = await leadRepository.list(organizationId, {
+      ...command.existingLeadsFilter,
+      limit: command.existingLeadsFilter?.limit ?? 100_000,
+    });
     const classifications = classifyImportDuplicates({
       rows: tableRows.map((row, index) => ({
         rowNumber: index + 1,
@@ -816,6 +827,8 @@ export function makePreviewImportDuplicates(
     rows: Record<string, string>[];
     columnMapping: ColumnMapping;
     matchMode: DuplicateMatchMode;
+    /** Hierarchy scope — same filter as import duplicate matching. */
+    existingLeadsFilter?: ListLeadsFilter;
   }) {
     const { organizationId, rows, columnMapping, matchMode } = command;
     const mapping = normalizeMapping(columnMapping);
@@ -824,7 +837,10 @@ export function makePreviewImportDuplicates(
     const emailHeader = mapGet(mapping, "email");
 
     const [existingLeads, stages] = await Promise.all([
-      leadRepository.list(organizationId, { limit: 100_000 }),
+      leadRepository.list(organizationId, {
+        ...command.existingLeadsFilter,
+        limit: command.existingLeadsFilter?.limit ?? 100_000,
+      }),
       catalogRepository.listStages(organizationId),
     ]);
     const stageById = new Map(stages.map((stage) => [stage.id, stage]));

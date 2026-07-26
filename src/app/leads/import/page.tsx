@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { listCampaigns, listCampaignMembers, getCampaignStatistics } from "@/modules/campaigns";
 import {
   leadCatalogs,
@@ -13,14 +14,21 @@ import { listUsers } from "@/modules/users";
 import { LeadImportForm } from "@/modules/leads/presentation/components/LeadImportForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { TabNav } from "@/shared/ui/Tabs";
-import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { managerBookFilter, visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function LeadImportPage() {
-  const { authContext } = await requirePermission("lead.import");
+  const { session, authContext } = await requirePermission("lead.import");
+  if (isCallerWorkspaceUser(authContext)) {
+    redirect("/caller/leads");
+  }
+
   const canCreateCampaign = hasPermission(authContext, "campaign.manage");
   const canViewLeads = hasPermission(authContext, "lead.view");
   const book = managerBookFilter(authContext);
-  const hierarchyFilter = leadHierarchyFilter(authContext);
+  const hierarchyFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.import",
+    actorUserId: session.user.id,
+  });
   const primaryRole = authContext.hierarchy.primaryRole;
 
   const [sources, batches, campaigns, users, allLeads, activeFields] = await Promise.all([
@@ -28,7 +36,8 @@ export default async function LeadImportPage() {
     listImportBatches(authContext.organizationId, book),
     listCampaigns(authContext.organizationId, book),
     listUsers({ status: "ACTIVE", limit: 5_000 }),
-    listLeads(authContext.organizationId, { limit: 5000, ...hierarchyFilter }),
+    // Hierarchy-scoped snapshot for agent workload preview only (not org-wide).
+    listLeads(authContext.organizationId, { limit: 5_000, ...hierarchyFilter }),
     listActiveLeadFields(authContext.organizationId),
   ]);
   const importableFields = activeFields.filter((field) => field.isImportable);
@@ -38,7 +47,10 @@ export default async function LeadImportPage() {
       const [members, stats, leadCount] = await Promise.all([
         listCampaignMembers(campaign.id),
         getCampaignStatistics(campaign.id),
-        countLeads(authContext.organizationId, { campaignId: campaign.id }),
+        countLeads(authContext.organizationId, {
+          campaignId: campaign.id,
+          ...hierarchyFilter,
+        }),
       ]);
       const activeMembers = members.filter((member) => member.isActive);
       const agentNames = activeMembers.map(
@@ -155,6 +167,7 @@ export default async function LeadImportPage() {
                 </tr>
               ) : (
                 batches.map((batch) => {
+                  // Residual after created + duplicates (updated/replaced/skipped share this bucket).
                   const failed = Math.max(
                     0,
                     batch.totalRowCount - batch.createdRowCount - batch.duplicateRowCount,

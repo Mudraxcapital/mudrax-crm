@@ -19,6 +19,7 @@ import {
 } from "@/modules/leads";
 import type { LeadFormState } from "./createLead.action";
 import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
+import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
 
 export async function updateLeadAction(
   id: string,
@@ -26,6 +27,18 @@ export async function updateLeadAction(
   formData: FormData,
 ): Promise<LeadFormState> {
   const { session, authContext } = await requirePermission("lead.update");
+
+  try {
+    await requireAccessibleLead(authContext, id, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 
   const fieldValues = extractFieldValuesFromFormData(formData);
   const activeFields = await listActiveLeadFields(authContext.organizationId);

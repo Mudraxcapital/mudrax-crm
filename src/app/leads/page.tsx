@@ -12,13 +12,11 @@ import {
 import { listCampaigns } from "@/modules/campaigns";
 import { listUserSummaries, listUsers } from "@/modules/users";
 import { AdvancedLeadSearch } from "@/modules/leads/presentation/components/AdvancedLeadSearch";
-import { BulkLeadActions } from "@/modules/leads/presentation/components/BulkLeadActions";
-import { MergeLeadsForm } from "@/modules/leads/presentation/components/MergeLeadsForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
-import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { managerBookFilter, visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
-import { LeadsTable } from "./_components/LeadsTable";
+import { LeadsWorkspace } from "./_components/LeadsWorkspace";
 
 export default async function LeadsPage({
   searchParams,
@@ -86,21 +84,18 @@ export default async function LeadsPage({
     resolvedAssigneeId = match?.id;
   }
 
-  const scope = getPermissionScope(authContext, "lead.view");
-  const hierarchyFilter = leadHierarchyFilter(authContext);
+  const hierarchyFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.view",
+    actorUserId: session.user.id,
+    assignedToUserId: resolvedAssigneeId,
+  });
+
   const filter = {
     search,
     currentStageId,
     leadSourceId,
     campaignId,
-    ownerManagerId: hierarchyFilter.ownerManagerId,
-    ownerTeamLeadId: hierarchyFilter.ownerTeamLeadId,
-    assignedToUserIds:
-      scope === "SELF" || hierarchyFilter.assignedToUserIds
-        ? (hierarchyFilter.assignedToUserIds ?? [session.user.id])
-        : resolvedAssigneeId
-          ? [resolvedAssigneeId]
-          : undefined,
+    ...hierarchyFilter,
     fieldFilters: Object.keys(fieldFilters).length > 0 ? fieldFilters : undefined,
     searchableCustomKeys: searchableKeys,
   };
@@ -128,6 +123,12 @@ export default async function LeadsPage({
   if (leadSourceId) exportQs.set("leadSourceId", leadSourceId);
   if (resolvedAssigneeId) exportQs.set("assignedToUserId", resolvedAssigneeId);
   if (campaignId) exportQs.set("campaignId", campaignId);
+  if (priority) exportQs.set("priority", priority);
+  for (const [key, value] of Object.entries(fieldFilters)) {
+    exportQs.set(`ff_${key}`, value);
+  }
+
+  const scope = getPermissionScope(authContext, "lead.view");
 
   return (
     <PageSection>
@@ -175,7 +176,7 @@ export default async function LeadsPage({
         }}
       />
 
-      <LeadsTable
+      <LeadsWorkspace
         rows={leads.map((lead) => ({
           id: lead.id,
           fullNameSnapshot: lead.fullNameSnapshot,
@@ -187,42 +188,23 @@ export default async function LeadsPage({
             : "Unassigned",
           lastCallAt: null,
           nextActionAt: lead.nextActionAt,
-          priority: "—",
+          priority: lead.fieldValues?.find((v) => v.internalKey === "priority")?.displayValue ?? "—",
           leadSourceName: lead.leadSourceName,
         }))}
+        canReassign={canReassign}
+        canUpdate={canUpdate}
+        stages={stages.map((stage) => ({
+          id: stage.id,
+          name: stage.name,
+          bucket: stage.bucket,
+          closeOutcome: stage.closeOutcome,
+        }))}
+        lostReasons={lostReasons}
+        assignees={assignees.map((user) => ({
+          id: user.id,
+          fullName: user.fullName,
+        }))}
       />
-
-      {canReassign || canUpdate ? (
-        <details className="mx-card">
-          <summary className="cursor-pointer px-5 py-3 text-sm font-medium">More actions</summary>
-          <div className="space-y-6 border-t border-border px-5 py-4">
-            {canReassign || canUpdate ? (
-              <div>
-                <h3 className="text-sm font-medium">Bulk actions</h3>
-                <div className="mt-3">
-                  <BulkLeadActions
-                    leadIds={leads.map((lead) => lead.id)}
-                    stages={stages}
-                    lostReasons={lostReasons}
-                    assignees={assignees.map((user) => ({
-                      id: user.id,
-                      fullName: user.fullName,
-                    }))}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {canUpdate ? (
-              <div>
-                <h3 className="text-sm font-medium">Merge leads</h3>
-                <div className="mt-3">
-                  <MergeLeadsForm lostReasons={lostReasons} />
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </details>
-      ) : null}
     </PageSection>
   );
 }

@@ -7,28 +7,45 @@ import {
   bulkCloseLeadsAction,
 } from "../controllers/productivity.actions";
 
+/** Matches bulkLeadIdsSchema.max(200). */
+export const BULK_LEAD_MAX = 200;
+
 export function BulkLeadActions({
-  leadIds,
+  selectedLeadIds,
   stages,
   lostReasons,
   assignees,
 }: {
-  leadIds: string[];
-  stages: Array<{ id: string; name: string }>;
+  /** IDs selected in the Leads table (or other UI). */
+  selectedLeadIds: string[];
+  stages: Array<{ id: string; name: string; bucket?: string; closeOutcome?: string | null }>;
   lostReasons: Array<{ id: string; name: string }>;
   assignees: Array<{ id: string; fullName: string }>;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [assigneeId, setAssigneeId] = useState("");
+  const [stageId, setStageId] = useState("");
+  const [lostReasonId, setLostReasonId] = useState(lostReasons[0]?.id ?? "");
 
-  function toggle(id: string) {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
+  const selected = selectedLeadIds;
+  const overLimit = selected.length > BULK_LEAD_MAX;
+  const canRun = selected.length > 0 && !overLimit;
+  const selectedStage = stages.find((stage) => stage.id === stageId);
+  const stageNeedsLostReason =
+    selectedStage?.bucket === "CLOSED" && selectedStage.closeOutcome === "LOST";
 
   async function run(
     action: (prev: undefined, formData: FormData) => Promise<{ error?: string; success?: string }>,
     extra: Record<string, string>,
   ) {
+    if (!canRun) {
+      setMessage(
+        overLimit
+          ? `Select at most ${BULK_LEAD_MAX} leads per bulk action.`
+          : "Select at least one lead in the table.",
+      );
+      return;
+    }
     const formData = new FormData();
     for (const id of selected) formData.append("leadIds", id);
     for (const [key, value] of Object.entries(extra)) formData.set(key, value);
@@ -40,31 +57,24 @@ export function BulkLeadActions({
     <section className="mx-card p-4">
       <h2 className="text-sm font-medium">Bulk operations</h2>
       <p className="text-muted mt-1 text-xs">
-        Select Leads below, then assign, change status, or close (soft-delete).
+        Select leads in the table above, then assign, change status, or close (soft-delete). Max{" "}
+        {BULK_LEAD_MAX} leads per action.
+      </p>
+      <p className="mt-2 text-sm">
+        {selected.length === 0
+          ? "No leads selected."
+          : overLimit
+            ? `${selected.length} selected — deselect down to ${BULK_LEAD_MAX} to continue.`
+            : `${selected.length} lead${selected.length === 1 ? "" : "s"} selected.`}
       </p>
       {message ? <p className="mt-2 text-sm">{message}</p> : null}
 
-      <ul className="mt-3 max-h-40 overflow-y-auto text-sm">
-        {leadIds.map((id) => (
-          <li key={id} className="flex items-center gap-2 py-1">
-            <input
-              type="checkbox"
-              checked={selected.includes(id)}
-              onChange={() => toggle(id)}
-              id={`bulk-${id}`}
-            />
-            <label htmlFor={`bulk-${id}`} className="font-mono text-xs">
-              {id.slice(0, 8)}…
-            </label>
-          </li>
-        ))}
-      </ul>
-
       <div className="mt-3 flex flex-wrap gap-2">
         <select
-          id="bulk-assignee"
           className="rounded-lg border border-border px-2 py-1 text-sm"
-          defaultValue=""
+          value={assigneeId}
+          onChange={(event) => setAssigneeId(event.target.value)}
+          aria-label="Bulk assignee"
         >
           <option value="" disabled>
             Assignee
@@ -78,20 +88,19 @@ export function BulkLeadActions({
         <button
           type="button"
           className="rounded-lg border border-border px-3 py-1 text-sm"
-          disabled={selected.length === 0}
+          disabled={!canRun || !assigneeId}
           onClick={() => {
-            const el = document.getElementById("bulk-assignee") as HTMLSelectElement | null;
-            if (!el?.value) return;
-            void run(bulkAssignLeadsAction, { assignedToUserId: el.value });
+            void run(bulkAssignLeadsAction, { assignedToUserId: assigneeId });
           }}
         >
           Bulk assign
         </button>
 
         <select
-          id="bulk-stage"
           className="rounded-lg border border-border px-2 py-1 text-sm"
-          defaultValue=""
+          value={stageId}
+          onChange={(event) => setStageId(event.target.value)}
+          aria-label="Bulk stage"
         >
           <option value="" disabled>
             Stage
@@ -102,24 +111,43 @@ export function BulkLeadActions({
             </option>
           ))}
         </select>
+        {stageNeedsLostReason ? (
+          <select
+            className="rounded-lg border border-border px-2 py-1 text-sm"
+            value={lostReasonId}
+            onChange={(event) => setLostReasonId(event.target.value)}
+            aria-label="Lost reason for bulk stage"
+          >
+            <option value="">— Lost reason —</option>
+            {lostReasons.map((reason) => (
+              <option key={reason.id} value={reason.id}>
+                {reason.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <button
           type="button"
           className="rounded-lg border border-border px-3 py-1 text-sm"
-          disabled={selected.length === 0}
+          disabled={!canRun || !stageId || (stageNeedsLostReason && !lostReasonId)}
           onClick={() => {
-            const el = document.getElementById("bulk-stage") as HTMLSelectElement | null;
-            if (!el?.value) return;
-            void run(bulkChangeLeadStageAction, { stageId: el.value });
+            const extra: Record<string, string> = { stageId };
+            if (stageNeedsLostReason && lostReasonId) {
+              extra.lostReasonId = lostReasonId;
+            }
+            void run(bulkChangeLeadStageAction, extra);
           }}
         >
           Bulk status
         </button>
 
         <select
-          id="bulk-lost"
           className="rounded-lg border border-border px-2 py-1 text-sm"
-          defaultValue={lostReasons[0]?.id ?? ""}
+          value={lostReasonId}
+          onChange={(event) => setLostReasonId(event.target.value)}
+          aria-label="Lost reason for bulk close"
         >
+          <option value="">— Lost reason —</option>
           {lostReasons.map((reason) => (
             <option key={reason.id} value={reason.id}>
               {reason.name}
@@ -129,11 +157,9 @@ export function BulkLeadActions({
         <button
           type="button"
           className="rounded-lg border border-border px-3 py-1 text-sm"
-          disabled={selected.length === 0}
+          disabled={!canRun || !lostReasonId}
           onClick={() => {
-            const el = document.getElementById("bulk-lost") as HTMLSelectElement | null;
-            if (!el?.value) return;
-            void run(bulkCloseLeadsAction, { lostReasonId: el.value });
+            void run(bulkCloseLeadsAction, { lostReasonId });
           }}
         >
           Bulk close

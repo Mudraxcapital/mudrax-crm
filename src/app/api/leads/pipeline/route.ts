@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import { getKanbanBoard } from "@/modules/leads";
-import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
   const current = await getCurrentUser();
@@ -13,14 +13,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scope = getPermissionScope(current.authContext, "lead.view");
   const { searchParams } = new URL(request.url);
   const campaignId = searchParams.get("campaignId");
-  const hierarchyFilter = leadHierarchyFilter(current.authContext);
+  const hierarchyFilter = visibleLeadsFilter(current.authContext, {
+    permissionCode: "lead.view",
+    actorUserId: current.session.user.id,
+  });
 
   const filter = {
     ...hierarchyFilter,
-    ...(scope === "SELF" ? { assignedToUserIds: [current.session.user.id] } : {}),
     ...(campaignId && campaignId.toLowerCase() !== "all" ? { campaignId } : {}),
   };
 
