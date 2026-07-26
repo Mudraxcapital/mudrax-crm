@@ -1,6 +1,6 @@
 # Auth Module
 
-Authentication domain/application rules (login attempts, session policy, account lockout). Auth.js framework wiring itself lives in `src/infra/auth`.
+Authentication domain/application rules (login attempts, session policy). Auth.js framework wiring itself lives in `src/infra/auth`.
 
 Follows the standard Clean Architecture layering:
 

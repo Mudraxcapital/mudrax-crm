@@ -1,6 +1,6 @@
 // ============================================================================
 // Lightweight heartbeat for AccountStatusGuard — every authenticated CRM
-// tab polls this so Disabled / Suspended / Locked / revoked sessions are
+// tab polls this so Disabled / Suspended / revoked sessions are
 // force-logged out without a full page refresh.
 // ============================================================================
 
@@ -22,9 +22,6 @@ export async function GET() {
 
   if (!valid) {
     const state = await getAccountSessionState(session.user.id);
-    if (state?.lockedUntil && state.lockedUntil.getTime() > Date.now()) {
-      return NextResponse.json({ ok: false, reason: "locked" }, { status: 403 });
-    }
     if (state && state.status !== "ACTIVE") {
       const reason = state.status === "SUSPENDED" ? "suspended" : "disabled";
       return NextResponse.json({ ok: false, reason }, { status: 403 });

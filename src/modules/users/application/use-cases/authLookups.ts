@@ -12,17 +12,8 @@ import type {
   UserScopeContext,
   UserSummary,
 } from "../../domain/entities/UserAuthProfile";
-import {
-  isAccountLoginAllowed,
-  isAccountTemporarilyLocked,
-} from "../../domain/entities/User";
+import { isAccountLoginAllowed } from "../../domain/entities/User";
 import { parseUserAgent } from "../../domain/services/userAgent";
-
-function failureWindowMinutes(): number {
-  const raw = process.env.AUTH_FAILURE_WINDOW_MINUTES;
-  const value = raw ? Number.parseInt(raw, 10) : 15;
-  return Number.isFinite(value) && value > 0 ? value : 15;
-}
 
 export function makeUserAuthUseCases(repository: UserRepository) {
   return {
@@ -50,7 +41,6 @@ export function makeUserAuthUseCases(repository: UserRepository) {
       const state = await repository.findAccountSessionState(userId);
       if (!state) return null;
       if (!isAccountLoginAllowed(state.status)) return null;
-      if (isAccountTemporarilyLocked(state.lockedUntil)) return null;
       if (
         typeof sessionVersionFromToken === "number" &&
         state.sessionVersion !== sessionVersionFromToken
@@ -65,10 +55,6 @@ export function makeUserAuthUseCases(repository: UserRepository) {
         await repository.touchSessionActivity(trackedSessionId);
       }
       return state;
-    },
-
-    async countRecentFailedLoginAttempts(email: string): Promise<number> {
-      return repository.countRecentFailedLoginAttempts(email, failureWindowMinutes());
     },
 
     async recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void> {
@@ -96,18 +82,6 @@ export function makeUserAuthUseCases(repository: UserRepository) {
 
     async endLoginSession(sessionId: string, reason?: string | null): Promise<void> {
       await repository.endSession(sessionId, reason);
-    },
-
-    async lockUserAccount(
-      userId: string,
-      lockedUntil: Date,
-      reason: string,
-    ): Promise<void> {
-      await repository.lockAccount(userId, lockedUntil, reason, {
-        actorType: "SYSTEM",
-        actorId: null,
-      });
-      await repository.revokeAllSessionsForUser(userId, "ACCOUNT_LOCKED");
     },
 
     async getUserSummary(userId: string): Promise<UserSummary | null> {

@@ -3,10 +3,8 @@
 //
 // Domain errors for the authentication use-case. Deliberately generic
 // messages at the boundary presented to the end user — "never expose
-// password hashes" and, more broadly, never let error detail become a
-// username-enumeration or lockout-detection oracle beyond what
-// platform-contracts.md §3's Password Policy already accepts (lockout
-// itself is expected to be observable; *why* is not further detailed).
+// password hashes" and avoid turning errors into a username-enumeration
+// oracle where possible.
 // ============================================================================
 
 export class InvalidCredentialsError extends Error {
@@ -16,16 +14,16 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
-export class AccountLockedError extends Error {
-  constructor() {
-    super("Too many failed sign-in attempts. Please try again later.");
-    this.name = "AccountLockedError";
-  }
-}
-
 export class AccountNotActiveError extends Error {
-  constructor() {
-    super("This account is not active. Contact your administrator.");
+  readonly status: "INACTIVE" | "SUSPENDED" | string;
+
+  constructor(status: "INACTIVE" | "SUSPENDED" | string = "INACTIVE") {
+    super(
+      status === "SUSPENDED"
+        ? "This account is suspended. Contact your administrator."
+        : "This account has been disabled. Contact your administrator.",
+    );
     this.name = "AccountNotActiveError";
+    this.status = status;
   }
 }

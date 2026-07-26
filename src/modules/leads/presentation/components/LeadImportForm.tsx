@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   LEAD_IMPORT_OPERATIONAL_FIELDS,
   LEAD_IMPORT_OPERATIONAL_LABELS,
@@ -76,7 +76,19 @@ export interface ImportAgentOption {
   openLeads: number;
   completedLeads: number;
   availability: "AVAILABLE" | "BUSY" | "OFFLINE";
+  assignedTeamLeadId?: string | null;
+  reportingManagerId?: string | null;
 }
+
+export interface ImportSupervisorOption {
+  id: string;
+  fullName: string;
+  role: "Manager" | "Team Lead";
+  /** For Team Leads — their Manager book (used as ownerManagerId). */
+  reportingManagerId?: string | null;
+}
+
+const ALL_CALLERS_SCOPE = "__all__";
 
 export interface ImportCampaignOption {
   id: string;
@@ -93,6 +105,8 @@ export function LeadImportForm({
   agents,
   canCreateCampaign,
   importableFields = [],
+  actorRole = null,
+  supervisors = [],
 }: {
   sources: Array<{ id: string; name: string }>;
   campaigns: ImportCampaignOption[];
@@ -100,7 +114,12 @@ export function LeadImportForm({
   canCreateCampaign: boolean;
   /** Active importable fields from Field Settings (auto-includes new fields). */
   importableFields?: LeadFieldDefinitionDto[];
+  /** Primary hierarchy role of the user running the import. */
+  actorRole?: "Admin" | "Manager" | "Team Lead" | "Caller" | null;
+  /** Managers and Team Leads shown when Admin must pick a scope first. */
+  supervisors?: ImportSupervisorOption[];
 }) {
+  const requiresSupervisor = actorRole === "Admin";
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState("leads.csv");
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -109,6 +128,12 @@ export function LeadImportForm({
   const [csvText, setCsvText] = useState<string | null>(null);
   const [leadSourceId, setLeadSourceId] = useState(sources[0]?.id ?? "");
   const [headers, setHeaders] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!leadSourceId && sources[0]?.id) {
+      setLeadSourceId(sources[0].id);
+    }
+  }, [leadSourceId, sources]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Partial<Record<string, string>>>({});
   const importFieldOptions = useMemo(
@@ -163,6 +188,7 @@ export function LeadImportForm({
     priority: "MEDIUM",
   });
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState("");
   const [distributionStrategy, setDistributionStrategy] = useState<
     "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL"
   >("ROUND_ROBIN");
@@ -172,6 +198,12 @@ export function LeadImportForm({
   const [parseError, setParseError] = useState<string | null>(null);
   const [unknownFields, setUnknownFields] = useState<UnknownColumnSuggestion[]>([]);
   const [pending, startTransition] = useTransition();
+
+  const selectedSupervisor =
+    selectedSupervisorId && selectedSupervisorId !== ALL_CALLERS_SCOPE
+      ? supervisors.find((item) => item.id === selectedSupervisorId)
+      : undefined;
+  const isAllCallersScope = selectedSupervisorId === ALL_CALLERS_SCOPE;
 
   const previewRows = useMemo(() => rows.slice(0, 8), [rows]);
   const ignoredHeaders = useMemo(() => unusedHeaders(headers, mapping), [headers, mapping]);
@@ -230,8 +262,35 @@ export function LeadImportForm({
 
   const selectedCampaign = campaigns.find((campaign) => campaign.id === campaignId);
 
-  const activeAgents = agents.filter((agent) => agent.availability !== "OFFLINE");
+  const scopedAgents = useMemo(() => {
+    const online = agents.filter((agent) => agent.availability !== "OFFLINE");
+    if (!requiresSupervisor) return online;
+    if (isAllCallersScope) return online;
+    if (!selectedSupervisor) return [];
+    if (selectedSupervisor.role === "Manager") {
+      return online.filter((agent) => agent.reportingManagerId === selectedSupervisor.id);
+    }
+    return online.filter((agent) => agent.assignedTeamLeadId === selectedSupervisor.id);
+  }, [agents, requiresSupervisor, isAllCallersScope, selectedSupervisor]);
+
+  const activeAgents = scopedAgents;
   const selectedAgents = activeAgents.filter((agent) => selectedAgentIds.includes(agent.id));
+  const allScopedSelected =
+    activeAgents.length > 0 && activeAgents.every((agent) => selectedAgentIds.includes(agent.id));
+
+  function resolveOwnerManagerIdForImport(): string | undefined {
+    if (selectedSupervisor?.role === "Manager") return selectedSupervisor.id;
+    if (selectedSupervisor?.role === "Team Lead") {
+      return selectedSupervisor.reportingManagerId ?? undefined;
+    }
+    const managerIds = new Set(
+      selectedAgents
+        .map((agent) => agent.reportingManagerId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    if (managerIds.size === 1) return [...managerIds][0];
+    return undefined;
+  }
 
   const distributionPreview = useMemo(() => {
     if (selectedAgents.length === 0) return null;
@@ -372,7 +431,13 @@ export function LeadImportForm({
       // Pre-select statuses that have duplicates for replace/archive convenience.
       setSelectedStageIds(
         (response.summary?.statusGroups ?? [])
-          .filter((group) => group.count > 0)
+          .filter(
+            (group) =>
+              group.count > 0 &&
+              /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+                group.stageId,
+              ),
+          )
           .map((group) => group.stageId),
       );
       setStep("duplicates");
@@ -386,15 +451,52 @@ export function LeadImportForm({
     );
   }
 
+  function toggleSelectAllAgents() {
+    if (allScopedSelected) {
+      setSelectedAgentIds([]);
+      setManualAssigneeUserId("");
+      return;
+    }
+    const ids = activeAgents.map((agent) => agent.id);
+    setSelectedAgentIds(ids);
+    if (!manualAssigneeUserId && ids[0]) {
+      setManualAssigneeUserId(ids[0]);
+    }
+  }
+
   function runImport() {
     if (!nameMapped) {
       setParseError("Name column mapping is required.");
       return;
     }
+    const resolvedLeadSourceId = leadSourceId || sources[0]?.id || "";
+    if (
+      !resolvedLeadSourceId ||
+      !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        resolvedLeadSourceId,
+      )
+    ) {
+      setParseError("Select a valid Lead Source on the Upload step.");
+      return;
+    }
+    if (resolvedLeadSourceId !== leadSourceId) {
+      setLeadSourceId(resolvedLeadSourceId);
+    }
+    if (selectedAgentIds.length === 0) {
+      setParseError("Select at least one caller.");
+      return;
+    }
     setParseError(null);
     setProgress(85);
     startTransition(async () => {
-      let resolvedCampaignId = campaignMode === "existing" ? campaignId || undefined : undefined;
+      let resolvedCampaignId =
+        campaignMode === "existing" &&
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+          campaignId,
+        )
+          ? campaignId
+          : undefined;
+      const ownerManagerId = resolveOwnerManagerIdForImport();
 
       if (campaignMode === "new") {
         if (!canCreateCampaign) {
@@ -408,6 +510,7 @@ export function LeadImportForm({
           priority: newCampaign.priority,
           memberUserIds: selectedAgentIds,
           distributionStrategy,
+          ownerManagerId,
         });
         if (created.error || !created.campaignId) {
           setParseError(created.error ?? "Failed to create campaign.");
@@ -418,7 +521,7 @@ export function LeadImportForm({
 
       const columnMapping = buildColumnMapping();
       const state = await importLeadsFileAction({
-        leadSourceId,
+        leadSourceId: resolvedLeadSourceId,
         campaignId: resolvedCampaignId,
         sourceFileName: fileName,
         sheetName: sheetName || undefined,
@@ -441,6 +544,7 @@ export function LeadImportForm({
           distributionStrategy === "MANUAL"
             ? manualAssigneeUserId || selectedAgentIds[0]
             : undefined,
+        ownerManagerId,
         dynamicFields: acceptedNewFields.map((field) => ({
           excelHeader: field.excelHeader,
           name: field.suggestedName,
@@ -511,21 +615,28 @@ export function LeadImportForm({
 
       {step === "upload" ? (
         <div className="flex flex-col gap-4">
-          <label className="text-sm">
-            Default Lead Source
-            <select
-              value={leadSourceId}
-              onChange={(event) => setLeadSourceId(event.target.value)}
-              required
-              className="mx-input mt-1 w-full"
-            >
-              {sources.map((source) => (
-                <option key={source.id} value={source.id}>
-                  {source.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {sources.length === 0 ? (
+            <p className="mx-error text-sm" role="alert">
+              No Lead Sources are configured yet. Ask an admin to add Lead Sources, or re-run the
+              catalog seed, then reload this page.
+            </p>
+          ) : (
+            <label className="text-sm">
+              Default Lead Source
+              <select
+                value={leadSourceId || sources[0]?.id || ""}
+                onChange={(event) => setLeadSourceId(event.target.value)}
+                required
+                className="mx-input mt-1 w-full"
+              >
+                {sources.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="text-sm">
             File (.csv, .xlsx, .xls)
             <input
@@ -1035,42 +1146,102 @@ export function LeadImportForm({
 
       {step === "agents" ? (
         <div className="flex flex-col gap-4">
-          <p className="text-sm">Select one or more active callers/agents.</p>
-          <div className="mx-scroll overflow-x-auto rounded-lg border border-border">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-surface-sunken text-xs">
-                <tr>
-                  <th className="px-3 py-2">Select</th>
-                  <th className="px-3 py-2">Agent</th>
-                  <th className="px-3 py-2">Open Leads</th>
-                  <th className="px-3 py-2">Completed</th>
-                  <th className="px-3 py-2">Workload</th>
-                  <th className="px-3 py-2">Availability</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeAgents.map((agent) => {
-                  const workload = agent.openLeads + agent.completedLeads;
-                  return (
-                    <tr key={agent.id} className="border-t border-border">
-                      <td className="px-3 py-2">
+          {requiresSupervisor ? (
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium" htmlFor="import-supervisor">
+                Assign under Manager or Team Lead
+              </label>
+              <select
+                id="import-supervisor"
+                className="mx-input max-w-md"
+                value={selectedSupervisorId}
+                onChange={(event) => {
+                  setSelectedSupervisorId(event.target.value);
+                  setSelectedAgentIds([]);
+                  setManualAssigneeUserId("");
+                }}
+              >
+                <option value="">— Select Manager or Team Lead —</option>
+                <option value={ALL_CALLERS_SCOPE}>All callers</option>
+                {supervisors.map((supervisor) => (
+                  <option key={supervisor.id} value={supervisor.id}>
+                    {supervisor.role}: {supervisor.fullName}
+                  </option>
+                ))}
+              </select>
+              <p className="text-muted text-xs">
+                Pick a Manager/Team Lead, or All callers, then choose who receives the leads.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm">Select one or more callers to receive these leads.</p>
+          )}
+
+          {requiresSupervisor && !selectedSupervisorId ? (
+            <p className="text-muted text-sm">
+              Select a Manager, Team Lead, or All callers to continue.
+            </p>
+          ) : activeAgents.length === 0 ? (
+            <p className="text-muted text-sm">No active callers found for this selection.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-muted text-xs">
+                  {selectedAgentIds.length} of {activeAgents.length} selected
+                </p>
+                <button
+                  type="button"
+                  className="mx-btn mx-btn-secondary text-xs"
+                  onClick={toggleSelectAllAgents}
+                >
+                  {allScopedSelected ? "Clear selection" : "Select all"}
+                </button>
+              </div>
+              <div className="mx-scroll overflow-x-auto rounded-lg border border-border">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-surface-sunken text-xs">
+                    <tr>
+                      <th className="px-3 py-2">
                         <input
                           type="checkbox"
-                          checked={selectedAgentIds.includes(agent.id)}
-                          onChange={() => toggleAgent(agent.id)}
+                          checked={allScopedSelected}
+                          onChange={toggleSelectAllAgents}
+                          aria-label="Select all callers"
                         />
-                      </td>
-                      <td className="px-3 py-2 font-medium">{agent.fullName}</td>
-                      <td className="px-3 py-2">{agent.openLeads}</td>
-                      <td className="px-3 py-2">{agent.completedLeads}</td>
-                      <td className="px-3 py-2">{workload}</td>
-                      <td className="px-3 py-2">{agent.availability}</td>
+                      </th>
+                      <th className="px-3 py-2">Caller</th>
+                      <th className="px-3 py-2">Open Leads</th>
+                      <th className="px-3 py-2">Completed</th>
+                      <th className="px-3 py-2">Workload</th>
+                      <th className="px-3 py-2">Availability</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {activeAgents.map((agent) => {
+                      const workload = agent.openLeads + agent.completedLeads;
+                      return (
+                        <tr key={agent.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedAgentIds.includes(agent.id)}
+                              onChange={() => toggleAgent(agent.id)}
+                            />
+                          </td>
+                          <td className="px-3 py-2 font-medium">{agent.fullName}</td>
+                          <td className="px-3 py-2">{agent.openLeads}</td>
+                          <td className="px-3 py-2">{agent.completedLeads}</td>
+                          <td className="px-3 py-2">{workload}</td>
+                          <td className="px-3 py-2">{agent.availability}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -1085,7 +1256,10 @@ export function LeadImportForm({
             <button
               type="button"
               className="mx-btn mx-btn-primary"
-              disabled={selectedAgentIds.length === 0}
+              disabled={
+                selectedAgentIds.length === 0 ||
+                (requiresSupervisor && !selectedSupervisorId)
+              }
               onClick={() => {
                 if (!manualAssigneeUserId) {
                   setManualAssigneeUserId(selectedAgentIds[0] ?? "");

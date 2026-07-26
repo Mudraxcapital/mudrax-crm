@@ -1,11 +1,9 @@
-import Link from "next/link";
 import { requireCallerWorkspace } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { listNotifications } from "@/modules/notifications";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
-import { Button } from "@/shared/ui/Button";
 
 export default async function CallerNotificationsPage() {
   const { session, authContext } = await requireCallerWorkspace();
@@ -21,19 +19,7 @@ export default async function CallerNotificationsPage() {
 
   return (
     <PageSection>
-      <PageHeader
-        title="Notifications"
-        description="Notifications addressed to you."
-        actions={
-          hasPermission(authContext, "notification.preference.manage") ? (
-            <Link href="/notifications/preferences">
-              <Button variant="secondary" size="sm">
-                Preferences
-              </Button>
-            </Link>
-          ) : null
-        }
-      />
+      <PageHeader title="Notifications" description="Notifications addressed to you." />
 
       <Card>
         <CardBody className="space-y-2">

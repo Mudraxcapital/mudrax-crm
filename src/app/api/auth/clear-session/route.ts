@@ -6,9 +6,9 @@ import { signOut } from "@/infra/auth";
 
 export async function GET(request: Request) {
   const reason = new URL(request.url).searchParams.get("reason");
-  const redirectTo =
-    reason === "disabled" || reason === "suspended" || reason === "session_revoked"
-      ? `/login?reason=${encodeURIComponent(reason === "session_revoked" ? "disabled" : reason)}`
-      : "/login";
+  // session_revoked = stale JWT after reseed / logout elsewhere — not a Disabled account.
+  const allowed =
+    reason === "disabled" || reason === "suspended" || reason === "session_revoked";
+  const redirectTo = allowed && reason ? `/login?reason=${encodeURIComponent(reason)}` : "/login";
   await signOut({ redirectTo });
 }

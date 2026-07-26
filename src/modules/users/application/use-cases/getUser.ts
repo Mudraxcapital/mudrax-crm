@@ -53,7 +53,6 @@ export function makeGetUser(repository: UserRepository, roles: RoleAssignmentPor
       roleName,
       assignedTeamLeadName: leadName,
       reportingManagerName: managerName,
-      permissions: await roles.getPermissionCodesForUser(userId),
     });
   };
 }

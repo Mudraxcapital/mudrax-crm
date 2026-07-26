@@ -4,7 +4,7 @@
 // src/modules/auth/presentation/components/LoginForm.tsx
 // ============================================================================
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { loginAction } from "../controllers/login.action";
 import { Button } from "@/shared/ui/Button";
 import { Field, Input } from "@/shared/ui/Input";
@@ -19,6 +19,7 @@ export function LoginForm({
   const [state, formAction, isPending] = useActionState(loginAction, {
     error: initialError,
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -37,15 +38,27 @@ export function LoginForm({
       </Field>
 
       <Field label="Password" htmlFor="password" required>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          placeholder="••••••••"
-          invalid={!!state.error}
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            required
+            placeholder="••••••••"
+            invalid={!!state.error}
+            className="pr-12"
+          />
+          <button
+            type="button"
+            className="text-muted hover:text-foreground absolute inset-y-0 right-0 flex items-center px-3 text-xs font-medium"
+            onClick={() => setShowPassword((value) => !value)}
+            aria-pressed={showPassword}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
       </Field>
 
       {state.error ? (

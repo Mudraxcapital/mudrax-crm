@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { createSeedClient } from "./lib/client";
+import { seedId } from "./lib/determinism";
 import { section, explain } from "./lib/logger";
 import { seedOrganization } from "./steps/01-organization";
 import { seedRbac } from "./steps/02-rbac";
@@ -65,24 +66,53 @@ async function main(): Promise<void> {
   );
   await seedDocumentCatalogs(prisma, org.organizationId);
 
-  const customers = await seedCustomers(prisma, org.organizationId);
-  const leads = await seedLeads(
-    prisma,
-    org.organizationId,
-    customers,
-    leadCatalogs,
-    admin.adminUserId,
-  );
-  await seedFollowUps(prisma, org.organizationId, leads, admin.adminUserId);
-  await seedLoanApplications(
-    prisma,
-    org.organizationId,
-    customers,
-    leads,
-    loanProductIds,
-    loanCatalogs,
-    admin.adminUserId,
-  );
+  // Demo Customers / Leads / Follow-ups / Loan Applications are only for empty
+  // local DBs. If real imported leads already exist, skip so seed re-runs do
+  // not inflate CRM totals (e.g. 1003 imported + 8 demo = 1011).
+  const demoLeadKeys = [
+    "rahul-sharma",
+    "priya-patel",
+    "amit-verma",
+    "sneha-reddy",
+    "vikram-singh",
+    "anjali-nair",
+    "rajesh-kumar",
+    "neha-gupta",
+  ] as const;
+  const demoLeadIds = demoLeadKeys.map((key) => seedId(`lead:${key}`));
+  const [totalLeads, demoLeadsPresent] = await Promise.all([
+    prisma.lead.count({ where: { organizationId: org.organizationId } }),
+    prisma.lead.count({
+      where: { organizationId: org.organizationId, id: { in: demoLeadIds } },
+    }),
+  ]);
+  const hasRealLeads = totalLeads - demoLeadsPresent > 0;
+
+  if (hasRealLeads) {
+    section("9–12. Demo pipeline skipped");
+    explain(
+      `Skipping demo Customers/Leads/Follow-ups/Loan Applications — ${totalLeads - demoLeadsPresent} real lead(s) already present.`,
+    );
+  } else {
+    const customers = await seedCustomers(prisma, org.organizationId);
+    const leads = await seedLeads(
+      prisma,
+      org.organizationId,
+      customers,
+      leadCatalogs,
+      admin.adminUserId,
+    );
+    await seedFollowUps(prisma, org.organizationId, leads, admin.adminUserId);
+    await seedLoanApplications(
+      prisma,
+      org.organizationId,
+      customers,
+      leads,
+      loanProductIds,
+      loanCatalogs,
+      admin.adminUserId,
+    );
+  }
   await seedTelephonyCatalogs(prisma, org.organizationId);
   await seedNotificationCatalogs(prisma, org.organizationId);
   await seedReportsCatalogs(prisma, org.organizationId, admin.adminUserId);
@@ -91,7 +121,7 @@ async function main(): Promise<void> {
   explain(`DEV-ONLY logins (see README.md):`);
   explain(`  Admin      ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD}`);
   explain(`  Manager    manager@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
-  explain(`  Team Lead  (4)  *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Team Lead  (3)  *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
   explain(`  Caller     (20) *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
   explain(`Total employees seeded: ${DEMO_USERS.length}`);
 

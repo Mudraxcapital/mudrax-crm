@@ -4,7 +4,7 @@ export interface NavItem {
   href: string;
   label: string;
   icon: NavIcon;
-  match?: "exact" | "prefix" | "customer-360" | "leads-list";
+  match?: "exact" | "prefix" | "customers" | "leads-list";
   /** Any of these permissions grants visibility. Empty = staff-only (no extra permission). */
   permissions?: string[];
 }
@@ -39,7 +39,7 @@ export type NavIcon =
 
 /**
  * Single-company navigation. Leads is a first-class module (not nested under CRM).
- * CRM covers customers, Customer 360, duplicates, and related operational surfaces.
+ * CRM covers customers, duplicates, and related operational surfaces.
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -68,15 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/customers",
         label: "Customers",
         icon: "customers",
-        match: "exact",
-        permissions: ["customer.view"],
-      },
-      {
-        id: "crm-customer-360",
-        href: "/customers",
-        label: "Customer 360",
-        icon: "customers",
-        match: "customer-360",
+        match: "customers",
         permissions: ["customer.view"],
       },
       {
@@ -85,13 +77,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Duplicate Detection",
         icon: "customers",
         permissions: ["customer.merge", "customer.view"],
-      },
-      {
-        id: "crm-activity",
-        href: "/activity",
-        label: "Activity",
-        icon: "activity",
-        permissions: ["lead.view", "customer.view"],
       },
       {
         id: "crm-followups",
@@ -122,6 +107,14 @@ export const NAV_GROUPS: NavGroup[] = [
         permissions: ["lead.view"],
       },
       {
+        id: "leads-single",
+        href: "/leads/new",
+        label: "Single Lead",
+        icon: "leads",
+        match: "exact",
+        permissions: ["lead.create"],
+      },
+      {
         id: "leads-pipeline",
         href: "/leads/pipeline",
         label: "Pipeline",
@@ -135,13 +128,6 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "leads",
         permissions: ["lead.import"],
       },
-      {
-        id: "leads-settings",
-        href: "/crm/field-settings",
-        label: "Lead Settings",
-        icon: "settings",
-        permissions: ["custom_field.manage"],
-      },
     ],
   },
   {
@@ -154,28 +140,30 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "admin",
         permissions: ["user.view"],
       },
-    ],
-  },
-  {
-    id: "system",
-    label: "System",
-    items: [
+      {
+        href: "/crm/field-settings",
+        label: "Lead Settings",
+        icon: "settings",
+        permissions: ["custom_field.manage"],
+      },
       { href: "/profile", label: "Profile", icon: "profile" },
-      { href: "/settings", label: "Settings", icon: "settings" },
     ],
   },
 ];
 
 export function isNavActive(pathname: string, item: NavItem): boolean {
-  if (item.match === "customer-360") {
-    // Customer detail / edit — not the list or duplicates hub.
-    return (
-      /^\/customers\/[^/]+$/.test(pathname) || /^\/customers\/[^/]+\/edit$/.test(pathname)
-    );
+  if (item.match === "customers") {
+    // Customers list + detail/edit — not Duplicate Detection.
+    if (pathname.startsWith("/customers/duplicates")) return false;
+    return pathname === "/customers" || pathname.startsWith("/customers/");
   }
   if (item.match === "leads-list") {
-    // List + lead detail — not Pipeline or Add from Excel.
-    if (pathname.startsWith("/leads/import") || pathname.startsWith("/leads/pipeline")) {
+    // List + lead detail — not Pipeline, Add from Excel, or Single Lead create.
+    if (
+      pathname.startsWith("/leads/import") ||
+      pathname.startsWith("/leads/pipeline") ||
+      pathname.startsWith("/leads/new")
+    ) {
       return false;
     }
     return pathname === "/leads" || pathname.startsWith("/leads/");

@@ -3,8 +3,10 @@ import { requirePermission } from "@/infra/auth/session";
 import { hasRole } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
+  countAssignedLeadsForUser,
   getUser,
   InvalidUserHierarchyError,
+  listUsers,
   listUsersByRole,
   UserNotFoundError,
 } from "@/modules/users";
@@ -40,15 +42,26 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     authContext.roles.map((role) => role.name),
     hierarchy,
   );
-  // Keep current role selectable so saving without a role change works.
   const allowedRoles = Array.from(
     new Set<string>([...creatableRoles, ...(user.roleName ? [user.roleName] : [])]),
   );
 
-  const [teamLeads, managers, admins] = await Promise.all([
+  const [
+    teamLeads,
+    managers,
+    admins,
+    callersUnderUser,
+    teamLeadsUnderManager,
+    hierarchyUsers,
+    leadCount,
+  ] = await Promise.all([
     listUsersByRole("Team Lead"),
     listUsersByRole("Manager"),
     listUsersByRole("Admin"),
+    user.roleName === "Team Lead" ? listUsers({ teamLeadId: id }) : Promise.resolve([]),
+    user.roleName === "Manager" ? listUsers({ reportingManagerId: id }) : Promise.resolve([]),
+    listUsers({ userIds: visibleIds ?? undefined }),
+    countAssignedLeadsForUser(id),
   ]);
 
   const scopedTeamLeads = teamLeads.filter(
@@ -61,12 +74,17 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       );
 
   const boundUpdate = updateUserAction.bind(null, id);
+  const isSelf = session.user.id === id;
 
   return (
     <PageSection>
       <PageHeader
         title={`Edit ${user.fullName}`}
-        description="Update employee details, role, account status, and reporting line."
+        description={
+          isSelf
+            ? "Update your contact details. Role, status, and hierarchy cannot be changed here."
+            : "Update employee details, role, account status, and reporting line."
+        }
         breadcrumbs={[
           { label: "User Management", href: "/users" },
           { label: user.fullName, href: `/users/${user.id}` },
@@ -80,6 +98,10 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
             action={boundUpdate}
             allowAdminRole={allowAdminRole}
             allowedRoles={allowedRoles}
+            isSelf={isSelf}
+            callerCount={callersUnderUser.length}
+            teamLeadCount={teamLeadsUnderManager.length}
+            leadCount={leadCount}
             teamLeads={scopedTeamLeads.map((item) => ({
               id: item.id,
               fullName: item.fullName,
@@ -90,6 +112,13 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
               fullName: item.fullName,
               employeeId: item.employeeId,
             }))}
+            leadAssigneeOptions={hierarchyUsers
+              .filter((item) => item.status === "ACTIVE" && item.id !== id)
+              .map((item) => ({
+                id: item.id,
+                fullName: item.fullName,
+                roleName: item.roleName,
+              }))}
           />
         </CardBody>
       </Card>

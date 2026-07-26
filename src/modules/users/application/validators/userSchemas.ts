@@ -58,6 +58,12 @@ export const updateUserSchema = z
     profilePhotoUrl: z.string().trim().url().max(500).nullable().optional().or(z.literal("")),
     assignedTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
     reportingManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
+    /** Required when demoting a Team Lead who still has Callers. */
+    reassignCallersToTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
+    /** Required when demoting a Manager who still has Team Leads. */
+    reassignTeamLeadsToManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
+    /** Required when changing role for a user who still owns assigned Leads. */
+    reassignLeadsToUserId: z.string().uuid().nullable().optional().or(z.literal("")),
   })
   .superRefine((value, ctx) => {
     if (value.role === "Caller" && value.assignedTeamLeadId === "") {
@@ -68,6 +74,12 @@ export const updateUserSchema = z
       });
     }
   });
+
+/** Self-service profile — name / phone only (no role, status, hierarchy). */
+export const updateOwnProfileSchema = z.object({
+  fullName: z.string().trim().min(1, "Full name is required.").max(200),
+  phone: z.string().trim().min(1, "Phone is required.").max(20),
+});
 
 export const resetPasswordSchema = z.object({
   password: passwordField,
@@ -100,6 +112,9 @@ export type ChangeOwnPasswordInput = z.infer<typeof changeOwnPasswordSchema>;
 
 export const bulkUserIdsSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1, "Select at least one user."),
+  reassignCallersToTeamLeadId: z.string().uuid().optional().or(z.literal("")),
+  reassignTeamLeadsToManagerId: z.string().uuid().optional().or(z.literal("")),
+  reassignLeadsToUserId: z.string().uuid().optional().or(z.literal("")),
 });
 
 export const listUsersQuerySchema = z.object({
@@ -111,6 +126,7 @@ export const listUsersQuerySchema = z.object({
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type UpdateOwnProfileInput = z.infer<typeof updateOwnProfileSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type BulkUserIdsInput = z.infer<typeof bulkUserIdsSchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;

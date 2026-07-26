@@ -9,6 +9,7 @@ import {
   disableUserAction,
   enableUserAction,
   suspendUserAction,
+  unsuspendUserAction,
 } from "@/modules/users/presentation/controllers/userActions.action";
 
 export function UserDetailActions({
@@ -20,7 +21,11 @@ export function UserDetailActions({
   canReset,
   isSelf,
   teamLeadOptions,
+  managerOptions,
+  leadAssigneeOptions,
   callerCount,
+  teamLeadCount,
+  leadCount,
   deleteAction,
   resetPasswordAction,
 }: {
@@ -32,10 +37,18 @@ export function UserDetailActions({
   canReset: boolean;
   isSelf: boolean;
   teamLeadOptions: { id: string; fullName: string; employeeId: string }[];
+  managerOptions: { id: string; fullName: string; employeeId: string }[];
+  leadAssigneeOptions: { id: string; fullName: string; roleName: string | null }[];
   callerCount: number;
+  teamLeadCount: number;
+  leadCount: number;
   deleteAction: (
     userId: string,
-    reassignCallersToTeamLeadId?: string | null,
+    options?: {
+      reassignCallersToTeamLeadId?: string | null;
+      reassignTeamLeadsToManagerId?: string | null;
+      reassignLeadsToUserId?: string | null;
+    },
   ) => Promise<ActionResult>;
   resetPasswordAction: (
     userId: string,
@@ -48,6 +61,8 @@ export function UserDetailActions({
   const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reassignTo, setReassignTo] = useState("");
+  const [reassignManagerTo, setReassignManagerTo] = useState("");
+  const [reassignLeadsTo, setReassignLeadsTo] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [reasonOpen, setReasonOpen] = useState<"INACTIVE" | "SUSPENDED" | null>(null);
   const [reason, setReason] = useState("");
@@ -55,9 +70,15 @@ export function UserDetailActions({
   const [resetState, resetFormAction, resetPending] = useActionState(boundReset, {});
 
   const needsCallerReassign = roleName === "Team Lead" && callerCount > 0;
+  const needsManagerReassign = roleName === "Manager" && teamLeadCount > 0;
+  const needsLeadReassign = leadCount > 0;
   const reassignmentTargets = useMemo(
     () => teamLeadOptions.filter((lead) => lead.id !== userId),
     [teamLeadOptions, userId],
+  );
+  const managerTargets = useMemo(
+    () => managerOptions.filter((manager) => manager.id !== userId),
+    [managerOptions, userId],
   );
 
   function run(action: () => Promise<ActionResult>, redirectToUsers = false) {
@@ -77,12 +98,12 @@ export function UserDetailActions({
     <div className="flex flex-col items-end gap-2">
       {actionError ? <p className="text-sm text-danger">{actionError}</p> : null}
       <div className="flex flex-wrap justify-end gap-2">
-      {canReset && roleName !== "Admin" && !isSelf ? (
-        <Button variant="secondary" onClick={() => setResetOpen(true)}>
-          Reset Password
-        </Button>
-      ) : null}
-        {canManage && status !== "ACTIVE" ? (
+        {canReset && roleName !== "Admin" && !isSelf ? (
+          <Button variant="secondary" onClick={() => setResetOpen(true)}>
+            Reset Password
+          </Button>
+        ) : null}
+        {canManage && !isSelf && status === "INACTIVE" ? (
           <Button
             variant="secondary"
             disabled={pending}
@@ -91,22 +112,33 @@ export function UserDetailActions({
             Enable
           </Button>
         ) : null}
-        {canManage && status !== "INACTIVE" ? (
+        {canManage && !isSelf && status === "SUSPENDED" ? (
+          <Button
+            variant="secondary"
+            disabled={pending}
+            onClick={() => run(() => unsuspendUserAction(userId))}
+          >
+            Unsuspend
+          </Button>
+        ) : null}
+        {canManage && !isSelf && status === "ACTIVE" ? (
           <Button variant="secondary" disabled={pending} onClick={() => setReasonOpen("INACTIVE")}>
             Disable
           </Button>
         ) : null}
-        {canManage && status !== "SUSPENDED" ? (
+        {canManage && !isSelf && status === "ACTIVE" ? (
           <Button variant="secondary" disabled={pending} onClick={() => setReasonOpen("SUSPENDED")}>
             Suspend
           </Button>
         ) : null}
-        {canDelete ? (
+        {canDelete && !isSelf ? (
           <Button
             variant="danger"
             disabled={pending}
             onClick={() => {
               setReassignTo("");
+              setReassignManagerTo("");
+              setReassignLeadsTo("");
               setDeleteOpen(true);
             }}
           >
@@ -141,13 +173,7 @@ export function UserDetailActions({
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         title="Delete employee"
-        description={
-          needsCallerReassign
-            ? `This Team Lead has ${callerCount} Caller(s). Reassign them before deleting.`
-            : roleName === "Manager"
-              ? "Managers with Team Leads cannot be deleted until those Team Leads are reassigned."
-              : "This permanently deletes the employee account."
-        }
+        description="Reassign hierarchy and Leads before permanent deletion."
       >
         <div className="flex flex-col gap-3">
           {needsCallerReassign ? (
@@ -168,17 +194,68 @@ export function UserDetailActions({
               </select>
             </label>
           ) : null}
+          {needsManagerReassign ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="mx-label">Reassign Team Leads to *</span>
+              <select
+                className="mx-input"
+                value={reassignManagerTo}
+                onChange={(event) => setReassignManagerTo(event.target.value)}
+                required
+              >
+                <option value="">Select Manager…</option>
+                {managerTargets.map((manager) => (
+                  <option key={manager.id} value={manager.id}>
+                    {manager.fullName} ({manager.employeeId})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {needsLeadReassign ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="mx-label">Reassign {leadCount} Lead(s) to *</span>
+              <select
+                className="mx-input"
+                value={reassignLeadsTo}
+                onChange={(event) => setReassignLeadsTo(event.target.value)}
+                required
+              >
+                <option value="">Select employee…</option>
+                {leadAssigneeOptions
+                  .filter((user) => user.id !== userId)
+                  .map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName}
+                      {user.roleName ? ` (${user.roleName})` : ""}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="danger"
-              disabled={pending || (needsCallerReassign && !reassignTo)}
+              disabled={
+                pending ||
+                (needsCallerReassign && !reassignTo) ||
+                (needsManagerReassign && !reassignManagerTo) ||
+                (needsLeadReassign && !reassignLeadsTo)
+              }
               onClick={() => {
                 setDeleteOpen(false);
                 run(
-                  () => deleteAction(userId, needsCallerReassign ? reassignTo : null),
+                  () =>
+                    deleteAction(userId, {
+                      reassignCallersToTeamLeadId: needsCallerReassign ? reassignTo : null,
+                      reassignTeamLeadsToManagerId: needsManagerReassign
+                        ? reassignManagerTo
+                        : null,
+                      reassignLeadsToUserId: needsLeadReassign ? reassignLeadsTo : null,
+                    }),
                   true,
                 );
               }}

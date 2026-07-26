@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission, hasRole } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
+  countAssignedLeadsForUser,
   getUser,
   InvalidUserHierarchyError,
   listActiveUserSessions,
@@ -18,7 +19,6 @@ import {
   deleteUserAction,
   resetPasswordAction,
 } from "@/modules/users/presentation/controllers/userActions.action";
-import { unlockUserAction } from "@/modules/users/presentation/controllers/sessionActions.action";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
 import { Badge, accountStatusLabel, accountStatusTone } from "@/shared/ui/Badge";
@@ -26,7 +26,6 @@ import { Button } from "@/shared/ui/Button";
 import { UserDetailActions } from "./_components/UserDetailActions";
 import { UserSessionsPanel } from "./_components/UserSessionsPanel";
 import { ProfilePhotoForm } from "./_components/ProfilePhotoForm";
-import { UnlockButton } from "./_components/UnlockButton";
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,7 +33,6 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const canManage = hasPermission(authContext, "user.manage");
   const canDelete = hasPermission(authContext, "user.delete");
   const canReset = hasPermission(authContext, "user.reset_password");
-  const isAdmin = hasRole(authContext, "Admin");
   const hierarchy = authContext.hierarchy;
   const visibleIds = hierarchy.visibleUserIds;
 
@@ -53,19 +51,49 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     throw error;
   }
 
-  const [audit, loginAttempts, activeSessions, sessionHistory, callersUnderUser, teamLeads] =
-    await Promise.all([
-      listUserAuditLog(id, 40),
-      listUserLoginSessions(id, 15),
-      listActiveUserSessions(id),
-      listUserSessionHistory(id, 30),
-      user.roleName === "Team Lead" ? listUsers({ teamLeadId: id }) : Promise.resolve([]),
-      listUsersByRole("Team Lead"),
-    ]);
+  // Reassignment pickers are only needed when the actor can delete.
+  const loadDeleteOptions = canDelete;
+
+  const [
+    audit,
+    loginAttempts,
+    activeSessions,
+    sessionHistory,
+    callersUnderUser,
+    teamLeadsUnderManager,
+    teamLeads,
+    managers,
+    admins,
+    hierarchyUsers,
+    leadCount,
+  ] = await Promise.all([
+    listUserAuditLog(id, 40),
+    listUserLoginSessions(id, 15),
+    listActiveUserSessions(id),
+    listUserSessionHistory(id, 30),
+    loadDeleteOptions && user.roleName === "Team Lead"
+      ? listUsers({ teamLeadId: id })
+      : Promise.resolve([]),
+    loadDeleteOptions && user.roleName === "Manager"
+      ? listUsers({ reportingManagerId: id })
+      : Promise.resolve([]),
+    loadDeleteOptions ? listUsersByRole("Team Lead") : Promise.resolve([]),
+    loadDeleteOptions ? listUsersByRole("Manager") : Promise.resolve([]),
+    loadDeleteOptions ? listUsersByRole("Admin") : Promise.resolve([]),
+    loadDeleteOptions
+      ? listUsers({ userIds: visibleIds ?? undefined })
+      : Promise.resolve([]),
+    loadDeleteOptions ? countAssignedLeadsForUser(id) : Promise.resolve(0),
+  ]);
 
   const scopedTeamLeads = teamLeads.filter(
     (lead) => !visibleIds || visibleIds.includes(lead.id),
   );
+  const scopedManagers = hierarchy.unrestricted
+    ? [...managers, ...admins]
+    : managers.filter(
+        (item) => item.id === hierarchy.ownerManagerId || item.id === authContext.userId,
+      );
 
   const initials = user.fullName
     .split(/\s+/)
@@ -108,9 +136,6 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
                 <Button variant="secondary">Edit</Button>
               </Link>
             ) : null}
-            {isAdmin && user.displayStatus === "LOCKED" ? (
-              <UnlockButton userId={user.id} unlockAction={unlockUserAction} />
-            ) : null}
             <UserDetailActions
               userId={user.id}
               status={user.status}
@@ -120,11 +145,25 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
               canReset={canReset}
               isSelf={session.user.id === user.id}
               callerCount={callersUnderUser.length}
+              teamLeadCount={teamLeadsUnderManager.length}
+              leadCount={leadCount}
               teamLeadOptions={scopedTeamLeads.map((lead) => ({
                 id: lead.id,
                 fullName: lead.fullName,
                 employeeId: lead.employeeId,
               }))}
+              managerOptions={scopedManagers.map((manager) => ({
+                id: manager.id,
+                fullName: manager.fullName,
+                employeeId: manager.employeeId,
+              }))}
+              leadAssigneeOptions={hierarchyUsers
+                .filter((item) => item.status === "ACTIVE")
+                .map((item) => ({
+                  id: item.id,
+                  fullName: item.fullName,
+                  roleName: item.roleName,
+                }))}
               deleteAction={deleteUserAction}
               resetPasswordAction={resetPasswordAction}
             />

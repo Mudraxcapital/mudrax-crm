@@ -14,8 +14,10 @@ interface LoginPageProps {
 
 const ACCOUNT_DISABLED_BANNER =
   "Your account has been disabled. Please contact your administrator.";
-const ACCOUNT_LOCKED_BANNER =
-  "Your account is temporarily locked after too many failed sign-in attempts. Contact an administrator to unlock, or try again later.";
+const ACCOUNT_SUSPENDED_BANNER =
+  "Your account has been suspended. Please contact your administrator.";
+const SESSION_EXPIRED_BANNER =
+  "Your session expired. Please sign in again.";
 const PASSWORD_CHANGED_BANNER =
   "Password updated. Sign in with your new password.";
 
@@ -35,13 +37,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   const { callbackUrl, reason, passwordChanged } = await searchParams;
   const initialError =
-    reason === "disabled" || reason === "suspended"
+    reason === "disabled"
       ? ACCOUNT_DISABLED_BANNER
-      : reason === "locked"
-        ? ACCOUNT_LOCKED_BANNER
-        : passwordChanged === "1"
-          ? PASSWORD_CHANGED_BANNER
-          : undefined;
+      : reason === "suspended"
+        ? ACCOUNT_SUSPENDED_BANNER
+        : reason === "session_revoked"
+          ? SESSION_EXPIRED_BANNER
+          : passwordChanged === "1"
+            ? PASSWORD_CHANGED_BANNER
+            : undefined;
 
   return (
     <div className="relative flex min-h-screen">

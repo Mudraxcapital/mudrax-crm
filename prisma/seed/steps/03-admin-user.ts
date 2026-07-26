@@ -2,7 +2,7 @@
 // prisma/seed/steps/03-admin-user.ts
 //
 // Seeds the Mudrax Capitals employee roster for local development:
-//   1 Admin, 1 Manager, 3 Team Leads, 9 Callers (3 per Team Lead).
+//   1 Admin, 1 Manager, 3 Team Leads, 20 Callers (divided across Team Leads).
 // Employee IDs use the MCS#### format (auto-assigned in production creates).
 // ============================================================================
 
@@ -28,7 +28,8 @@ export interface DemoUserSeed {
 }
 
 const TEAM_LEAD_COUNT = 3;
-const CALLERS_PER_TEAM_LEAD = 3;
+/** Callers per Team Lead — totals 20. */
+const CALLER_COUNTS_PER_TL = [7, 7, 6] as const;
 
 const FIRST_NAMES = [
   "Aarav",
@@ -40,6 +41,17 @@ const FIRST_NAMES = [
   "Reyansh",
   "Ayaan",
   "Krishna",
+  "Ishaan",
+  "Kabir",
+  "Dev",
+  "Rohan",
+  "Yash",
+  "Kunal",
+  "Nikhil",
+  "Rahul",
+  "Aman",
+  "Varun",
+  "Harsh",
 ] as const;
 
 const LAST_NAMES = [
@@ -52,6 +64,17 @@ const LAST_NAMES = [
   "Gupta",
   "Mehta",
   "Joshi",
+  "Kapoor",
+  "Desai",
+  "Khan",
+  "Chopra",
+  "Malik",
+  "Bose",
+  "Rao",
+  "Verma",
+  "Shah",
+  "Pillai",
+  "Das",
 ] as const;
 
 function employeeId(n: number): string {
@@ -84,21 +107,30 @@ const TEAM_LEAD_DEFS: Omit<DemoUserSeed, "role" | "password">[] = [
 ];
 
 function buildCallerDefs(): DemoUserSeed[] {
-  const totalCallers = TEAM_LEAD_COUNT * CALLERS_PER_TEAM_LEAD;
-  return Array.from({ length: totalCallers }, (_, index) => {
-    const first = FIRST_NAMES[index]!;
-    const last = LAST_NAMES[index]!;
-    const seq = 6 + index;
-    return {
-      role: "Caller" as const,
-      email: `${first.toLowerCase()}.${last.toLowerCase()}@mudraxcapital.com`,
-      employeeId: employeeId(seq),
-      fullName: `${first} ${last}`,
-      phone: phoneFor(seq),
-      password: DEMO_USER_PASSWORD,
-      teamLeadIndex: index % TEAM_LEAD_COUNT,
-    };
-  });
+  const defs: DemoUserSeed[] = [];
+  let nameIndex = 0;
+  let seq = 6;
+
+  for (let teamLeadIndex = 0; teamLeadIndex < TEAM_LEAD_COUNT; teamLeadIndex++) {
+    const count = CALLER_COUNTS_PER_TL[teamLeadIndex] ?? 0;
+    for (let i = 0; i < count; i++) {
+      const first = FIRST_NAMES[nameIndex]!;
+      const last = LAST_NAMES[nameIndex]!;
+      defs.push({
+        role: "Caller",
+        email: `${first.toLowerCase()}.${last.toLowerCase()}@mudraxcapital.com`,
+        employeeId: employeeId(seq),
+        fullName: `${first} ${last}`,
+        phone: phoneFor(seq),
+        password: DEMO_USER_PASSWORD,
+        teamLeadIndex,
+      });
+      nameIndex += 1;
+      seq += 1;
+    }
+  }
+
+  return defs;
 }
 
 export const DEMO_USERS: DemoUserSeed[] = [
@@ -163,8 +195,9 @@ export async function seedAdminUser(
   org: OrganizationSeedResult,
   roleIds: Record<RoleName, string>,
 ): Promise<AdminUserSeedResult> {
+  const totalCallers = CALLER_COUNTS_PER_TL.reduce((sum, n) => sum + n, 0);
   section(
-    `3. Employees — 1 Admin, 1 Manager, ${TEAM_LEAD_COUNT} Team Leads, ${TEAM_LEAD_COUNT * CALLERS_PER_TEAM_LEAD} Callers`,
+    `3. Employees — 1 Admin, 1 Manager, ${TEAM_LEAD_COUNT} Team Leads, ${totalCallers} Callers`,
   );
 
   explain(
@@ -203,7 +236,7 @@ export async function seedAdminUser(
         ? (teamLeadIds[def.teamLeadIndex] ?? null)
         : null;
     const reportingManagerId: string | null =
-      def.role === "Team Lead" ? managerId : null;
+      def.role === "Team Lead" || def.role === "Caller" ? managerId : null;
 
     const user: { id: string } = await prisma.user.create({
       data: {
@@ -251,7 +284,7 @@ export async function seedAdminUser(
   summary("Employees seeded", DEMO_USERS.length);
   explain(`Shared non-admin password: ${passwordByRole.get("Manager")}`);
   explain(
-    `Hierarchy: Manager → ${teamLeadIds.length} Team Leads → ${CALLERS_PER_TEAM_LEAD} Callers each`,
+    `Hierarchy: Manager → ${teamLeadIds.length} Team Leads → Callers (${CALLER_COUNTS_PER_TL.join(" / ")})`,
   );
 
   return {

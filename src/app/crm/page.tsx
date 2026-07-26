@@ -4,13 +4,10 @@ import { hasPermission } from "@/modules/rbac";
 import { countCustomers } from "@/modules/customers";
 import { countLeads, getLeadsByStage, getLeadsBySource } from "@/modules/leads";
 import { CAMPAIGN_STATUSES, listCampaigns } from "@/modules/campaigns";
-import { listRecentCrmActivity } from "../_lib/recentActivity";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { BarList } from "@/shared/ui/Charts";
-import { Timeline } from "@/shared/ui/Timeline";
 import { Button } from "@/shared/ui/Button";
-import { EmptyState } from "@/shared/ui/EmptyState";
 import { Badge, statusTone } from "@/shared/ui/Badge";
 import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 
@@ -20,24 +17,17 @@ export default async function CrmDashboardPage() {
   const canViewCustomers = hasPermission(authContext, "customer.view");
   const canViewLeads = hasPermission(authContext, "lead.view");
   const canViewCampaigns = hasPermission(authContext, "campaign.view");
-  const canViewFollowUps = hasPermission(authContext, "follow_up.view");
   const canManageFields = hasPermission(authContext, "custom_field.manage");
   const book = managerBookFilter(authContext);
   const leadFilter = leadHierarchyFilter(authContext);
 
-  const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns, activity] =
-    await Promise.all([
-      canViewCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
-      canViewLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
-      canViewLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
-      canViewLeads ? getLeadsBySource(authContext.organizationId) : Promise.resolve([]),
-      canViewCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
-      listRecentCrmActivity(authContext.organizationId, 10, {
-        includeLeads: canViewLeads,
-        includeFollowUps: canViewFollowUps,
-        includeCampaigns: canViewCampaigns,
-      }),
-    ]);
+  const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns] = await Promise.all([
+    canViewCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
+    canViewLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
+    canViewLeads ? getLeadsByStage(authContext.organizationId) : Promise.resolve([]),
+    canViewLeads ? getLeadsBySource(authContext.organizationId) : Promise.resolve([]),
+    canViewCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
+  ]);
 
   const campaignsByStatus = CAMPAIGN_STATUSES.map((status) => ({
     status,
@@ -145,36 +135,6 @@ export default async function CrmDashboardPage() {
           </Card>
         ) : null}
       </div>
-
-      <Card>
-        <CardHeader
-          title="Recent activity"
-          actions={
-            <Link href="/activity">
-              <Button variant="ghost" size="sm">
-                View all
-              </Button>
-            </Link>
-          }
-        />
-        <CardBody>
-          <Timeline
-            items={activity.map((entry) => ({
-              id: entry.id,
-              title: entry.label,
-              description: entry.source,
-              timestamp: new Date(entry.occurredAt).toLocaleString(),
-              tone: "info",
-            }))}
-            empty={
-              <EmptyState
-                title="No activity yet"
-                description="Customer, lead, and campaign events will appear here."
-              />
-            }
-          />
-        </CardBody>
-      </Card>
     </PageSection>
   );
 }

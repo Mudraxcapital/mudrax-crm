@@ -9,7 +9,7 @@ import {
   listLeads,
   countLeads,
 } from "@/modules/leads";
-import { listUserSummaries } from "@/modules/users";
+import { listUsers } from "@/modules/users";
 import { LeadImportForm } from "@/modules/leads/presentation/components/LeadImportForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { TabNav } from "@/shared/ui/Tabs";
@@ -21,12 +21,13 @@ export default async function LeadImportPage() {
   const canViewLeads = hasPermission(authContext, "lead.view");
   const book = managerBookFilter(authContext);
   const hierarchyFilter = leadHierarchyFilter(authContext);
+  const primaryRole = authContext.hierarchy.primaryRole;
 
   const [sources, batches, campaigns, users, allLeads, activeFields] = await Promise.all([
     leadCatalogs.listSources(authContext.organizationId),
     listImportBatches(authContext.organizationId, book),
     listCampaigns(authContext.organizationId, book),
-    listUserSummaries(authContext.organizationId),
+    listUsers({ status: "ACTIVE", limit: 5_000 }),
     listLeads(authContext.organizationId, { limit: 5000, ...hierarchyFilter }),
     listActiveLeadFields(authContext.organizationId),
   ]);
@@ -55,21 +56,38 @@ export default async function LeadImportPage() {
   );
 
   const visibleIds = authContext.hierarchy.visibleUserIds;
-  const agents = users
-    .filter((user) => user.status === "ACTIVE")
-    .filter((user) => !visibleIds || visibleIds.includes(user.id))
-    .map((user) => {
-      const assigned = allLeads.filter((lead) => lead.currentAssigneeUserId === user.id);
-      const openLeads = assigned.filter((lead) => lead.currentStageBucket !== "CLOSED").length;
-      const completedLeads = assigned.filter((lead) => lead.currentStageBucket === "CLOSED").length;
-      return {
-        id: user.id,
-        fullName: user.fullName,
-        openLeads,
-        completedLeads,
-        availability: "AVAILABLE" as const,
-      };
-    });
+  const callers = users
+    .filter((user) => user.roleName === "Caller")
+    .filter((user) => !visibleIds || visibleIds.includes(user.id));
+
+  const agents = callers.map((user) => {
+    const assigned = allLeads.filter((lead) => lead.currentAssigneeUserId === user.id);
+    const openLeads = assigned.filter((lead) => lead.currentStageBucket !== "CLOSED").length;
+    const completedLeads = assigned.filter((lead) => lead.currentStageBucket === "CLOSED").length;
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      openLeads,
+      completedLeads,
+      availability: "AVAILABLE" as const,
+      assignedTeamLeadId: user.assignedTeamLeadId,
+      reportingManagerId: user.reportingManagerId,
+    };
+  });
+
+  const supervisors = users
+    .filter((user) => user.roleName === "Manager" || user.roleName === "Team Lead")
+    .filter((user) => {
+      if (primaryRole === "Admin") return true;
+      if (!visibleIds) return true;
+      return visibleIds.includes(user.id);
+    })
+    .map((user) => ({
+      id: user.id,
+      fullName: user.fullName,
+      role: user.roleName as "Manager" | "Team Lead",
+      reportingManagerId: user.reportingManagerId,
+    }));
 
   const userNameById = new Map(users.map((user) => [user.id, user.fullName]));
   const campaignNameById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
@@ -78,7 +96,7 @@ export default async function LeadImportPage() {
     <PageSection>
       <PageHeader
         title="Add Leads from Excel"
-        description="Add from Excel Wizard — upload, map fields, resolve duplicates, assign campaign & agents, then distribute."
+        description="Upload, map fields, resolve duplicates, assign campaign & callers, then distribute."
         breadcrumbs={[
           { label: "Leads", href: "/leads" },
           { label: "Add from Excel" },
@@ -105,6 +123,8 @@ export default async function LeadImportPage() {
           agents={agents}
           canCreateCampaign={canCreateCampaign}
           importableFields={importableFields}
+          actorRole={primaryRole}
+          supervisors={supervisors}
         />
       </section>
 

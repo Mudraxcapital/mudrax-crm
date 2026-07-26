@@ -39,7 +39,6 @@ const QUICK_LINKS = [
   { href: "/reports", label: "Reports", desc: "Analytics & KPIs", perm: "report.view" },
   { href: "/loans", label: "Loans", desc: "Applications & accounts", perm: "loan_application.view" },
   { href: "/users", label: "User Management", desc: "Employees & roles", perm: "user.view" },
-  { href: "/settings", label: "Settings", desc: "Workspace configuration", perm: null },
   { href: "/crm", label: "CRM Overview", desc: "Operational dashboard", perm: null },
 ] as const;
 

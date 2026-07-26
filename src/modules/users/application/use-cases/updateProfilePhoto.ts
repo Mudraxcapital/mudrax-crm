@@ -1,5 +1,6 @@
 // ============================================================================
 // Profile photo upload / remove via DocumentStoragePort (local disk today).
+// Supports admin-managed uploads (user.manage + hierarchy) and self-service.
 // ============================================================================
 
 import type { DocumentStoragePort } from "@/modules/documents/application/ports/DocumentStoragePort";
@@ -25,27 +26,36 @@ export function makeUpdateProfilePhoto(
     actorRoles: string[];
     hierarchy: HierarchyScope;
     actor: UserAuditActor;
+    /** When true, only the owner may change the photo (no user.manage required). */
+    selfService?: boolean;
     ipAddress?: string | null;
   }): Promise<string | null> {
     const user = await repository.findById(input.userId);
     if (!user) throw new UserNotFoundError(input.userId);
 
-    const targetRole = await roles.getPrimaryRoleName(input.userId);
-    assertCanActOnHierarchyTarget({
-      hierarchy: input.hierarchy,
-      actorRoles: input.actorRoles,
-      actorUserId: input.actor.actorId ?? "",
-      targetUserId: input.userId,
-      targetRole,
-      action: "edit",
-    });
+    const actorId = input.actor.actorId ?? "";
+    if (input.selfService) {
+      if (actorId !== input.userId) {
+        throw new InvalidUserHierarchyError("You can only update your own profile photo.");
+      }
+    } else {
+      const targetRole = await roles.getPrimaryRoleName(input.userId);
+      assertCanActOnHierarchyTarget({
+        hierarchy: input.hierarchy,
+        actorRoles: input.actorRoles,
+        actorUserId: actorId,
+        targetUserId: input.userId,
+        targetRole,
+        action: "edit",
+      });
+    }
 
     if (input.remove || !input.file) {
       await repository.updateWithAudit(
         input.userId,
         { profilePhotoUrl: null, updatedByUserId: input.actor.actorId },
         input.actor,
-        "Profile Photo Removed",
+        input.selfService ? "Profile Photo Removed (Self)" : "Profile Photo Removed",
       );
       return null;
     }
@@ -71,13 +81,12 @@ export function makeUpdateProfilePhoto(
       mimeType: input.file.contentType,
     });
 
-    // Served via authenticated API route — store storage key, not a public URL.
     const photoRef = `storage:${stored.storageKey}`;
     await repository.updateWithAudit(
       input.userId,
       { profilePhotoUrl: photoRef, updatedByUserId: input.actor.actorId },
       input.actor,
-      "Profile Photo Updated",
+      input.selfService ? "Profile Photo Updated (Self)" : "Profile Photo Updated",
     );
     return photoRef;
   };

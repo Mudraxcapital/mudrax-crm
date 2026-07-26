@@ -38,13 +38,15 @@ const LEAD_STAGES: {
   sortOrder: number;
 }[] = [
   { name: "Fresh", bucket: StageBucket.INITIAL, sortOrder: 1 },
-  { name: "Contacted", bucket: StageBucket.ACTIVE, sortOrder: 2 },
-  { name: "Interested", bucket: StageBucket.ACTIVE, sortOrder: 3 },
-  { name: "Follow-up Scheduled", bucket: StageBucket.ACTIVE, sortOrder: 4 },
-  { name: "Documentation In Progress", bucket: StageBucket.ACTIVE, sortOrder: 5 },
-  { name: "Submitted to Bank", bucket: StageBucket.ACTIVE, sortOrder: 6 },
-  { name: "Won", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.WON, sortOrder: 7 },
-  { name: "Lost", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 8 },
+  // Call went through but was not picked up — distinct from Contacted (answered).
+  { name: "Ringing", bucket: StageBucket.ACTIVE, sortOrder: 2 },
+  { name: "Contacted", bucket: StageBucket.ACTIVE, sortOrder: 3 },
+  { name: "Interested", bucket: StageBucket.ACTIVE, sortOrder: 4 },
+  { name: "Follow-up Scheduled", bucket: StageBucket.ACTIVE, sortOrder: 5 },
+  { name: "Documentation In Progress", bucket: StageBucket.ACTIVE, sortOrder: 6 },
+  { name: "Submitted to Bank", bucket: StageBucket.ACTIVE, sortOrder: 7 },
+  { name: "Won", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.WON, sortOrder: 8 },
+  { name: "Lost", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 9 },
 ];
 
 const LOST_REASONS = [

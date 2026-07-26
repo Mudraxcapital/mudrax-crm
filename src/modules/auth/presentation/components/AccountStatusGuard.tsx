@@ -3,19 +3,56 @@
 // ============================================================================
 // Polls session validity so Disable / Suspend force-logs the user out without
 // waiting for a full navigation. Mounted in the authenticated AppShell.
+// Uses an in-app Dialog — never native window.alert / browser popups.
 // ============================================================================
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/shared/ui/Button";
+import { Dialog } from "@/shared/ui/Dialog";
 
 const POLL_MS = 8_000;
-const ACCOUNT_DISABLED_MESSAGE =
-  "Your account has been disabled.\nPlease contact your administrator.";
+
+type SessionEndReason = "disabled" | "suspended" | "session_revoked" | "unauthenticated";
+
+function messageForReason(reason: SessionEndReason): { title: string; description: string } {
+  switch (reason) {
+    case "disabled":
+      return {
+        title: "Account disabled",
+        description:
+          "Your account has been disabled. Please contact your administrator for help.",
+      };
+    case "suspended":
+      return {
+        title: "Account suspended",
+        description:
+          "Your account has been suspended. Please contact your administrator for help.",
+      };
+    default:
+      return {
+        title: "Session ended",
+        description: "Your session expired. Please sign in again to continue.",
+      };
+  }
+}
 
 export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
   const forcingOut = useRef(false);
+  const [reason, setReason] = useState<SessionEndReason | null>(null);
+
+  const leave = useCallback((next: SessionEndReason) => {
+    if (forcingOut.current) return;
+    forcingOut.current = true;
+    setReason(next);
+  }, []);
+
+  const confirmLeave = useCallback(() => {
+    const next = reason ?? "session_revoked";
+    window.location.href = `/api/auth/clear-session?reason=${encodeURIComponent(next)}`;
+  }, [reason]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || reason) return;
 
     async function check() {
       if (forcingOut.current) return;
@@ -28,10 +65,8 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
         if (response.ok) return;
 
         const body = (await response.json().catch(() => ({}))) as { reason?: string };
-        const reason = body.reason ?? "disabled";
-        forcingOut.current = true;
-        window.alert(ACCOUNT_DISABLED_MESSAGE);
-        window.location.href = `/api/auth/clear-session?reason=${encodeURIComponent(reason)}`;
+        const next = (body.reason ?? "session_revoked") as SessionEndReason;
+        leave(next);
       } catch {
         // Network blip — try again on the next interval.
       }
@@ -53,7 +88,25 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [enabled]);
+  }, [enabled, leave, reason]);
 
-  return null;
+  if (!reason) return null;
+
+  const copy = messageForReason(reason);
+
+  return (
+    <Dialog
+      open
+      onClose={confirmLeave}
+      title={copy.title}
+      description={copy.description}
+      size="sm"
+    >
+      <div className="flex justify-end">
+        <Button type="button" onClick={confirmLeave}>
+          Continue to sign in
+        </Button>
+      </div>
+    </Dialog>
+  );
 }

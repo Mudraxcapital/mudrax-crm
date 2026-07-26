@@ -14,17 +14,25 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const current = await getCurrentUser();
-  if (!current || !hasPermission(current.authContext, "user.view")) {
+  if (!current) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { id } = await context.params;
+  const isSelf = current.session.user.id === id;
+  const canViewOthers = hasPermission(current.authContext, "user.view");
+  if (!isSelf && !canViewOthers) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const user = await getUser(id, {
-      hierarchy: current.authContext.hierarchy,
-      actorRoles: current.authContext.roles.map((role) => role.name),
-      actorUserId: current.session.user.id,
-    });
+    const user = isSelf
+      ? await getUser(id)
+      : await getUser(id, {
+          hierarchy: current.authContext.hierarchy,
+          actorRoles: current.authContext.roles.map((role) => role.name),
+          actorUserId: current.session.user.id,
+        });
 
     const ref = user.profilePhotoUrl;
     if (!ref) {
@@ -47,7 +55,6 @@ export async function GET(
       });
     }
 
-    // Legacy absolute URL stored before storage keys.
     return NextResponse.redirect(ref);
   } catch (error) {
     if (error instanceof UserNotFoundError) {

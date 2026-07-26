@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { getPermissionScope, hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
-import { listCustomers } from "@/modules/customers";
 import {
   countLeads,
   leadCatalogs,
@@ -12,18 +11,13 @@ import {
 } from "@/modules/leads";
 import { listCampaigns } from "@/modules/campaigns";
 import { listUserSummaries, listUsers } from "@/modules/users";
-import { LeadForm } from "@/modules/leads/presentation/components/LeadForm";
-import { createLeadAction } from "@/modules/leads/presentation/controllers/createLead.action";
 import { AdvancedLeadSearch } from "@/modules/leads/presentation/components/AdvancedLeadSearch";
 import { BulkLeadActions } from "@/modules/leads/presentation/components/BulkLeadActions";
 import { MergeLeadsForm } from "@/modules/leads/presentation/components/MergeLeadsForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
-import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
-import { TabNav } from "@/shared/ui/Tabs";
 import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
-import { CreatePanel } from "../_components/CreatePanel";
 import { LeadsTable } from "./_components/LeadsTable";
 
 export default async function LeadsPage({
@@ -72,7 +66,11 @@ export default async function LeadsPage({
 
   const callers = await listUsers({ role: "Caller", status: "ACTIVE", limit: 2_000 }).catch(() =>
     listUserSummaries(authContext.organizationId).then((users) =>
-      users.map((user) => ({ id: user.id, fullName: user.fullName, roleName: "Caller" as string | null })),
+      users.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        roleName: "Caller" as string | null,
+      })),
     ),
   );
 
@@ -103,32 +101,19 @@ export default async function LeadsPage({
     searchableCustomKeys: searchableKeys,
   };
 
-  const [
-    leads,
-    totalLeadCount,
-    customers,
-    sources,
-    stages,
-    lostReasons,
-    assignees,
-    savedViews,
-    campaigns,
-  ] = await Promise.all([
-    listLeads(authContext.organizationId, { ...filter, limit: 10_000 }),
-    countLeads(authContext.organizationId, filter),
-    listCustomers(authContext.organizationId, {
-      limit: 10_000,
-      ...managerBookFilter(authContext),
-    }),
-    leadCatalogs.listSources(authContext.organizationId),
-    leadCatalogs.listStages(authContext.organizationId),
-    leadCatalogs.listLostReasons(authContext.organizationId),
-    listUserSummaries(authContext.organizationId),
-    canManageViews ? listSavedViews(session.user.id) : Promise.resolve([]),
-    hasPermission(authContext, "campaign.view")
-      ? listCampaigns(authContext.organizationId, managerBookFilter(authContext))
-      : Promise.resolve([]),
-  ]);
+  const [leads, totalLeadCount, sources, stages, lostReasons, assignees, savedViews, campaigns] =
+    await Promise.all([
+      listLeads(authContext.organizationId, { ...filter, limit: 10_000 }),
+      countLeads(authContext.organizationId, filter),
+      leadCatalogs.listSources(authContext.organizationId),
+      leadCatalogs.listStages(authContext.organizationId),
+      leadCatalogs.listLostReasons(authContext.organizationId),
+      listUserSummaries(authContext.organizationId),
+      canManageViews ? listSavedViews(session.user.id) : Promise.resolve([]),
+      hasPermission(authContext, "campaign.view")
+        ? listCampaigns(authContext.organizationId, managerBookFilter(authContext))
+        : Promise.resolve([]),
+    ]);
 
   const exportQs = new URLSearchParams();
   if (search) exportQs.set("search", search);
@@ -141,13 +126,15 @@ export default async function LeadsPage({
     <PageSection>
       <PageHeader
         title="All Leads"
-        description={`Inbound sales inquiries tracked through your pipeline. ${totalLeadCount.toLocaleString()} total.`}
+        description={`${totalLeadCount.toLocaleString()} leads`}
         breadcrumbs={[{ label: "Leads", href: "/leads" }, { label: "All Leads" }]}
         actions={
           <>
-            <Link href="/leads/pipeline">
-              <Button variant="secondary">Pipeline</Button>
-            </Link>
+            {canCreate ? (
+              <Link href="/leads/new">
+                <Button>Single Lead</Button>
+              </Link>
+            ) : null}
             {canImport ? (
               <Link href="/leads/import">
                 <Button variant="secondary">Add from Excel</Button>
@@ -156,36 +143,8 @@ export default async function LeadsPage({
             <a href={`/api/leads/export?${exportQs.toString()}`}>
               <Button variant="secondary">Export</Button>
             </a>
-            {canCreate ? (
-              <CreatePanel
-                triggerLabel="New lead"
-                title="Create lead"
-                description="Link an inquiry to a customer and assign ownership."
-                width="lg"
-              >
-                <LeadForm
-                  action={createLeadAction}
-                  customers={customers.map((customer) => ({
-                    id: customer.id,
-                    fullName: customer.fullName,
-                  }))}
-                  sources={sources}
-                  assignees={assignees.map((user) => ({ id: user.id, fullName: user.fullName }))}
-                  fields={activeFields}
-                />
-              </CreatePanel>
-            ) : null}
           </>
         }
-      />
-
-      <TabNav
-        activeHref="/leads"
-        items={[
-          { href: "/leads", label: "All Leads" },
-          { href: "/leads/pipeline", label: "Pipeline" },
-          ...(canImport ? [{ href: "/leads/import", label: "Add from Excel" }] : []),
-        ]}
       />
 
       <AdvancedLeadSearch
@@ -227,32 +186,35 @@ export default async function LeadsPage({
       />
 
       {canReassign || canUpdate ? (
-        <Card>
-          <CardHeader
-            title="Bulk actions"
-            description="Apply stage or assignment changes across the current result set."
-          />
-          <CardBody>
-            <BulkLeadActions
-              leadIds={leads.map((lead) => lead.id)}
-              stages={stages}
-              lostReasons={lostReasons}
-              assignees={assignees.map((user) => ({ id: user.id, fullName: user.fullName }))}
-            />
-          </CardBody>
-        </Card>
-      ) : null}
-
-      {canUpdate ? (
-        <Card>
-          <CardHeader
-            title="Merge leads"
-            description="Close a duplicate as Lost while keeping the survivor (same customer required)."
-          />
-          <CardBody>
-            <MergeLeadsForm lostReasons={lostReasons} />
-          </CardBody>
-        </Card>
+        <details className="mx-card">
+          <summary className="cursor-pointer px-5 py-3 text-sm font-medium">More actions</summary>
+          <div className="space-y-6 border-t border-border px-5 py-4">
+            {canReassign || canUpdate ? (
+              <div>
+                <h3 className="text-sm font-medium">Bulk actions</h3>
+                <div className="mt-3">
+                  <BulkLeadActions
+                    leadIds={leads.map((lead) => lead.id)}
+                    stages={stages}
+                    lostReasons={lostReasons}
+                    assignees={assignees.map((user) => ({
+                      id: user.id,
+                      fullName: user.fullName,
+                    }))}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {canUpdate ? (
+              <div>
+                <h3 className="text-sm font-medium">Merge leads</h3>
+                <div className="mt-3">
+                  <MergeLeadsForm lostReasons={lostReasons} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </details>
       ) : null}
     </PageSection>
   );

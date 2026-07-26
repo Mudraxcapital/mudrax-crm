@@ -11,6 +11,7 @@ import {
   DuplicateUserPhoneError,
   InvalidUserHierarchyError,
 } from "@/modules/users";
+import { formString } from "../lib/formData";
 
 export interface UserFormState {
   error?: string;
@@ -21,11 +22,6 @@ export type CreateUserFormAction = (
   formData: FormData,
 ) => Promise<UserFormState>;
 
-function str(formData: FormData, key: string): string {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
-}
-
 export async function createUserAction(
   _previousState: UserFormState | undefined,
   formData: FormData,
@@ -33,15 +29,15 @@ export async function createUserAction(
   const { session, authContext } = await requirePermission("user.manage");
 
   const parsed = createUserSchema.safeParse({
-    fullName: str(formData, "fullName"),
-    email: str(formData, "email"),
-    phone: str(formData, "phone"),
-    password: str(formData, "password"),
-    role: str(formData, "role"),
-    status: str(formData, "status") || "ACTIVE",
-    profilePhotoUrl: str(formData, "profilePhotoUrl"),
-    assignedTeamLeadId: str(formData, "assignedTeamLeadId"),
-    reportingManagerId: str(formData, "reportingManagerId"),
+    fullName: formString(formData, "fullName"),
+    email: formString(formData, "email"),
+    phone: formString(formData, "phone"),
+    password: formString(formData, "password"),
+    role: formString(formData, "role"),
+    status: formString(formData, "status") || "ACTIVE",
+    profilePhotoUrl: formString(formData, "profilePhotoUrl"),
+    assignedTeamLeadId: formString(formData, "assignedTeamLeadId"),
+    reportingManagerId: formString(formData, "reportingManagerId"),
   });
 
   if (!parsed.success) {

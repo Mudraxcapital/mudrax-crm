@@ -5,6 +5,8 @@
   "description": "Mudrax CRM - production Enterprise CRM for Mudrax Capitals (Loan DSA operations).",
   "scripts": {
     "dev": "next dev --turbopack",
+    "app:start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-app.ps1",
+    "app:start:docker": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-app.ps1 -FullDocker",
     "restart": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/restart-dev.ps1",
     "build": "next build --turbopack",
     "start": "next start",

@@ -2,10 +2,11 @@
 // src/modules/users/application/services/lastAdminPolicy.ts
 //
 // Ensures the company always retains at least one ACTIVE Admin.
+// Uses a Serializable + FOR UPDATE guard so concurrent demote/disable/delete
+// cannot race past the check.
 // ============================================================================
 
 import type { FixedUserRole, User, UserStatus } from "../../domain/entities/User";
-import { LastActiveAdminError } from "../../domain/errors/UserErrors";
 import type { UserRepository } from "../../domain/repositories/UserRepository";
 
 export async function assertKeepsActiveAdmin(input: {
@@ -27,8 +28,5 @@ export async function assertKeepsActiveAdmin(input: {
 
   if (!wouldLeaveAdminRole) return;
 
-  const activeAdmins = await repository.listByRole("Admin");
-  if (activeAdmins.length <= 1) {
-    throw new LastActiveAdminError();
-  }
+  await repository.assertKeepsActiveAdminLocked(target.id);
 }

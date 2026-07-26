@@ -45,6 +45,6 @@ export async function upsertNotificationPreferenceAction(
     throw error;
   }
 
-  revalidatePath("/notifications/preferences");
+  revalidatePath("/notifications");
   return {};
 }

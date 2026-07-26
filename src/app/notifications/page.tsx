@@ -44,7 +44,6 @@ export default async function NotificationsDashboardPage() {
           { href: "/notifications/history", label: "History" },
           { href: "/notifications/queue", label: "Queue" },
           { href: "/notifications/templates", label: "Templates" },
-          { href: "/notifications/preferences", label: "Preferences" },
           ...(canSend ? [{ href: "/notifications/send", label: "Send" }] : []),
         ]}
       />

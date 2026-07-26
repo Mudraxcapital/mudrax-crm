@@ -137,6 +137,12 @@ export default async function CampaignDetailPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Link
+            href={`/leads/pipeline?campaignId=${id}`}
+            className="text-sm text-accent hover:underline underline-offset-4"
+          >
+            Open Pipeline
+          </Link>
           {canImport ? (
             <Link
               href="/leads/import"

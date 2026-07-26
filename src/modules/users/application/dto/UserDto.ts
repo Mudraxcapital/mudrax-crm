@@ -15,7 +15,7 @@ export interface UserDto {
   email: string;
   phone: string | null;
   status: UserStatus;
-  displayStatus: UserStatus | "LOCKED";
+  displayStatus: UserStatus;
   mustChangePassword: boolean;
   lockedUntil: string | null;
   lockedReason: string | null;
@@ -31,7 +31,8 @@ export interface UserDto {
   roleName: string | null;
   assignedTeamLeadName: string | null;
   reportingManagerName: string | null;
-  permissions: string[];
+  /** Optional — only populated when explicitly requested (admin diagnostics). */
+  permissions?: string[];
 }
 
 export interface UserListItemDto {
@@ -41,7 +42,7 @@ export interface UserListItemDto {
   email: string;
   phone: string | null;
   status: UserStatus;
-  displayStatus: UserStatus | "LOCKED";
+  displayStatus: UserStatus;
   profilePhotoUrl: string | null;
   roleName: string | null;
   assignedTeamLeadId: string | null;
@@ -118,7 +119,7 @@ export function toUserDto(
     roleName: extras.roleName,
     assignedTeamLeadName: extras.assignedTeamLeadName ?? null,
     reportingManagerName: extras.reportingManagerName ?? null,
-    permissions: extras.permissions ?? [],
+    ...(extras.permissions ? { permissions: extras.permissions } : {}),
   };
 }
 

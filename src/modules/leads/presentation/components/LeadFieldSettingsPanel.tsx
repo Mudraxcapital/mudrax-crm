@@ -1,255 +1,352 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
 import { LeadFieldForm } from "./LeadFieldForm";
 import {
-  archiveLeadFieldAction,
   createLeadFieldAction,
   hideLeadFieldAction,
-  reorderLeadFieldsAction,
-  restoreLeadFieldAction,
   showLeadFieldAction,
   updateLeadFieldAction,
 } from "../controllers/leadField.actions";
+import { Dialog } from "@/shared/ui/Dialog";
+import { EmptyState } from "@/shared/ui/EmptyState";
 
-const SECTIONS: Array<{
-  id: LeadFieldDefinitionDto["section"];
-  title: string;
-  description: string;
-}> = [
-  {
-    id: "primary",
-    title: "Primary Fields",
-    description: "Core fields shown first on lead forms and detail views.",
-  },
-  {
-    id: "secondary",
-    title: "Secondary Fields",
-    description: "Additional active fields rendered after primary fields.",
-  },
-  {
-    id: "hidden",
-    title: "Hidden Fields",
-    description: "Active fields that are not shown on forms (still stored).",
-  },
-  {
-    id: "inactive",
-    title: "Inactive Fields",
-    description: "Archived or inactive definitions. Restore to use again.",
-  },
-];
+const TYPE_LABELS: Record<string, string> = {
+  TEXT: "Text",
+  TEXTAREA: "Long text",
+  NUMBER: "Number",
+  CURRENCY: "Currency",
+  PHONE: "Phone",
+  EMAIL: "Email",
+  DROPDOWN: "Dropdown",
+  MULTI_SELECT: "Tags",
+  RADIO: "Radio",
+  CHECKBOX: "Checkbox",
+  DATE: "Date",
+  DATE_TIME: "Date & time",
+  BOOLEAN: "Yes / No",
+  URL: "URL",
+  FILE: "File",
+};
 
-function Flag({ on, label }: { on: boolean; label: string }) {
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-        on ? "bg-emerald-50 text-emerald-800" : "bg-surface-muted text-muted"
-      }`}
-    >
-      {label}
-    </span>
-  );
+const TYPE_ICONS: Record<string, string> = {
+  TEXT: "T",
+  TEXTAREA: "¶",
+  NUMBER: "#",
+  CURRENCY: "₹",
+  PHONE: "☎",
+  EMAIL: "@",
+  DROPDOWN: "▾",
+  MULTI_SELECT: "≡",
+  RADIO: "○",
+  CHECKBOX: "☑",
+  DATE: "D",
+  DATE_TIME: "⏱",
+  BOOLEAN: "Y",
+  URL: "U",
+  FILE: "F",
+};
+
+function typeLabel(type: string) {
+  return TYPE_LABELS[type] ?? type;
 }
 
+function typeIcon(type: string) {
+  return TYPE_ICONS[type] ?? "T";
+}
+
+function formatRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(diff) || diff < 0) return "—";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}M ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+type StatusFilter = "active" | "hidden" | "all";
+
 export function LeadFieldSettingsPanel({ fields }: { fields: LeadFieldDefinitionDto[] }) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [order, setOrder] = useState(fields.map((field) => field.id));
-  const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [dialog, setDialog] = useState<"create" | string | null>(null);
 
-  const byId = useMemo(() => new Map(fields.map((field) => [field.id, field])), [fields]);
+  const primaryFields = useMemo(
+    () =>
+      fields
+        .filter((field) => field.section === "primary")
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name)),
+    [fields],
+  );
 
-  const sections = SECTIONS.map((section) => ({
-    ...section,
-    items: fields
-      .filter((field) => field.section === section.id)
-      .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name)),
-  }));
+  const leadIdField =
+    fields.find((field) => field.internalKey === "phone") ??
+    primaryFields.find((field) => field.fieldType === "PHONE") ??
+    null;
 
-  function move(id: string, direction: -1 | 1) {
-    setOrder((current) => {
-      const index = current.indexOf(id);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
-      const copy = [...current];
-      const [item] = copy.splice(index, 1);
-      copy.splice(nextIndex, 0, item!);
-      return copy;
+  const otherFields = useMemo(() => {
+    const base = fields.filter((field) => field.section !== "primary");
+    const byStatus = base.filter((field) => {
+      if (statusFilter === "hidden") {
+        return field.section === "hidden" || field.section === "inactive";
+      }
+      if (statusFilter === "active") {
+        return field.section === "secondary";
+      }
+      return true;
     });
+
+    const q = query.trim().toLowerCase();
+    if (!q) return byStatus;
+    return byStatus.filter(
+      (field) =>
+        field.name.toLowerCase().includes(q) ||
+        field.fieldType.toLowerCase().includes(q) ||
+        typeLabel(field.fieldType).toLowerCase().includes(q),
+    );
+  }, [fields, query, statusFilter]);
+
+  const editingField =
+    typeof dialog === "string" ? (fields.find((field) => field.id === dialog) ?? null) : null;
+
+  function closeDialog() {
+    setDialog(null);
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-muted text-sm">
-          Master configuration for every lead field used across forms, import, search, filters, and
-          export.
-        </p>
+        <p className="text-muted text-sm">Configure fields used on every lead.</p>
         <button
           type="button"
           className="mx-btn mx-btn-primary"
-          onClick={() => setShowCreate((value) => !value)}
+          onClick={() => setDialog("create")}
         >
-          {showCreate ? "Close" : "Create Field"}
+          + Add a new Field
         </button>
       </div>
 
-      {showCreate ? (
-        <section className="mx-card p-5">
-          <h2 className="text-sm font-medium">Create Field</h2>
-          <div className="mt-4">
-            <LeadFieldForm action={createLeadFieldAction} />
-          </div>
-        </section>
-      ) : null}
-
-      <section className="mx-card p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-medium">Reorder</h2>
-            <p className="text-muted mt-1 text-xs">
-              Adjust display order, then save. Order applies across lead forms and views.
-            </p>
-          </div>
-          <form
-            action={(formData) => {
-              startTransition(async () => {
-                await reorderLeadFieldsAction(undefined, formData);
-              });
-            }}
-          >
-            <input type="hidden" name="orderedIds" value={order.join(",")} />
-            <button type="submit" disabled={pending} className="mx-btn mx-btn-secondary">
-              {pending ? "Saving…" : "Save order"}
-            </button>
-          </form>
+      {/* Lead ID */}
+      <section>
+        <div className="mb-2 flex items-center gap-2">
+          <p className="text-muted text-xs font-medium tracking-wide uppercase">Lead Id</p>
         </div>
-        <ul className="mt-4 flex flex-col gap-2">
-          {order.map((id) => {
-            const field = byId.get(id);
-            if (!field) return null;
-            return (
-              <li
-                key={id}
-                className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2 text-sm"
-              >
-                <span>
-                  <span className="font-medium">{field.name}</span>
-                  <span className="text-muted ml-2 text-xs">{field.internalKey}</span>
-                </span>
-                <span className="flex gap-1">
-                  <button type="button" className="mx-btn mx-btn-secondary px-2 py-1 text-xs" onClick={() => move(id, -1)}>
-                    ↑
-                  </button>
-                  <button type="button" className="mx-btn mx-btn-secondary px-2 py-1 text-xs" onClick={() => move(id, 1)}>
-                    ↓
-                  </button>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        {leadIdField ? (
+          <div className="mx-card flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="bg-surface-sunken text-muted flex size-8 items-center justify-center rounded-md text-sm">
+                {typeIcon(leadIdField.fieldType)}
+              </span>
+              <span className="text-sm font-medium">{leadIdField.name}</span>
+            </div>
+            <button
+              type="button"
+              className="text-accent text-sm font-medium hover:underline"
+              onClick={() => setDialog(leadIdField.id)}
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <div className="mx-card px-4 py-3 text-sm text-muted">Phone is used as Lead Id.</div>
+        )}
       </section>
 
-      {sections.map((section) => (
-        <section key={section.id} className="mx-card overflow-hidden">
-          <div className="border-b border-border px-5 py-4">
-            <h2 className="text-sm font-semibold">{section.title}</h2>
-            <p className="text-muted mt-1 text-xs">{section.description}</p>
-          </div>
-          {section.items.length === 0 ? (
-            <p className="text-muted px-5 py-6 text-sm">No fields in this section.</p>
+      {/* Primary fields */}
+      <section>
+        <p className="text-muted mb-2 text-xs font-medium tracking-wide uppercase">
+          Primary Fields
+        </p>
+        <div className="mx-card overflow-hidden">
+          {primaryFields.length === 0 ? (
+            <EmptyState
+              title="No primary fields"
+              description="Primary fields appear first on the lead form."
+              className="py-8"
+            />
           ) : (
-            <ul className="flex flex-col">
-              {section.items.map((field) => {
-                const boundUpdate = updateLeadFieldAction.bind(null, field.id);
-                const editing = editingId === field.id;
-                return (
-                  <li key={field.id} className="border-b border-border px-5 py-4 last:border-0">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-medium">{field.name}</h3>
-                          {field.isSystem ? (
-                            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800">
-                              System
-                            </span>
-                          ) : null}
-                          <span className="text-muted text-xs">{field.internalKey}</span>
-                        </div>
-                        <p className="text-muted mt-1 text-xs">
-                          {field.fieldType} · Order {field.displayOrder} ·{" "}
-                          {new Date(field.updatedAt).toLocaleString()}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <Flag on={field.isRequired} label="Required" />
-                          <Flag on={field.isVisible} label="Visible" />
-                          <Flag on={field.isSearchable} label="Searchable" />
-                          <Flag on={field.isFilterable} label="Filterable" />
-                          <Flag on={field.isImportable} label="Add from Excel" />
-                          <Flag on={field.isExportable} label="Exportable" />
-                          <Flag on={field.status === "ACTIVE"} label={field.status} />
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className="mx-btn mx-btn-secondary text-xs"
-                          onClick={() => setEditingId(editing ? null : field.id)}
-                        >
-                          {editing ? "Close" : "Edit"}
-                        </button>
-                        {field.isVisible ? (
-                          <form action={hideLeadFieldAction.bind(null, field.id)}>
-                            <button type="submit" className="mx-btn mx-btn-secondary text-xs">
-                              Hide
-                            </button>
-                          </form>
-                        ) : (
-                          <form action={showLeadFieldAction.bind(null, field.id)}>
-                            <button type="submit" className="mx-btn mx-btn-secondary text-xs">
-                              Show
-                            </button>
-                          </form>
-                        )}
-                        {field.status === "ARCHIVED" || field.status === "INACTIVE" ? (
-                          <form action={restoreLeadFieldAction.bind(null, field.id)}>
-                            <button type="submit" className="mx-btn mx-btn-secondary text-xs">
-                              Restore
-                            </button>
-                          </form>
-                        ) : (
-                          <form action={archiveLeadFieldAction.bind(null, field.id)}>
-                            <button
-                              type="submit"
-                              className="mx-btn mx-btn-secondary text-xs"
-                              disabled={field.isSystem && (field.internalKey === "full_name" || field.internalKey === "phone")}
-                              title={
-                                field.isSystem &&
-                                (field.internalKey === "full_name" || field.internalKey === "phone")
-                                  ? "Protected system fields can only be hidden"
-                                  : undefined
-                              }
-                            >
-                              Archive
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                    {editing ? (
-                      <div className="mt-4 border-t border-border pt-4">
-                        <LeadFieldForm action={boundUpdate} field={field} />
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
+            <ul>
+              {primaryFields.map((field, index) => (
+                <li
+                  key={field.id}
+                  className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-0"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-muted w-8 shrink-0 text-xs font-medium">
+                      H{index + 1}:
+                    </span>
+                    <span className="bg-surface-sunken text-muted flex size-7 shrink-0 items-center justify-center rounded text-xs font-semibold">
+                      {typeIcon(field.fieldType)}
+                    </span>
+                    <span className="truncate text-sm font-medium">{field.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-muted hover:text-foreground text-sm"
+                    onClick={() => setDialog(field.id)}
+                    aria-label={`Edit ${field.name}`}
+                  >
+                    Edit
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
-        </section>
-      ))}
+        </div>
+      </section>
+
+      {/* Other fields table */}
+      <section>
+        <p className="text-muted mb-2 text-xs font-medium tracking-wide uppercase">Other Fields</p>
+        <div className="mx-card overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search…"
+              className="mx-input max-w-xs flex-1"
+            />
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              className="mx-input w-auto"
+            >
+              <option value="active">Active Fields</option>
+              <option value="hidden">Hidden Fields</option>
+              <option value="all">All Fields</option>
+            </select>
+          </div>
+
+          <p className="text-muted border-b border-border px-4 py-2 text-xs">
+            {otherFields.length} result{otherFields.length === 1 ? "" : "s"} found.
+          </p>
+
+          {otherFields.length === 0 ? (
+            <EmptyState
+              title="No fields found"
+              description="Try a different search or add a new field."
+              action={
+                <button
+                  type="button"
+                  className="mx-btn mx-btn-primary text-xs"
+                  onClick={() => setDialog("create")}
+                >
+                  + Add a new Field
+                </button>
+              }
+              className="py-10"
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="bg-surface-sunken/50 text-muted text-xs">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Field Name</th>
+                    <th className="px-4 py-2.5 font-medium">Type</th>
+                    <th className="px-4 py-2.5 font-medium">Created On</th>
+                    <th className="px-4 py-2.5 font-medium">Last Modified</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {otherFields.map((field) => (
+                    <tr key={field.id} className="border-t border-border">
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-2.5">
+                          <span className="bg-surface-sunken text-muted flex size-7 items-center justify-center rounded text-xs font-semibold">
+                            {typeIcon(field.fieldType)}
+                          </span>
+                          <span className="font-medium">{field.name}</span>
+                        </span>
+                      </td>
+                      <td className="text-muted px-4 py-3">{typeLabel(field.fieldType)}</td>
+                      <td className="text-muted px-4 py-3">{formatRelative(field.createdAt)}</td>
+                      <td className="text-muted px-4 py-3">{formatRelative(field.updatedAt)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            className="text-accent text-sm font-medium hover:underline"
+                            onClick={() => setDialog(field.id)}
+                          >
+                            Edit
+                          </button>
+                          {field.isSystem &&
+                          (field.internalKey === "full_name" || field.internalKey === "phone") ? (
+                            <span className="text-muted text-xs">Protected</span>
+                          ) : field.isVisible && field.section !== "inactive" ? (
+                            <form
+                              action={hideLeadFieldAction.bind(null, field.id)}
+                              onSubmit={(event) => {
+                                if (
+                                  !confirm(
+                                    `Hide “${field.name}”? It will disappear from lead forms company-wide.`,
+                                  )
+                                ) {
+                                  event.preventDefault();
+                                }
+                              }}
+                            >
+                              <button
+                                type="submit"
+                                className="text-muted hover:text-foreground text-sm"
+                              >
+                                Hide
+                              </button>
+                            </form>
+                          ) : (
+                            <form action={showLeadFieldAction.bind(null, field.id)}>
+                              <button
+                                type="submit"
+                                className="text-muted hover:text-foreground text-sm"
+                              >
+                                Unhide
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <Dialog
+        open={dialog === "create"}
+        onClose={closeDialog}
+        title="Create Field"
+        size="md"
+      >
+        <LeadFieldForm action={createLeadFieldAction} onSuccess={closeDialog} />
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingField)}
+        onClose={closeDialog}
+        title="Edit Field"
+        size="md"
+      >
+        {editingField ? (
+          <LeadFieldForm
+            key={editingField.id}
+            action={updateLeadFieldAction.bind(null, editingField.id)}
+            field={editingField}
+            onSuccess={closeDialog}
+          />
+        ) : null}
+      </Dialog>
     </div>
   );
 }

@@ -10,21 +10,41 @@ describe("fixed roles", () => {
 });
 
 describe("user management permissions", () => {
-  it("restricts user.view to Manager and Admin (not Team Lead or Caller)", () => {
+  it("grants user.view / user.manage / user.delete from Team Lead upward (catalog minRole)", () => {
+    for (const code of ["user.view", "user.manage", "user.delete"] as const) {
+      const roles = computeRoleGrants()
+        .filter((grant) => grant.permissionCode === code)
+        .map((grant) => grant.role)
+        .sort();
+      expect(roles).toEqual(["Admin", "Manager", "Team Lead"]);
+    }
+  });
+
+  it("grants user.reset_password to Admin only (system scope)", () => {
+    const grants = computeRoleGrants().filter(
+      (grant) => grant.permissionCode === "user.reset_password",
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]?.role).toBe("Admin");
+    expect(grants[0]?.scope).toBe("SYSTEM");
+  });
+
+  it("grants custom_field.manage from Manager upward", () => {
     const roles = computeRoleGrants()
-      .filter((grant) => grant.permissionCode === "user.view")
+      .filter((grant) => grant.permissionCode === "custom_field.manage")
       .map((grant) => grant.role)
       .sort();
     expect(roles).toEqual(["Admin", "Manager"]);
   });
 
-  it("grants user.delete and user.reset_password to Admin only", () => {
-    for (const code of ["user.delete", "user.reset_password"] as const) {
-      const grants = computeRoleGrants().filter((grant) => grant.permissionCode === code);
-      expect(grants).toHaveLength(1);
-      expect(grants[0]?.role).toBe("Admin");
-      expect(grants[0]?.scope).toBe("SYSTEM");
-    }
+  it("does not grant User Management permissions to Caller", () => {
+    const callerGrants = computeRoleGrants().filter(
+      (grant) =>
+        grant.role === "Caller" &&
+        (grant.permissionCode.startsWith("user.") ||
+          grant.permissionCode === "custom_field.manage"),
+    );
+    expect(callerGrants).toEqual([]);
   });
 
   it("does not expose organization.* product permissions", () => {

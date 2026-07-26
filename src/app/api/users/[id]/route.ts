@@ -82,7 +82,8 @@ export async function PATCH(
       error instanceof DuplicateUserPhoneError ||
       error instanceof AdminRoleProtectedError ||
       error instanceof InvalidUserHierarchyError ||
-      error instanceof LastActiveAdminError
+      error instanceof LastActiveAdminError ||
+      error instanceof UserDeleteBlockedError
     ) {
       const status =
         error instanceof InvalidUserHierarchyError || error instanceof AdminRoleProtectedError
@@ -109,6 +110,14 @@ export async function DELETE(
     body && typeof body === "object" && typeof body.reassignCallersToTeamLeadId === "string"
       ? body.reassignCallersToTeamLeadId
       : null;
+  const reassignTeamLeadsToManagerId =
+    body && typeof body === "object" && typeof body.reassignTeamLeadsToManagerId === "string"
+      ? body.reassignTeamLeadsToManagerId
+      : null;
+  const reassignLeadsToUserId =
+    body && typeof body === "object" && typeof body.reassignLeadsToUserId === "string"
+      ? body.reassignLeadsToUserId
+      : null;
 
   try {
     await deleteUser({
@@ -117,6 +126,8 @@ export async function DELETE(
       hierarchy: current.authContext.hierarchy,
       actor: { actorType: "USER", actorId: current.session.user.id },
       reassignCallersToTeamLeadId,
+      reassignTeamLeadsToManagerId,
+      reassignLeadsToUserId,
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

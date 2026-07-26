@@ -62,6 +62,7 @@ export function UsersTable({
   roleFilterOptions,
   teamLeadOptions,
   managerOptions,
+  leadAssigneeOptions = [],
 }: {
   rows: UserRow[];
   currentUserId: string;
@@ -71,6 +72,8 @@ export function UsersTable({
   roleFilterOptions: string[];
   teamLeadOptions: { id: string; fullName: string }[];
   managerOptions: { id: string; fullName: string }[];
+  /** ACTIVE employees eligible to receive reassigned Leads. */
+  leadAssigneeOptions?: { id: string; fullName: string; roleName: string | null }[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
@@ -87,10 +90,16 @@ export function UsersTable({
     userId: string;
     fullName: string;
     mode: StatusDialogMode;
+    /** Current status when opening the dialog (for Enable vs Unsuspend copy). */
+    fromStatus?: string;
   } | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [deleteDialog, setDeleteDialog] = useState<UserRow | null>(null);
   const [reassignTo, setReassignTo] = useState("");
+  const [reassignManagerTo, setReassignManagerTo] = useState("");
+  const [reassignLeadsTo, setReassignLeadsTo] = useState("");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDetails, setBulkDetails] = useState<string[] | null>(null);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -130,18 +139,25 @@ export function UsersTable({
   }, [rows, role, status, teamLeadId, managerId, search, teamLeadOptions, managerOptions]);
 
   function openStatusDialog(row: UserRow, mode: StatusDialogMode) {
-    setStatusDialog({ userId: row.id, fullName: row.fullName, mode });
+    setStatusDialog({
+      userId: row.id,
+      fullName: row.fullName,
+      mode,
+      fromStatus: row.status,
+    });
     setStatusReason("");
   }
 
   function confirmStatusChange() {
     if (!statusDialog) return;
-    const { userId, mode } = statusDialog;
+    const { userId, mode, fromStatus } = statusDialog;
+    const defaultReason =
+      mode === "ACTIVE" && fromStatus === "SUSPENDED" ? "Unsuspended by administrator" : undefined;
     startTransition(async () => {
       const result = await changeUserStatusAction({
         userId,
         status: mode as UserStatus,
-        reason: statusReason.trim() || undefined,
+        reason: statusReason.trim() || defaultReason,
         forceLogout: true,
       });
       setMessage(result.error ?? result.success ?? null);
@@ -252,7 +268,7 @@ export function UsersTable({
               Reset Password
             </button>
           ) : null}
-          {canManage && r.status !== "ACTIVE" ? (
+          {canManage && r.id !== currentUserId && r.status === "INACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -265,7 +281,20 @@ export function UsersTable({
               Enable
             </button>
           ) : null}
-          {canManage && r.status !== "INACTIVE" ? (
+          {canManage && r.id !== currentUserId && r.status === "SUSPENDED" ? (
+            <button
+              type="button"
+              className="mx-btn mx-btn-ghost mx-btn-sm"
+              disabled={pending}
+              onClick={(event) => {
+                event.stopPropagation();
+                openStatusDialog(r, "ACTIVE");
+              }}
+            >
+              Unsuspend
+            </button>
+          ) : null}
+          {canManage && r.id !== currentUserId && r.status === "ACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -278,7 +307,7 @@ export function UsersTable({
               Disable
             </button>
           ) : null}
-          {canManage && r.status !== "SUSPENDED" ? (
+          {canManage && r.id !== currentUserId && r.status === "ACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -291,7 +320,7 @@ export function UsersTable({
               Suspend
             </button>
           ) : null}
-          {canDelete ? (
+          {canDelete && r.id !== currentUserId ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm text-danger"
@@ -299,6 +328,8 @@ export function UsersTable({
               onClick={(event) => {
                 event.stopPropagation();
                 setReassignTo("");
+                setReassignManagerTo("");
+                setReassignLeadsTo("");
                 setDeleteDialog(r);
               }}
             >
@@ -323,10 +354,21 @@ export function UsersTable({
 
   const dialogTitle =
     statusDialog?.mode === "ACTIVE"
-      ? "Enable account"
+      ? statusDialog.fromStatus === "SUSPENDED"
+        ? "Unsuspend account"
+        : "Enable account"
       : statusDialog?.mode === "SUSPENDED"
         ? "Suspend account"
         : "Disable account";
+
+  const dialogConfirmLabel =
+    statusDialog?.mode === "ACTIVE"
+      ? statusDialog.fromStatus === "SUSPENDED"
+        ? "Unsuspend"
+        : "Enable"
+      : statusDialog?.mode === "SUSPENDED"
+        ? "Suspend"
+        : "Disable";
 
   return (
     <div className="space-y-3">
@@ -445,8 +487,11 @@ export function UsersTable({
                   variant="danger"
                   disabled={pending || selected.length === 0}
                   onClick={() => {
-                    if (!confirm(`Delete ${selected.length} selected employee(s)?`)) return;
-                    runBulk(bulkDeleteUsersAction);
+                    setReassignTo("");
+                    setReassignManagerTo("");
+                    setReassignLeadsTo("");
+                    setBulkDetails(null);
+                    setBulkDeleteOpen(true);
                   }}
                 >
                   Bulk Delete
@@ -519,11 +564,7 @@ export function UsersTable({
                 disabled={pending}
                 onClick={confirmStatusChange}
               >
-                {statusDialog.mode === "ACTIVE"
-                  ? "Enable"
-                  : statusDialog.mode === "SUSPENDED"
-                    ? "Suspend"
-                    : "Disable"}
+                {dialogConfirmLabel}
               </Button>
             </div>
           </div>
@@ -535,20 +576,9 @@ export function UsersTable({
         onClose={() => setDeleteDialog(null)}
         title="Delete employee"
         description={
-          deleteDialog?.roleName === "Team Lead"
-            ? (() => {
-                const callerCount = rows.filter(
-                  (row) => row.assignedTeamLeadId === deleteDialog.id,
-                ).length;
-                return callerCount > 0
-                  ? `${deleteDialog.fullName} has ${callerCount} Caller(s). Reassign them before deleting.`
-                  : `Permanently delete ${deleteDialog.fullName}?`;
-              })()
-            : deleteDialog?.roleName === "Manager"
-              ? "Managers with Team Leads cannot be deleted until those Team Leads are reassigned."
-              : deleteDialog
-                ? `Permanently delete ${deleteDialog.fullName}?`
-                : undefined
+          deleteDialog
+            ? `Permanently delete ${deleteDialog.fullName}? Reassign hierarchy and Leads first when required.`
+            : undefined
         }
       >
         {deleteDialog ? (
@@ -573,6 +603,44 @@ export function UsersTable({
                 </select>
               </label>
             ) : null}
+            {deleteDialog.roleName === "Manager" &&
+            rows.some((row) => row.reportingManagerId === deleteDialog.id) ? (
+              <label className="flex flex-col gap-1.5">
+                <span className="mx-label">Reassign Team Leads to *</span>
+                <select
+                  className="mx-input"
+                  value={reassignManagerTo}
+                  onChange={(event) => setReassignManagerTo(event.target.value)}
+                >
+                  <option value="">Select Manager…</option>
+                  {managerOptions
+                    .filter((manager) => manager.id !== deleteDialog.id)
+                    .map((manager) => (
+                      <option key={manager.id} value={manager.id}>
+                        {manager.fullName}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+            <label className="flex flex-col gap-1.5">
+              <span className="mx-label">Reassign assigned Leads to</span>
+              <select
+                className="mx-input"
+                value={reassignLeadsTo}
+                onChange={(event) => setReassignLeadsTo(event.target.value)}
+              >
+                <option value="">Select employee (required if they own Leads)…</option>
+                {leadAssigneeOptions
+                  .filter((user) => user.id !== deleteDialog.id)
+                  .map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName}
+                      {user.roleName ? ` (${user.roleName})` : ""}
+                    </option>
+                  ))}
+              </select>
+            </label>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setDeleteDialog(null)}>
                 Cancel
@@ -583,19 +651,28 @@ export function UsersTable({
                   pending ||
                   (deleteDialog.roleName === "Team Lead" &&
                     rows.some((row) => row.assignedTeamLeadId === deleteDialog.id) &&
-                    !reassignTo)
+                    !reassignTo) ||
+                  (deleteDialog.roleName === "Manager" &&
+                    rows.some((row) => row.reportingManagerId === deleteDialog.id) &&
+                    !reassignManagerTo)
                 }
                 onClick={() => {
                   const target = deleteDialog;
-                  const needsReassign =
+                  const needsCallerReassign =
                     target.roleName === "Team Lead" &&
                     rows.some((row) => row.assignedTeamLeadId === target.id);
+                  const needsManagerReassign =
+                    target.roleName === "Manager" &&
+                    rows.some((row) => row.reportingManagerId === target.id);
                   setDeleteDialog(null);
                   startTransition(async () => {
-                    const result = await deleteUserAction(
-                      target.id,
-                      needsReassign ? reassignTo : null,
-                    );
+                    const result = await deleteUserAction(target.id, {
+                      reassignCallersToTeamLeadId: needsCallerReassign ? reassignTo : null,
+                      reassignTeamLeadsToManagerId: needsManagerReassign
+                        ? reassignManagerTo
+                        : null,
+                      reassignLeadsToUserId: reassignLeadsTo || null,
+                    });
                     setMessage(result.error ?? result.success ?? null);
                     router.refresh();
                   });
@@ -606,6 +683,103 @@ export function UsersTable({
             </div>
           </div>
         ) : null}
+      </Dialog>
+
+      <Dialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title="Bulk delete employees"
+        description={`Delete ${selected.length} selected employee(s). Provide reassignment targets when any selection owns Callers, Team Leads, or Leads.`}
+      >
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="mx-label">Reassign Callers to (Team Leads)</span>
+            <select
+              className="mx-input"
+              value={reassignTo}
+              onChange={(event) => setReassignTo(event.target.value)}
+            >
+              <option value="">Select Team Lead…</option>
+              {teamLeadOptions
+                .filter((lead) => !selected.includes(lead.id))
+                .map((lead) => (
+                  <option key={lead.id} value={lead.id}>
+                    {lead.fullName}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="mx-label">Reassign Team Leads to (Managers)</span>
+            <select
+              className="mx-input"
+              value={reassignManagerTo}
+              onChange={(event) => setReassignManagerTo(event.target.value)}
+            >
+              <option value="">Select Manager…</option>
+              {managerOptions
+                .filter((manager) => !selected.includes(manager.id))
+                .map((manager) => (
+                  <option key={manager.id} value={manager.id}>
+                    {manager.fullName}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="mx-label">Reassign assigned Leads to</span>
+            <select
+              className="mx-input"
+              value={reassignLeadsTo}
+              onChange={(event) => setReassignLeadsTo(event.target.value)}
+            >
+              <option value="">Select employee…</option>
+              {leadAssigneeOptions
+                .filter((user) => !selected.includes(user.id))
+                .map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName}
+                    {user.roleName ? ` (${user.roleName})` : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {bulkDetails && bulkDetails.length > 0 ? (
+            <ul className="text-danger max-h-32 list-disc overflow-y-auto pl-5 text-xs">
+              {bulkDetails.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setBulkDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={pending || selected.length === 0}
+              onClick={() => {
+                startTransition(async () => {
+                  const result = await bulkDeleteUsersAction({
+                    userIds: selected,
+                    reassignCallersToTeamLeadId: reassignTo || undefined,
+                    reassignTeamLeadsToManagerId: reassignManagerTo || undefined,
+                    reassignLeadsToUserId: reassignLeadsTo || undefined,
+                  });
+                  setMessage(result.error ?? result.success ?? null);
+                  setBulkDetails(result.details ?? null);
+                  if (!result.error) {
+                    setBulkDeleteOpen(false);
+                    setSelected([]);
+                  }
+                  router.refresh();
+                });
+              }}
+            >
+              Delete selected
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );

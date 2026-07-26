@@ -102,7 +102,6 @@ export function makeCreateUser(
       roleName: role,
       assignedTeamLeadName: leadName,
       reportingManagerName: managerName,
-      permissions: await roles.getPermissionCodesForUser(created.id),
     });
   };
 }

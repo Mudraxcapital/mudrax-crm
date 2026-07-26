@@ -79,7 +79,7 @@ export function LeadKanbanBoard({
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold tracking-tight">{column.stageName}</h2>
                 <span className="bg-surface text-muted rounded-md border border-border px-1.5 py-0.5 text-[11px] tabular-nums">
-                  {column.leads.length}
+                  {column.totalCount}
                 </span>
               </div>
               <p className="text-muted-foreground mt-0.5 text-xs">{column.bucket}</p>

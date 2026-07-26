@@ -90,7 +90,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </nav>
           <h1 className="text-2xl font-semibold tracking-tight">{customer.fullName}</h1>
           <p className="text-muted text-sm">
-            Customer 360 · {customer.identityConfidence} · {customer.status}
+            {customer.identityConfidence} · {customer.status}
           </p>
           {customer.mergedIntoCustomerId ? (
             <p className="text-sm">

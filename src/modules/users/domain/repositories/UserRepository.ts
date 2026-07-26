@@ -2,7 +2,7 @@
 // src/modules/users/domain/repositories/UserRepository.ts
 // ============================================================================
 
-import type { User, UserSessionRecord, UserStatus } from "../entities/User";
+import type { FixedUserRole, User, UserSessionRecord, UserStatus } from "../entities/User";
 import type { UserAuthProfile, UserScopeContext, UserSummary } from "../entities/UserAuthProfile";
 import type { UserAuditActor, UserAuditRecord } from "../entities/UserAuditRecord";
 
@@ -89,14 +89,6 @@ export interface UserRepository {
   recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void>;
   touchLastLogin(userId: string): Promise<void>;
 
-  lockAccount(
-    userId: string,
-    lockedUntil: Date,
-    reason: string,
-    actor?: UserAuditActor | null,
-  ): Promise<void>;
-  unlockAccount(userId: string, actor: UserAuditActor, ipAddress?: string | null): Promise<void>;
-
   findSummaryById(id: string): Promise<UserSummary | null>;
   /** All active employees (single-company). */
   listSummaries(): Promise<UserSummary[]>;
@@ -116,6 +108,13 @@ export interface UserRepository {
   countTeamLeadsForManager(managerId: string): Promise<number>;
   countApiKeysForUser(userId: string): Promise<number>;
   reassignCallersToTeamLead(fromTeamLeadId: string, toTeamLeadId: string): Promise<number>;
+  /** Move Team Leads reporting to fromManagerId onto toManagerId. */
+  reassignTeamLeadsToManager(fromManagerId: string, toManagerId: string): Promise<number>;
+  /**
+   * Locks active Admin rows (FOR UPDATE) and throws LastActiveAdminError when
+   * mutating targetUserId would leave zero ACTIVE Admins. Safe under concurrency.
+   */
+  assertKeepsActiveAdminLocked(targetUserId: string): Promise<void>;
 
   list(filter?: ListUsersFilter): Promise<UserListItem[]>;
   count(filter?: ListUsersFilter): Promise<number>;
@@ -153,6 +152,37 @@ export interface UserRepository {
     correlationId?: string | null,
   ): Promise<void>;
 
+  /**
+   * Hierarchy reassignment + lead reassignment + user delete + audits
+   * in a single database transaction (all-or-nothing).
+   */
+  deleteAtomically(input: {
+    userId: string;
+    actor: UserAuditActor;
+    correlationId?: string | null;
+    targetRole: FixedUserRole | null;
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  }): Promise<void>;
+
+  /**
+   * Hierarchy / lead reassignment + profile update + optional role replace
+   * in a single database transaction (all-or-nothing).
+   */
+  commitRoleChangeAtomically(input: {
+    userId: string;
+    data: UpdateUserData;
+    actor: UserAuditActor;
+    action: string;
+    correlationId?: string | null;
+    previousRole: FixedUserRole | null;
+    nextRole: FixedUserRole;
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  }): Promise<User>;
+
   bulkSetStatusWithAudit(
     ids: string[],
     status: UserStatus,
@@ -164,12 +194,6 @@ export interface UserRepository {
       forceLogout?: boolean;
       action?: string;
     },
-  ): Promise<number>;
-
-  bulkDeleteWithAudit(
-    ids: string[],
-    actor: UserAuditActor,
-    correlationId?: string | null,
   ): Promise<number>;
 
   listAuditLog(userId: string, limit?: number): Promise<UserAuditRecord[]>;

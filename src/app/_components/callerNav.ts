@@ -36,7 +36,7 @@ export const CALLER_NAV_GROUPS: CallerNavGroup[] = [
     label: "Account",
     items: [
       { href: "/caller/notifications", label: "Notifications", icon: "notifications" },
-      { href: "/caller/profile", label: "Profile", icon: "profile" },
+      { href: "/profile", label: "Profile", icon: "profile" },
       { href: "/profile/security", label: "Security", icon: "settings" },
     ],
   },

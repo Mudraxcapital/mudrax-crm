@@ -121,7 +121,7 @@ const CALLER_QUICK_ACTIONS = [
     subtitle: "Caller workspace",
     href: "/caller/notifications",
   },
-  { id: "cqa-profile", title: "Profile", subtitle: "Caller workspace", href: "/caller/profile" },
+  { id: "cqa-profile", title: "Profile", subtitle: "Account settings", href: "/profile" },
 ] as const;
 
 export const OPEN_COMMAND_PALETTE = "mudrax:open-command-palette";

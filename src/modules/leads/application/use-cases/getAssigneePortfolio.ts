@@ -77,7 +77,6 @@ export function makeGetAssigneePortfolio(
         /contact/i,
         /interest/i,
         /connect/i,
-        /ring/i,
         /follow/i,
         /hot/i,
         /qualif/i,

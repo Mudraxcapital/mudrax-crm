@@ -17,9 +17,11 @@ export interface LoginActionState {
   error?: string;
 }
 
-const GENERIC_ERROR = "Invalid email or password, or too many attempts. Please try again.";
+const GENERIC_ERROR = "Invalid email or password. Please try again.";
 const ACCOUNT_DISABLED_ERROR =
   "Your account has been disabled. Contact your administrator.";
+const ACCOUNT_SUSPENDED_ERROR =
+  "Your account has been suspended. Contact your administrator.";
 
 export async function loginAction(
   _previousState: LoginActionState | undefined,
@@ -46,6 +48,9 @@ export async function loginAction(
     if (error instanceof CredentialsSignin) {
       if (error.code === "account_disabled") {
         return { error: ACCOUNT_DISABLED_ERROR };
+      }
+      if (error.code === "account_suspended") {
+        return { error: ACCOUNT_SUSPENDED_ERROR };
       }
       return { error: GENERIC_ERROR };
     }

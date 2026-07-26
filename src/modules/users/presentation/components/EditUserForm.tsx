@@ -13,21 +13,40 @@ export function EditUserForm({
   action,
   teamLeads,
   managers,
+  leadAssigneeOptions = [],
   allowAdminRole,
   allowedRoles,
+  isSelf = false,
+  callerCount = 0,
+  teamLeadCount = 0,
+  leadCount = 0,
 }: {
   user: UserDto;
   action: (state: UserFormState | undefined, formData: FormData) => Promise<UserFormState>;
   teamLeads: HierarchyOption[];
   managers: HierarchyOption[];
+  leadAssigneeOptions?: { id: string; fullName: string; roleName: string | null }[];
   allowAdminRole: boolean;
   allowedRoles?: readonly string[];
+  isSelf?: boolean;
+  callerCount?: number;
+  teamLeadCount?: number;
+  leadCount?: number;
 }) {
   const [state, formAction, isPending] = useActionState(action, {});
   const [role, setRole] = useState(user.roleName ?? "Caller");
   const roles = (allowedRoles?.length ? allowedRoles : FIXED_USER_ROLES).filter(
     (name) => allowAdminRole || name !== "Admin",
   );
+
+  /** Email is Admin-only and never editable on self. */
+  const canEditEmail = allowAdminRole && !isSelf;
+  const roleChanged = !isSelf && role !== (user.roleName ?? "Caller");
+  const demotingTeamLead =
+    roleChanged && user.roleName === "Team Lead" && role !== "Team Lead" && callerCount > 0;
+  const demotingManager =
+    roleChanged && user.roleName === "Manager" && role !== "Manager" && teamLeadCount > 0;
+  const needsLeadReassign = roleChanged && leadCount > 0;
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -58,14 +77,31 @@ export function EditUserForm({
           />
         </Field>
         <Field label="Email *" htmlFor="email">
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            defaultValue={user.email}
-            className={inputClass}
-          />
+          {canEditEmail ? (
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              defaultValue={user.email}
+              className={inputClass}
+            />
+          ) : (
+            <>
+              <input
+                id="email"
+                className={inputClass}
+                value={user.email}
+                disabled
+                readOnly
+              />
+              <p className="text-muted text-xs">
+                {isSelf
+                  ? "Ask an Admin to change your email via User Management."
+                  : "Only Admins can change employee email addresses."}
+              </p>
+            </>
+          )}
         </Field>
         <Field label="Phone *" htmlFor="phone">
           <input
@@ -77,33 +113,63 @@ export function EditUserForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Role *" htmlFor="role">
-          <select
-            id="role"
-            name="role"
-            className={inputClass}
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-          >
-            {roles.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Account status *" htmlFor="status">
-          <select id="status" name="status" className={inputClass} defaultValue={user.status}>
-            {USER_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status === "INACTIVE" ? "Disabled" : status === "ACTIVE" ? "Active" : "Suspended"}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {!isSelf ? (
+          <Field label="Role *" htmlFor="role">
+            <select
+              id="role"
+              name="role"
+              className={inputClass}
+              value={role}
+              onChange={(event) => setRole(event.target.value)}
+            >
+              {roles.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Role" htmlFor="roleDisplay">
+            <input
+              id="roleDisplay"
+              className={inputClass}
+              value={user.roleName ?? "—"}
+              disabled
+              readOnly
+            />
+          </Field>
+        )}
+        {!isSelf ? (
+          <Field label="Account status *" htmlFor="status">
+            <select id="status" name="status" className={inputClass} defaultValue={user.status}>
+              {USER_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status === "INACTIVE" ? "Disabled" : status === "ACTIVE" ? "Active" : "Suspended"}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field label="Account status" htmlFor="statusDisplay">
+            <input
+              id="statusDisplay"
+              className={inputClass}
+              value={
+                user.status === "INACTIVE"
+                  ? "Disabled"
+                  : user.status === "SUSPENDED"
+                    ? "Suspended"
+                    : "Active"
+              }
+              disabled
+              readOnly
+            />
+          </Field>
+        )}
       </div>
 
-      {role === "Caller" ? (
+      {!isSelf && role === "Caller" ? (
         <Field label="Assigned team lead *" htmlFor="assignedTeamLeadId">
           <select
             id="assignedTeamLeadId"
@@ -122,7 +188,7 @@ export function EditUserForm({
         </Field>
       ) : null}
 
-      {role === "Team Lead" ? (
+      {!isSelf && role === "Team Lead" ? (
         <Field label="Reporting manager *" htmlFor="reportingManagerId">
           <select
             id="reportingManagerId"
@@ -138,6 +204,79 @@ export function EditUserForm({
               </option>
             ))}
           </select>
+        </Field>
+      ) : null}
+
+      {demotingTeamLead ? (
+        <Field label="Reassign Callers to *" htmlFor="reassignCallersToTeamLeadId">
+          <select
+            id="reassignCallersToTeamLeadId"
+            name="reassignCallersToTeamLeadId"
+            required
+            className={inputClass}
+            defaultValue=""
+          >
+            <option value="">Select Team Lead…</option>
+            {teamLeads
+              .filter((lead) => lead.id !== user.id)
+              .map((lead) => (
+                <option key={lead.id} value={lead.id}>
+                  {lead.fullName} ({lead.employeeId})
+                </option>
+              ))}
+          </select>
+          <p className="text-muted text-xs">
+            {callerCount} Caller(s) must be transferred before this role change.
+          </p>
+        </Field>
+      ) : null}
+
+      {demotingManager ? (
+        <Field label="Reassign Team Leads to *" htmlFor="reassignTeamLeadsToManagerId">
+          <select
+            id="reassignTeamLeadsToManagerId"
+            name="reassignTeamLeadsToManagerId"
+            required
+            className={inputClass}
+            defaultValue=""
+          >
+            <option value="">Select Manager…</option>
+            {managers
+              .filter((manager) => manager.id !== user.id)
+              .map((manager) => (
+                <option key={manager.id} value={manager.id}>
+                  {manager.fullName} ({manager.employeeId})
+                </option>
+              ))}
+          </select>
+          <p className="text-muted text-xs">
+            {teamLeadCount} Team Lead(s) must be transferred before this role change.
+          </p>
+        </Field>
+      ) : null}
+
+      {needsLeadReassign ? (
+        <Field label="Reassign assigned Leads to *" htmlFor="reassignLeadsToUserId">
+          <select
+            id="reassignLeadsToUserId"
+            name="reassignLeadsToUserId"
+            required
+            className={inputClass}
+            defaultValue=""
+          >
+            <option value="">Select employee…</option>
+            {leadAssigneeOptions
+              .filter((option) => option.id !== user.id)
+              .map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.fullName}
+                  {option.roleName ? ` (${option.roleName})` : ""}
+                </option>
+              ))}
+          </select>
+          <p className="text-muted text-xs">
+            {leadCount} Lead(s) must be transferred before this role change.
+          </p>
         </Field>
       ) : null}
 

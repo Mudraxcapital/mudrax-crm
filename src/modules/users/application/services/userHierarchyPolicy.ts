@@ -104,29 +104,6 @@ export function normalizeHierarchyOnCreate(input: {
   };
 }
 
-/** Target must be visible in the actor's hierarchy tree (Admin unrestricted). */
-export function assertCanViewHierarchyTarget(input: {
-  hierarchy: HierarchyScope;
-  targetUserId: string;
-}): void {
-  const { hierarchy, targetUserId } = input;
-  if (hierarchy.unrestricted || hierarchy.primaryRole === "Admin") return;
-  if (!hierarchy.visibleUserIds?.includes(targetUserId)) {
-    throw new InvalidUserHierarchyError("You can only view users in your hierarchy.");
-  }
-}
-
-export function assertCanManageHierarchyTarget(input: {
-  hierarchy: HierarchyScope;
-  targetUserId: string;
-}): void {
-  const { hierarchy, targetUserId } = input;
-  if (hierarchy.unrestricted || hierarchy.primaryRole === "Admin") return;
-  if (!hierarchy.visibleUserIds?.includes(targetUserId)) {
-    throw new InvalidUserHierarchyError("You can only manage users in your hierarchy.");
-  }
-}
-
 /**
  * Move rules: Admin may reassign freely; Manager may move own Team Leads / Callers
  * within their tree; Team Lead may only reassign their Callers to themselves.
@@ -218,17 +195,6 @@ export function assertCanActOnHierarchyTarget(input: {
   }
 
   throw new InvalidUserHierarchyError(`You cannot ${actionLabel(action)} users.`);
-}
-
-/** @deprecated Prefer assertCanActOnHierarchyTarget — kept for call-site clarity. */
-export function assertCanDeleteTarget(input: {
-  hierarchy: HierarchyScope;
-  actorRoles: string[];
-  actorUserId: string;
-  targetUserId: string;
-  targetRole: FixedUserRole | null;
-}): void {
-  assertCanActOnHierarchyTarget({ ...input, action: "delete" });
 }
 
 function actionLabel(action: HierarchyAction): string {

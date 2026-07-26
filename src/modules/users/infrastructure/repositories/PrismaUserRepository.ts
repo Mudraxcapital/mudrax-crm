@@ -14,13 +14,22 @@ import type {
   UserListItem,
   UserRepository,
 } from "../../domain/repositories/UserRepository";
-import type { User, UserSessionRecord, UserStatus } from "../../domain/entities/User";
+import type {
+  FixedUserRole,
+  User,
+  UserSessionRecord,
+  UserStatus,
+} from "../../domain/entities/User";
 import type {
   UserAuthProfile,
   UserScopeContext,
   UserSummary,
 } from "../../domain/entities/UserAuthProfile";
 import type { UserAuditActor, UserAuditRecord } from "../../domain/entities/UserAuditRecord";
+import {
+  LastActiveAdminError,
+  UserDeleteBlockedError,
+} from "../../domain/errors/UserErrors";
 import { formatEmployeeId, parseEmployeeIdSequence } from "../../domain/services/employeeId";
 import {
   toUser,
@@ -30,6 +39,7 @@ import {
   toUserSessionRecord,
   toUserSummary,
 } from "../mappers/userMapper";
+import { reassignLeadsInTx } from "../adapters/reassignLeadsInTx";
 
 const TARGET_TYPE_USER = "User";
 const PLACEHOLDER_RECORD_HASH = "pending-hash-chain-trigger";
@@ -115,63 +125,6 @@ export class PrismaUserRepository implements UserRepository {
     });
   }
 
-  async lockAccount(
-    userId: string,
-    lockedUntil: Date,
-    reason: string,
-    actor?: UserAuditActor | null,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const before = await tx.user.findUnique({ where: { id: userId } });
-      if (!before) return;
-      await tx.user.update({
-        where: { id: userId },
-        data: { lockedUntil, lockedReason: reason },
-      });
-      await tx.userAuditLog.create({
-        data: {
-          id: randomUUID(),
-          actorType: actor?.actorType ?? "SYSTEM",
-          actorId: actor?.actorId ?? null,
-          action: "Account Locked",
-          targetType: TARGET_TYPE_USER,
-          targetId: userId,
-          beforeState: { lockedUntil: before.lockedUntil, lockedReason: before.lockedReason },
-          afterState: { lockedUntil, lockedReason: reason },
-          recordHash: PLACEHOLDER_RECORD_HASH,
-        },
-      });
-    });
-  }
-
-  async unlockAccount(
-    userId: string,
-    actor: UserAuditActor,
-    ipAddress?: string | null,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const before = await tx.user.findUnique({ where: { id: userId } });
-      if (!before) return;
-      await tx.user.update({
-        where: { id: userId },
-        data: { lockedUntil: null, lockedReason: null },
-      });
-      await tx.userAuditLog.create({
-        data: {
-          id: randomUUID(),
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          action: "Account Unlocked",
-          targetType: TARGET_TYPE_USER,
-          targetId: userId,
-          beforeState: { lockedUntil: before.lockedUntil, lockedReason: before.lockedReason },
-          afterState: { lockedUntil: null, lockedReason: null, ipAddress: ipAddress ?? null },
-          recordHash: PLACEHOLDER_RECORD_HASH,
-        },
-      });
-    });
-  }
-
   async findSummaryById(id: string): Promise<UserSummary | null> {
     const row = await this.prisma.user.findUnique({ where: { id } });
     if (!row) return null;
@@ -197,24 +150,193 @@ export class PrismaUserRepository implements UserRepository {
     return rows.map((row) => row.id);
   }
 
-  async listTeamLeadIdsForManager(managerId: string): Promise<string[]> {
-    // Hierarchy visibility must include every Team Lead under the Manager
-    // regardless of account status (Active / Disabled / Suspended). Filtering
-    // to ACTIVE-only hid disabled leads and orphaned their Callers from the tree.
-    const roles = await this.prisma.role.findMany({
-      where: { name: "Team Lead" },
+  /** User ids currently holding a fixed role (effective assignment). */
+  private async userIdsWithRole(roleName: string): Promise<string[]> {
+    return this.userIdsWithRoleInTx(this.prisma, roleName);
+  }
+
+  private async userIdsWithRoleInTx(
+    db: Prisma.TransactionClient | PrismaClient,
+    roleName: string,
+  ): Promise<string[]> {
+    const roles = await db.role.findMany({
+      where: { name: roleName },
       select: { id: true },
     });
     if (roles.length === 0) return [];
-
-    const assignments = await this.prisma.userRole.findMany({
+    const assignments = await db.userRole.findMany({
       where: {
         roleId: { in: roles.map((role) => role.id) },
         OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
       },
       select: { userId: true },
     });
-    const teamLeadRoleUserIds = assignments.map((row) => row.userId);
+    return assignments.map((row) => row.userId);
+  }
+
+  private async appendAuditInTx(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    action: string,
+    actor: UserAuditActor,
+    beforeState: Record<string, unknown> | null,
+    afterState: Record<string, unknown> | null,
+    correlationId?: string | null,
+  ): Promise<void> {
+    await tx.userAuditLog.create({
+      data: {
+        id: randomUUID(),
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action,
+        targetType: TARGET_TYPE_USER,
+        targetId: userId,
+        correlationId: correlationId ?? null,
+        beforeState: beforeState ? (beforeState as Prisma.InputJsonValue) : undefined,
+        afterState: afterState ? (afterState as Prisma.InputJsonValue) : undefined,
+        recordHash: PLACEHOLDER_RECORD_HASH,
+      },
+    });
+  }
+
+  private async replaceFixedRoleInTx(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    roleName: FixedUserRole,
+    assignedByUserId: string | null,
+  ): Promise<void> {
+    const companyId = await getCompanyId();
+    const role = await tx.role.findUnique({
+      where: { organizationId_name: { organizationId: companyId, name: roleName } },
+    });
+    if (!role) {
+      throw new Error(`Fixed role not found: ${roleName}`);
+    }
+    const now = new Date();
+    await tx.userRole.deleteMany({ where: { userId } });
+    await tx.userRole.create({
+      data: {
+        userId,
+        roleId: role.id,
+        effectiveFrom: now,
+        assignedByUserId,
+      },
+    });
+  }
+
+  /**
+   * Hierarchy + lead reassignments inside an open transaction.
+   * Throws UserDeleteBlockedError when counts require a missing target.
+   */
+  private async applyReassignmentsInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      userId: string;
+      actor: UserAuditActor;
+      correlationId?: string | null;
+      currentRole: FixedUserRole | null;
+      reassignCallersToTeamLeadId?: string | null;
+      reassignTeamLeadsToManagerId?: string | null;
+      reassignLeadsToUserId?: string | null;
+      leadReason: "UserDeletedOrDemoted" | "UserRoleChanged";
+    },
+  ): Promise<void> {
+    const {
+      userId,
+      actor,
+      correlationId,
+      currentRole,
+      reassignCallersToTeamLeadId,
+      reassignTeamLeadsToManagerId,
+      reassignLeadsToUserId,
+      leadReason,
+    } = input;
+
+    if (currentRole === "Manager") {
+      const teamLeadIds = await this.userIdsWithRoleInTx(tx, "Team Lead");
+      const teamLeadCount =
+        teamLeadIds.length === 0
+          ? 0
+          : await tx.user.count({
+              where: { reportingManagerId: userId, id: { in: teamLeadIds } },
+            });
+      if (teamLeadCount > 0) {
+        if (!reassignTeamLeadsToManagerId || reassignTeamLeadsToManagerId === userId) {
+          throw new UserDeleteBlockedError(
+            `This Manager has ${teamLeadCount} Team Lead(s). Reassign them before continuing.`,
+          );
+        }
+        await tx.user.updateMany({
+          where: { reportingManagerId: userId, id: { in: teamLeadIds } },
+          data: { reportingManagerId: reassignTeamLeadsToManagerId },
+        });
+        await this.appendAuditInTx(
+          tx,
+          userId,
+          "Team Leads Reassigned",
+          actor,
+          { teamLeadCount },
+          { reassignTeamLeadsToManagerId, teamLeadCount },
+          correlationId,
+        );
+      }
+    }
+
+    if (currentRole === "Team Lead") {
+      const callerCount = await tx.user.count({ where: { assignedTeamLeadId: userId } });
+      if (callerCount > 0) {
+        if (!reassignCallersToTeamLeadId || reassignCallersToTeamLeadId === userId) {
+          throw new UserDeleteBlockedError(
+            `This Team Lead has ${callerCount} Caller(s). Reassign them before continuing.`,
+          );
+        }
+        await tx.user.updateMany({
+          where: { assignedTeamLeadId: userId },
+          data: { assignedTeamLeadId: reassignCallersToTeamLeadId },
+        });
+        await this.appendAuditInTx(
+          tx,
+          userId,
+          "Callers Reassigned",
+          actor,
+          { callerCount },
+          { reassignCallersToTeamLeadId, callerCount },
+          correlationId,
+        );
+      }
+    }
+
+    const leadCount = await tx.lead.count({ where: { currentAssigneeUserId: userId } });
+    if (leadCount > 0) {
+      if (!reassignLeadsToUserId || reassignLeadsToUserId === userId) {
+        throw new UserDeleteBlockedError(
+          `This employee has ${leadCount} assigned Lead(s). Reassign those Leads before continuing.`,
+        );
+      }
+      const moved = await reassignLeadsInTx(
+        tx,
+        userId,
+        reassignLeadsToUserId,
+        actor.actorId,
+        leadReason,
+      );
+      await this.appendAuditInTx(
+        tx,
+        userId,
+        "Leads Reassigned",
+        actor,
+        { leadCount },
+        { reassignLeadsToUserId, leadCount: moved },
+        correlationId,
+      );
+    }
+  }
+
+  async listTeamLeadIdsForManager(managerId: string): Promise<string[]> {
+    // Hierarchy visibility must include every Team Lead under the Manager
+    // regardless of account status (Active / Disabled / Suspended). Filtering
+    // to ACTIVE-only hid disabled leads and orphaned their Callers from the tree.
+    const teamLeadRoleUserIds = await this.userIdsWithRole("Team Lead");
     if (teamLeadRoleUserIds.length === 0) return [];
 
     const rows = await this.prisma.user.findMany({
@@ -254,19 +376,7 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async countTeamLeadsForManager(managerId: string): Promise<number> {
-    const roles = await this.prisma.role.findMany({
-      where: { name: "Team Lead" },
-      select: { id: true },
-    });
-    if (roles.length === 0) return 0;
-    const assignments = await this.prisma.userRole.findMany({
-      where: {
-        roleId: { in: roles.map((role) => role.id) },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
-      },
-      select: { userId: true },
-    });
-    const teamLeadIds = assignments.map((row) => row.userId);
+    const teamLeadIds = await this.userIdsWithRole("Team Lead");
     if (teamLeadIds.length === 0) return 0;
     return this.prisma.user.count({
       where: { reportingManagerId: managerId, id: { in: teamLeadIds } },
@@ -288,6 +398,58 @@ export class PrismaUserRepository implements UserRepository {
       data: { assignedTeamLeadId: toTeamLeadId },
     });
     return result.count;
+  }
+
+  async reassignTeamLeadsToManager(
+    fromManagerId: string,
+    toManagerId: string,
+  ): Promise<number> {
+    if (fromManagerId === toManagerId) return 0;
+    const teamLeadIds = await this.userIdsWithRole("Team Lead");
+    if (teamLeadIds.length === 0) return 0;
+    const result = await this.prisma.user.updateMany({
+      where: { reportingManagerId: fromManagerId, id: { in: teamLeadIds } },
+      data: { reportingManagerId: toManagerId },
+    });
+    return result.count;
+  }
+
+  async assertKeepsActiveAdminLocked(targetUserId: string): Promise<void> {
+    await this.prisma.$transaction(
+      async (tx) => {
+        const adminRoles = await tx.role.findMany({
+          where: { name: "Admin" },
+          select: { id: true },
+        });
+        if (adminRoles.length === 0) return;
+
+        const assignments = await tx.userRole.findMany({
+          where: {
+            roleId: { in: adminRoles.map((role) => role.id) },
+            OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
+          },
+          select: { userId: true },
+        });
+        const adminIds = assignments.map((row) => row.userId);
+        if (adminIds.length === 0) return;
+
+        // Row-lock every Admin account so concurrent demote/disable/delete serializes.
+        await tx.$queryRawUnsafe(
+          `SELECT id FROM "users"."users" WHERE id = ANY($1::uuid[]) FOR UPDATE`,
+          adminIds,
+        );
+
+        const activeAdmins = await tx.user.findMany({
+          where: { id: { in: adminIds }, status: "ACTIVE" },
+          select: { id: true },
+        });
+        const targetIsActiveAdmin = activeAdmins.some((row) => row.id === targetUserId);
+        if (targetIsActiveAdmin && activeAdmins.length <= 1) {
+          throw new LastActiveAdminError();
+        }
+      },
+      { isolationLevel: "Serializable" },
+    );
   }
 
   private buildWhere(filter?: ListUsersFilter): Prisma.UserWhereInput {
@@ -565,20 +727,163 @@ export class PrismaUserRepository implements UserRepository {
       await tx.apiKey.deleteMany({ where: { ownerUserId: id } });
       await tx.loginAttempt.deleteMany({ where: { userId: id } });
       await tx.user.delete({ where: { id } });
-      await tx.userAuditLog.create({
+      await this.appendAuditInTx(
+        tx,
+        id,
+        "Deleted",
+        actor,
+        toAuditJson(toUser(before)) as Record<string, unknown>,
+        null,
+        correlationId,
+      );
+    });
+  }
+
+  async deleteAtomically(input: {
+    userId: string;
+    actor: UserAuditActor;
+    correlationId?: string | null;
+    targetRole: FixedUserRole | null;
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  }): Promise<void> {
+    const {
+      userId,
+      actor,
+      correlationId,
+      targetRole,
+      reassignCallersToTeamLeadId,
+      reassignTeamLeadsToManagerId,
+      reassignLeadsToUserId,
+    } = input;
+
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.user.findUnique({ where: { id: userId } });
+      if (!before) return;
+
+      await this.applyReassignmentsInTx(tx, {
+        userId,
+        actor,
+        correlationId,
+        currentRole: targetRole,
+        reassignCallersToTeamLeadId,
+        reassignTeamLeadsToManagerId,
+        reassignLeadsToUserId,
+        leadReason: "UserDeletedOrDemoted",
+      });
+
+      await tx.userRole.deleteMany({ where: { userId } });
+      await tx.apiKey.deleteMany({ where: { ownerUserId: userId } });
+      await tx.loginAttempt.deleteMany({ where: { userId } });
+      await tx.user.delete({ where: { id: userId } });
+      await this.appendAuditInTx(
+        tx,
+        userId,
+        "Deleted",
+        actor,
+        toAuditJson(toUser(before)) as Record<string, unknown>,
+        null,
+        correlationId,
+      );
+    });
+  }
+
+  async commitRoleChangeAtomically(input: {
+    userId: string;
+    data: UpdateUserData;
+    actor: UserAuditActor;
+    action: string;
+    correlationId?: string | null;
+    previousRole: FixedUserRole | null;
+    nextRole: FixedUserRole;
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  }): Promise<User> {
+    const {
+      userId,
+      data,
+      actor,
+      action,
+      correlationId,
+      previousRole,
+      nextRole,
+      reassignCallersToTeamLeadId,
+      reassignTeamLeadsToManagerId,
+      reassignLeadsToUserId,
+    } = input;
+
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.user.findUnique({ where: { id: userId } });
+      if (!before) throw new Error(`User not found: ${userId}`);
+
+      await this.applyReassignmentsInTx(tx, {
+        userId,
+        actor,
+        correlationId,
+        currentRole: previousRole,
+        reassignCallersToTeamLeadId,
+        reassignTeamLeadsToManagerId,
+        reassignLeadsToUserId,
+        leadReason: "UserRoleChanged",
+      });
+
+      const statusChanging = data.status !== undefined && data.status !== before.status;
+      const row = await tx.user.update({
+        where: { id: userId },
         data: {
-          id: randomUUID(),
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          action: "Deleted",
-          targetType: TARGET_TYPE_USER,
-          targetId: id,
-          correlationId: correlationId ?? null,
-          beforeState: toAuditJson(toUser(before)),
-          afterState: undefined,
-          recordHash: PLACEHOLDER_RECORD_HASH,
+          fullName: data.fullName,
+          email: data.email?.toLowerCase(),
+          phone: data.phone,
+          status: data.status,
+          profilePhotoUrl: data.profilePhotoUrl,
+          mustChangePassword: data.mustChangePassword,
+          lockedUntil: data.lockedUntil,
+          lockedReason: data.lockedReason,
+          assignedTeamLeadId: data.assignedTeamLeadId,
+          reportingManagerId: data.reportingManagerId,
+          updatedByUserId: data.updatedByUserId,
+          ...(statusChanging ? { sessionVersion: { increment: 1 } } : {}),
         },
       });
+      if (statusChanging) {
+        await tx.userSession.updateMany({
+          where: { userId, status: "ACTIVE" },
+          data: {
+            status: "REVOKED",
+            revokedAt: new Date(),
+            logoutAt: new Date(),
+            revokeReason: "ACCOUNT_STATUS_CHANGED",
+          },
+        });
+      }
+
+      const user = toUser(row);
+      await this.appendAuditInTx(
+        tx,
+        userId,
+        action,
+        actor,
+        toAuditJson(toUser(before)) as Record<string, unknown>,
+        toAuditJson(user) as Record<string, unknown>,
+        correlationId,
+      );
+
+      if (previousRole !== nextRole) {
+        await this.replaceFixedRoleInTx(tx, userId, nextRole, actor.actorId);
+        await this.appendAuditInTx(
+          tx,
+          userId,
+          "Role Changed",
+          actor,
+          { role: previousRole },
+          { role: nextRole },
+          correlationId,
+        );
+      }
+
+      return user;
     });
   }
 
@@ -652,19 +957,6 @@ export class PrismaUserRepository implements UserRepository {
         });
         count += 1;
       });
-    }
-    return count;
-  }
-
-  async bulkDeleteWithAudit(
-    ids: string[],
-    actor: UserAuditActor,
-    correlationId?: string | null,
-  ): Promise<number> {
-    let count = 0;
-    for (const id of ids) {
-      await this.deleteWithAudit(id, actor, correlationId);
-      count += 1;
     }
     return count;
   }
@@ -807,20 +1099,7 @@ export class PrismaUserRepository implements UserRepository {
 
   async listByRole(roleName: string): Promise<UserSummary[]> {
     const companyId = await getCompanyId();
-    const roles = await this.prisma.role.findMany({
-      where: { name: roleName },
-      select: { id: true },
-    });
-    if (roles.length === 0) return [];
-
-    const userRoles = await this.prisma.userRole.findMany({
-      where: {
-        roleId: { in: roles.map((r) => r.id) },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
-      },
-      select: { userId: true },
-    });
-    const userIds = userRoles.map((ur) => ur.userId);
+    const userIds = await this.userIdsWithRole(roleName);
     if (userIds.length === 0) return [];
 
     const rows = await this.prisma.user.findMany({

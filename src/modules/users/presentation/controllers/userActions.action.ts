@@ -1,6 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
@@ -20,15 +19,11 @@ import {
   UserDeleteBlockedError,
   UserNotFoundError,
 } from "@/modules/users";
+import { clientIp } from "../lib/clientIp";
 
 export interface ActionResult {
   error?: string;
   success?: string;
-}
-
-async function clientIp(): Promise<string | null> {
-  const headerStore = await headers();
-  return headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 }
 
 export async function resetPasswordAction(
@@ -110,7 +105,9 @@ export async function changeUserStatusAction(input: {
   revalidatePath(`/users/${input.userId}`);
   const label =
     input.status === "ACTIVE"
-      ? "enabled"
+      ? input.reason?.toLowerCase().includes("unsuspend")
+        ? "unsuspended"
+        : "enabled"
       : input.status === "SUSPENDED"
         ? "suspended"
         : "disabled";
@@ -119,6 +116,16 @@ export async function changeUserStatusAction(input: {
 
 export async function enableUserAction(userId: string, reason?: string): Promise<ActionResult> {
   return changeUserStatusAction({ userId, status: "ACTIVE", reason, forceLogout: true });
+}
+
+/** Reactivate a Suspended account (same write path as Enable). */
+export async function unsuspendUserAction(userId: string, reason?: string): Promise<ActionResult> {
+  return changeUserStatusAction({
+    userId,
+    status: "ACTIVE",
+    reason: reason?.trim() || "Unsuspended by administrator",
+    forceLogout: true,
+  });
 }
 
 export async function disableUserAction(
@@ -145,16 +152,27 @@ export async function suspendUserAction(userId: string, reason?: string): Promis
 
 export async function deleteUserAction(
   userId: string,
-  reassignCallersToTeamLeadId?: string | null,
+  options?: {
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  } | string | null,
 ): Promise<ActionResult> {
   const { session, authContext } = await requirePermission("user.delete");
+  // Back-compat: second arg used to be reassignCallersToTeamLeadId string.
+  const opts =
+    typeof options === "string" || options === null || options === undefined
+      ? { reassignCallersToTeamLeadId: options || null }
+      : options;
   try {
     await deleteUser({
       userId,
       actorRoles: authContext.roles.map((role) => role.name),
       hierarchy: authContext.hierarchy,
       actor: { actorType: "USER", actorId: session.user.id },
-      reassignCallersToTeamLeadId: reassignCallersToTeamLeadId || null,
+      reassignCallersToTeamLeadId: opts.reassignCallersToTeamLeadId || null,
+      reassignTeamLeadsToManagerId: opts.reassignTeamLeadsToManagerId || null,
+      reassignLeadsToUserId: opts.reassignLeadsToUserId || null,
     });
   } catch (error) {
     if (
@@ -236,23 +254,40 @@ export async function bulkEnableUsersAction(userIds: string[]): Promise<ActionRe
   return { success: `Enabled ${count} of ${parsed.data.userIds.length} user(s).` };
 }
 
-export async function bulkDeleteUsersAction(userIds: string[]): Promise<ActionResult> {
+export async function bulkDeleteUsersAction(input: {
+  userIds: string[];
+  reassignCallersToTeamLeadId?: string;
+  reassignTeamLeadsToManagerId?: string;
+  reassignLeadsToUserId?: string;
+}): Promise<ActionResult & { details?: string[] }> {
   const current = await requirePermission("user.delete");
   if (!hasPermission(current.authContext, "user.delete")) {
     return { error: "Not allowed." };
   }
-  const parsed = bulkUserIdsSchema.safeParse({ userIds });
+  const parsed = bulkUserIdsSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid selection." };
 
   try {
-    const count = await bulkDeleteUsers({
+    const { deleted, results } = await bulkDeleteUsers({
       userIds: parsed.data.userIds,
       actorRoles: current.authContext.roles.map((role) => role.name),
       hierarchy: current.authContext.hierarchy,
       actor: { actorType: "USER", actorId: current.session.user.id },
+      reassignCallersToTeamLeadId: parsed.data.reassignCallersToTeamLeadId || null,
+      reassignTeamLeadsToManagerId: parsed.data.reassignTeamLeadsToManagerId || null,
+      reassignLeadsToUserId: parsed.data.reassignLeadsToUserId || null,
     });
     revalidatePath("/users");
-    return { success: `Deleted ${count} of ${parsed.data.userIds.length} user(s).` };
+    const failed = results.filter((row) => !row.ok);
+    const details = failed.map(
+      (row) => `${row.fullName ?? row.userId}: ${row.error ?? "Failed"}`,
+    );
+    return {
+      success: `Deleted ${deleted} of ${parsed.data.userIds.length} user(s).${
+        failed.length > 0 ? ` ${failed.length} failed.` : ""
+      }`,
+      details: details.length > 0 ? details : undefined,
+    };
   } catch (error) {
     if (
       error instanceof AdminRoleProtectedError ||

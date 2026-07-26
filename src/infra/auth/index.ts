@@ -6,7 +6,6 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import {
   authenticateUser,
-  AccountLockedError,
   AccountNotActiveError,
   InvalidCredentialsError,
 } from "@/modules/auth";
@@ -15,6 +14,10 @@ import { authConfig } from "./config";
 /** Surfaced to loginAction — credentials were valid but account is not Active. */
 class AccountDisabledSignIn extends CredentialsSignin {
   code = "account_disabled";
+}
+
+class AccountSuspendedSignIn extends CredentialsSignin {
+  code = "account_suspended";
 }
 
 export const { auth, signIn, signOut, handlers } = NextAuth({
@@ -51,9 +54,11 @@ export const { auth, signIn, signOut, handlers } = NextAuth({
           };
         } catch (error) {
           if (error instanceof AccountNotActiveError) {
-            throw new AccountDisabledSignIn();
+            throw error.status === "SUSPENDED"
+              ? new AccountSuspendedSignIn()
+              : new AccountDisabledSignIn();
           }
-          if (error instanceof InvalidCredentialsError || error instanceof AccountLockedError) {
+          if (error instanceof InvalidCredentialsError) {
             return null;
           }
           throw error;

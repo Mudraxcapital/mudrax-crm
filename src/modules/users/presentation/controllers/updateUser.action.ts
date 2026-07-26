@@ -10,17 +10,14 @@ import {
   LastActiveAdminError,
   updateUser,
   updateUserSchema,
+  UserDeleteBlockedError,
   UserNotFoundError,
 } from "@/modules/users";
+import { formString } from "../lib/formData";
 
 export interface UserFormState {
   error?: string;
   success?: string;
-}
-
-function str(formData: FormData, key: string): string {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
 }
 
 export async function updateUserAction(
@@ -31,14 +28,17 @@ export async function updateUserAction(
   const { session, authContext } = await requirePermission("user.manage");
 
   const parsed = updateUserSchema.safeParse({
-    fullName: str(formData, "fullName") || undefined,
-    email: str(formData, "email") || undefined,
-    phone: str(formData, "phone") || undefined,
-    role: str(formData, "role") || undefined,
-    status: str(formData, "status") || undefined,
-    profilePhotoUrl: str(formData, "profilePhotoUrl"),
-    assignedTeamLeadId: str(formData, "assignedTeamLeadId"),
-    reportingManagerId: str(formData, "reportingManagerId"),
+    fullName: formString(formData, "fullName") || undefined,
+    email: formString(formData, "email") || undefined,
+    phone: formString(formData, "phone") || undefined,
+    role: formString(formData, "role") || undefined,
+    status: formString(formData, "status") || undefined,
+    profilePhotoUrl: formString(formData, "profilePhotoUrl"),
+    assignedTeamLeadId: formString(formData, "assignedTeamLeadId"),
+    reportingManagerId: formString(formData, "reportingManagerId"),
+    reassignCallersToTeamLeadId: formString(formData, "reassignCallersToTeamLeadId"),
+    reassignTeamLeadsToManagerId: formString(formData, "reassignTeamLeadsToManagerId"),
+    reassignLeadsToUserId: formString(formData, "reassignLeadsToUserId"),
   });
 
   if (!parsed.success) {
@@ -60,6 +60,7 @@ export async function updateUserAction(
       error instanceof AdminRoleProtectedError ||
       error instanceof InvalidUserHierarchyError ||
       error instanceof LastActiveAdminError ||
+      error instanceof UserDeleteBlockedError ||
       error instanceof UserNotFoundError
     ) {
       return { error: error.message };

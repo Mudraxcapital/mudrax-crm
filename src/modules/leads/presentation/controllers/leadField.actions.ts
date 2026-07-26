@@ -165,11 +165,19 @@ export async function updateLeadFieldAction(
 
 export async function hideLeadFieldAction(id: string): Promise<void> {
   const { session, authContext } = await requirePermission("custom_field.manage");
-  await hideLeadField({
-    id,
-    organizationId: authContext.organizationId,
-    actor: { actorType: "USER", actorId: session.user.id },
-  });
+  try {
+    await hideLeadField({
+      id,
+      organizationId: authContext.organizationId,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+  } catch (error) {
+    if (error instanceof ProtectedLeadFieldError || error instanceof LeadFieldNotFoundError) {
+      // Protected / missing fields are ignored for form-post UX (UI already gates core fields).
+      return;
+    }
+    throw error;
+  }
   revalidatePath("/crm/field-settings");
   revalidatePath("/leads");
 }

@@ -16,18 +16,11 @@ export function isAccountLoginAllowed(status: UserStatus): boolean {
   return status === "ACTIVE";
 }
 
-export function isAccountTemporarilyLocked(lockedUntil: Date | null | undefined): boolean {
-  return !!lockedUntil && lockedUntil.getTime() > Date.now();
-}
-
-/** Display status for badges — Locked overrides Active when lockout is in effect. */
+/** Display status for badges (Active / Disabled / Suspended). */
 export function accountDisplayStatus(
   status: UserStatus,
-  lockedUntil?: Date | null,
-): UserStatus | "LOCKED" {
-  if (status === "ACTIVE" && isAccountTemporarilyLocked(lockedUntil)) {
-    return "LOCKED";
-  }
+  _lockedUntil?: Date | null,
+): UserStatus {
   return status;
 }
 

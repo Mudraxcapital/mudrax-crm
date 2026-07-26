@@ -35,7 +35,11 @@ export function UserSessionsPanel({
   return (
     <div className="space-y-4">
       {message ? (
-        <p className="rounded-md border border-border bg-surface-sunken/50 px-3 py-2 text-sm">
+        <p
+          role="status"
+          aria-live="polite"
+          className="rounded-md border border-border bg-surface-sunken/50 px-3 py-2 text-sm"
+        >
           {message}
         </p>
       ) : null}

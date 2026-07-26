@@ -69,15 +69,24 @@ export function useTheme() {
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, toggleTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Keep SSR + first client paint identical; swap icon after mount.
+  const dark = mounted && theme === "dark";
+
   return (
     <button
       type="button"
       onClick={toggleTheme}
       className={className ?? "mx-btn mx-btn-ghost mx-btn-sm"}
-      aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-      title={theme === "dark" ? "Light mode" : "Dark mode"}
+      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+      title={dark ? "Light mode" : "Dark mode"}
+      suppressHydrationWarning
     >
-      {theme === "dark" ? (
+      {dark ? (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
           <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.5" />
           <path

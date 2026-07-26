@@ -191,6 +191,8 @@ export async function importLeadsFileAction(input: {
   agentUserIds?: string[];
   distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
   manualAssigneeUserId?: string;
+  /** Admin-selected Manager (or resolved from Team Lead / callers). */
+  ownerManagerId?: string;
   /** Unknown Excel columns accepted as new dynamic CRM fields. */
   dynamicFields?: DynamicFieldCreateInput[];
 }): Promise<ProductivityFormState> {
@@ -261,23 +263,44 @@ export async function importLeadsFileAction(input: {
     columnMapping.full_name = columnMapping.name;
   }
 
+  const uuidOrEmpty =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  const cleanId = (value?: string | null) => {
+    const trimmed = value?.trim();
+    return trimmed && uuidOrEmpty.test(trimmed) ? trimmed : undefined;
+  };
+
+  if (!cleanId(input.leadSourceId)) {
+    return {
+      error: "Select a valid Lead Source before importing.",
+    };
+  }
+
   const parsed = importLeadsCsvSchema.safeParse({
-    leadSourceId: input.leadSourceId,
-    campaignId: input.campaignId,
+    leadSourceId: cleanId(input.leadSourceId),
+    campaignId: cleanId(input.campaignId),
     sourceFileName: input.sourceFileName,
-    sheetName: input.sheetName,
+    sheetName: input.sheetName?.trim() || undefined,
     rows: input.rows,
     columnMapping,
     skipDuplicates: input.skipDuplicates ?? true,
     duplicateMatchMode: input.duplicateMatchMode,
     duplicateResolution: input.duplicateResolution,
-    selectedStageIds: input.selectedStageIds,
-    agentUserIds: input.agentUserIds,
+    selectedStageIds: (input.selectedStageIds ?? [])
+      .map((id) => cleanId(id))
+      .filter((id): id is string => Boolean(id)),
+    agentUserIds: (input.agentUserIds ?? [])
+      .map((id) => cleanId(id))
+      .filter((id): id is string => Boolean(id)),
     distributionStrategy: input.distributionStrategy,
-    manualAssigneeUserId: input.manualAssigneeUserId,
+    manualAssigneeUserId: cleanId(input.manualAssigneeUserId),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+    const issue = parsed.error.issues[0];
+    const field = issue?.path?.join(".") || "input";
+    return {
+      error: issue ? `${field}: ${issue.message}` : "Invalid input.",
+    };
   }
 
   const book = managerBookFilter(authContext);
@@ -294,7 +317,14 @@ export async function importLeadsFileAction(input: {
       campaignId: parsed.data.campaignId,
       agentUserIds: parsed.data.agentUserIds,
       manualAssigneeUserId: parsed.data.manualAssigneeUserId,
+      explicitOwnerManagerId: cleanId(input.ownerManagerId),
     });
+    if (!ownership.ownerManagerId) {
+      return {
+        error:
+          "A Manager is required for ownership. Select a Manager/Team Lead, or choose callers that belong to one Manager.",
+      };
+    }
     const batch = await importLeadsCsv({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -372,6 +402,8 @@ export async function createCampaignForImportAction(input: {
   priority?: string;
   memberUserIds?: string[];
   distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
+  /** Admin-selected Manager (or resolved from Team Lead / callers). */
+  ownerManagerId?: string;
 }): Promise<{ error?: string; campaignId?: string }> {
   const { session, authContext } = await requirePermission("campaign.manage");
   const { createCampaign, createCampaignSchema, addCampaignMember } = await import(
@@ -385,25 +417,42 @@ export async function createCampaignForImportAction(input: {
     input.distributionStrategy ? `Distribution: ${input.distributionStrategy}` : null,
   ].filter(Boolean);
 
+  const uuidOrEmpty =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  const cleanId = (value?: string | null) => {
+    const trimmed = value?.trim();
+    return trimmed && uuidOrEmpty.test(trimmed) ? trimmed : undefined;
+  };
+  const memberUserIds = (input.memberUserIds ?? [])
+    .map((id) => cleanId(id))
+    .filter((id): id is string => Boolean(id));
+
   const parsed = createCampaignSchema.safeParse({
     name: input.name,
     description: descriptionParts.length > 0 ? descriptionParts.join("\n") : undefined,
-    memberUserIds: input.memberUserIds,
+    memberUserIds,
     distributionStrategy: input.distributionStrategy,
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid campaign." };
+    const issue = parsed.error.issues[0];
+    const field = issue?.path?.join(".") || "campaign";
+    return { error: issue ? `${field}: ${issue.message}` : "Invalid campaign." };
   }
 
   try {
-    const ownerManagerId = requireOwnerManagerId(authContext);
+    const ownership = await resolveImportOwnership({
+      authContext,
+      agentUserIds: memberUserIds,
+      explicitOwnerManagerId: cleanId(input.ownerManagerId),
+    });
+    const ownerManagerId = requireOwnerManagerId(authContext, ownership.ownerManagerId);
     const campaign = await createCampaign({
       organizationId: authContext.organizationId,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
       ownerManagerId,
     });
-    for (const userId of input.memberUserIds ?? []) {
+    for (const userId of memberUserIds) {
       try {
         await addCampaignMember({
           campaignId: campaign.id,

@@ -1,6 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
 import {
@@ -9,15 +8,11 @@ import {
   updateProfilePhoto,
   UserNotFoundError,
 } from "@/modules/users";
+import { clientIp } from "../lib/clientIp";
 
 export interface ProfilePhotoState {
   error?: string;
   success?: string;
-}
-
-async function clientIp(): Promise<string | null> {
-  const headerStore = await headers();
-  return headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
 }
 
 export async function uploadProfilePhotoAction(

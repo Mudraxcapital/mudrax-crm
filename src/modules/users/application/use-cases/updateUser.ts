@@ -9,9 +9,11 @@ import {
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
   InvalidUserHierarchyError,
+  UserDeleteBlockedError,
   UserNotFoundError,
 } from "../../domain/errors/UserErrors";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
+import type { LeadOwnershipPort } from "../ports/LeadOwnershipPort";
 import type { UpdateUserInput } from "../validators/userSchemas";
 import {
   assertCanAssignRole,
@@ -25,6 +27,7 @@ import {
   normalizeHierarchyOnUpdate,
 } from "../services/userHierarchyPolicy";
 import { assertKeepsActiveAdmin } from "../services/lastAdminPolicy";
+import { assertActiveHierarchyTarget } from "../services/activeHierarchyTarget";
 import { toUserDto, type UserDto } from "../dto/UserDto";
 
 export interface UpdateUserCommand {
@@ -36,7 +39,11 @@ export interface UpdateUserCommand {
   correlationId?: string | null;
 }
 
-export function makeUpdateUser(repository: UserRepository, roles: RoleAssignmentPort) {
+export function makeUpdateUser(
+  repository: UserRepository,
+  roles: RoleAssignmentPort,
+  leadOwnership: LeadOwnershipPort,
+) {
   return async function updateUser(command: UpdateUserCommand): Promise<UserDto> {
     const { userId, input, actorRoles, hierarchy, actor, correlationId } = command;
     const existing = await repository.findById(userId);
@@ -57,7 +64,6 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
     if (input.role) {
       nextRole = assertFixedRole(input.role);
       assertCanAssignRole(actorRoles, nextRole);
-      // Role *changes* must follow the same rules as create (no hierarchy escalation).
       if (nextRole !== currentRole) {
         assertCanCreateRole(actorRoles, hierarchy, nextRole);
       }
@@ -69,6 +75,8 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
 
     const roleChanged = nextRole !== currentRole;
     const statusChanged = input.status !== undefined && input.status !== existing.status;
+    const actorIsAdmin =
+      actorRoles.includes("Admin") || hierarchy.primaryRole === "Admin";
 
     if (actor.actorId === userId) {
       if (roleChanged) {
@@ -76,6 +84,33 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
       }
       if (statusChanged) {
         throw new InvalidUserHierarchyError("You cannot change your own account status.");
+      }
+      if (
+        input.assignedTeamLeadId !== undefined ||
+        input.reportingManagerId !== undefined
+      ) {
+        throw new InvalidUserHierarchyError("You cannot change your own reporting hierarchy.");
+      }
+      if (input.email !== undefined && input.email.toLowerCase() !== existing.email) {
+        throw new InvalidUserHierarchyError(
+          "You cannot change your own email. Ask an Admin via User Management.",
+        );
+      }
+    }
+
+    // Email is Admin-only through User Management (never self-service).
+    let nextEmail: string | undefined;
+    if (input.email !== undefined) {
+      const normalizedEmail = input.email.toLowerCase();
+      if (normalizedEmail !== existing.email) {
+        if (!actorIsAdmin) {
+          throw new InvalidUserHierarchyError(
+            "Only Admins can change employee email addresses.",
+          );
+        }
+        const clash = await repository.findByEmail(normalizedEmail);
+        if (clash && clash.id !== userId) throw new DuplicateUserEmailError(input.email);
+        nextEmail = normalizedEmail;
       }
     }
 
@@ -87,9 +122,87 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
       nextRole,
     });
 
-    if (input.email && input.email.toLowerCase() !== existing.email) {
-      const clash = await repository.findByEmail(input.email.toLowerCase());
-      if (clash && clash.id !== userId) throw new DuplicateUserEmailError(input.email);
+    // Pre-validate hierarchy reassignment targets (execution is atomic below).
+    let reassignCallersToTeamLeadId: string | null = null;
+    let reassignTeamLeadsToManagerId: string | null = null;
+    let reassignLeadsToUserId: string | null = null;
+
+    if (roleChanged && currentRole === "Manager" && nextRole !== "Manager") {
+      const teamLeadCount = await repository.countTeamLeadsForManager(userId);
+      if (teamLeadCount > 0) {
+        const targetManagerId = input.reassignTeamLeadsToManagerId || null;
+        if (!targetManagerId) {
+          throw new UserDeleteBlockedError(
+            `This Manager has ${teamLeadCount} Team Lead(s). Reassign them to another Manager before changing the role.`,
+          );
+        }
+        if (targetManagerId === userId) {
+          throw new InvalidUserHierarchyError(
+            "Choose a different Manager to receive the Team Leads.",
+          );
+        }
+        await assertActiveHierarchyTarget({
+          repository,
+          roles,
+          userId: targetManagerId,
+          expectedRoles: ["Manager", "Admin"],
+          label: "Reassignment Manager",
+          hierarchy,
+        });
+        reassignTeamLeadsToManagerId = targetManagerId;
+      }
+    }
+
+    if (roleChanged && currentRole === "Team Lead" && nextRole !== "Team Lead") {
+      const callerCount = await repository.countCallersForTeamLead(userId);
+      if (callerCount > 0) {
+        const targetLeadId = input.reassignCallersToTeamLeadId || null;
+        if (!targetLeadId) {
+          throw new UserDeleteBlockedError(
+            `This Team Lead has ${callerCount} Caller(s). Reassign them to another Team Lead before changing the role.`,
+          );
+        }
+        if (targetLeadId === userId) {
+          throw new InvalidUserHierarchyError(
+            "Choose a different Team Lead to receive the Callers.",
+          );
+        }
+        await assertActiveHierarchyTarget({
+          repository,
+          roles,
+          userId: targetLeadId,
+          expectedRoles: ["Team Lead"],
+          label: "Reassignment Team Lead",
+          hierarchy,
+        });
+        reassignCallersToTeamLeadId = targetLeadId;
+      }
+    }
+
+    if (roleChanged) {
+      const leadCount = await leadOwnership.countAssignedLeads(userId);
+      if (leadCount > 0) {
+        const targetLeadOwnerId = input.reassignLeadsToUserId || null;
+        if (!targetLeadOwnerId) {
+          throw new UserDeleteBlockedError(
+            `This employee has ${leadCount} assigned Lead(s). Reassign those Leads before changing the role.`,
+          );
+        }
+        if (targetLeadOwnerId === userId) {
+          throw new InvalidUserHierarchyError(
+            "Choose a different employee to receive the Leads.",
+          );
+        }
+        await assertActiveHierarchyTarget({
+          repository,
+          roles,
+          userId: targetLeadOwnerId,
+          expectedRoles: ["Caller", "Team Lead", "Manager", "Admin"],
+          label: "Lead reassignment target",
+          hierarchy,
+        });
+        reassignLeadsToUserId = targetLeadOwnerId;
+      }
     }
 
     if (input.phone !== undefined) {
@@ -124,57 +237,63 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
     }
 
     if (assignedTeamLeadId) {
-      const lead = await repository.findById(assignedTeamLeadId);
-      const leadRole = lead ? await roles.getPrimaryRoleName(assignedTeamLeadId) : null;
-      if (!lead || leadRole !== "Team Lead") {
-        throw new InvalidUserHierarchyError("Assigned Team Lead must be a Team Lead.");
-      }
-      if (
-        hierarchy.visibleUserIds &&
-        !hierarchy.visibleUserIds.includes(assignedTeamLeadId) &&
-        hierarchy.primaryRole !== "Admin"
-      ) {
-        throw new InvalidUserHierarchyError(
-          "Caller must be assigned to a Team Lead inside your hierarchy.",
-        );
-      }
+      await assertActiveHierarchyTarget({
+        repository,
+        roles,
+        userId: assignedTeamLeadId,
+        expectedRoles: ["Team Lead"],
+        label: "Assigned Team Lead",
+        hierarchy,
+      });
     }
     if (reportingManagerId) {
-      const managerRole = await roles.getPrimaryRoleName(reportingManagerId);
-      assertValidReportingManagerRole(managerRole);
-    }
-
-    const updated = await repository.updateWithAudit(
-      userId,
-      {
-        fullName: input.fullName?.trim(),
-        email: input.email?.toLowerCase(),
-        phone: input.phone === undefined ? undefined : input.phone?.trim() || null,
-        status: input.status,
-        profilePhotoUrl:
-          input.profilePhotoUrl === undefined
-            ? undefined
-            : input.profilePhotoUrl?.trim() || null,
-        assignedTeamLeadId,
-        reportingManagerId,
-        updatedByUserId: actor.actorId,
-      },
-      actor,
-      statusChanged ? "Status Changed" : "User Updated",
-      correlationId,
-    );
-
-    if (roleChanged && nextRole) {
-      await roles.assignFixedRole(userId, nextRole, actor.actorId);
-      await repository.appendAudit(
-        userId,
-        "Role Changed",
-        actor,
-        { role: currentRole },
-        { role: nextRole },
-        correlationId,
+      await assertActiveHierarchyTarget({
+        repository,
+        roles,
+        userId: reportingManagerId,
+        expectedRoles: ["Manager", "Admin"],
+        label: "Reporting Manager",
+        hierarchy,
+      });
+      assertValidReportingManagerRole(
+        await roles.getPrimaryRoleName(reportingManagerId),
       );
     }
+
+    const updateData = {
+      fullName: input.fullName?.trim(),
+      email: nextEmail,
+      phone: input.phone === undefined ? undefined : input.phone?.trim() || null,
+      status: input.status,
+      profilePhotoUrl:
+        input.profilePhotoUrl === undefined
+          ? undefined
+          : input.profilePhotoUrl?.trim() || null,
+      assignedTeamLeadId,
+      reportingManagerId,
+      updatedByUserId: actor.actorId,
+    };
+
+    const updated = roleChanged
+      ? await repository.commitRoleChangeAtomically({
+          userId,
+          data: updateData,
+          actor,
+          action: statusChanged ? "Status Changed" : "User Updated",
+          correlationId,
+          previousRole: currentRole,
+          nextRole,
+          reassignCallersToTeamLeadId,
+          reassignTeamLeadsToManagerId,
+          reassignLeadsToUserId,
+        })
+      : await repository.updateWithAudit(
+          userId,
+          updateData,
+          actor,
+          statusChanged ? "Status Changed" : "User Updated",
+          correlationId,
+        );
 
     const leadName = updated.assignedTeamLeadId
       ? ((await repository.findSummaryById(updated.assignedTeamLeadId))?.fullName ?? null)
@@ -187,7 +306,6 @@ export function makeUpdateUser(repository: UserRepository, roles: RoleAssignment
       roleName: nextRole,
       assignedTeamLeadName: leadName,
       reportingManagerName: managerName,
-      permissions: await roles.getPermissionCodesForUser(userId),
     });
   };
 }

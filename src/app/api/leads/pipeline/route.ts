@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/infra/auth/session";
 import { getPermissionScope, hasPermission } from "@/modules/rbac";
 import { getKanbanBoard } from "@/modules/leads";
+import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
-export async function GET() {
+export async function GET(request: Request) {
   const current = await getCurrentUser();
   if (!current) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,7 +14,16 @@ export async function GET() {
   }
 
   const scope = getPermissionScope(current.authContext, "lead.view");
-  const filter = scope === "SELF" ? { assignedToUserIds: [current.session.user.id] } : undefined;
+  const { searchParams } = new URL(request.url);
+  const campaignId = searchParams.get("campaignId");
+  const hierarchyFilter = leadHierarchyFilter(current.authContext);
+
+  const filter = {
+    ...hierarchyFilter,
+    ...(scope === "SELF" ? { assignedToUserIds: [current.session.user.id] } : {}),
+    ...(campaignId && campaignId.toLowerCase() !== "all" ? { campaignId } : {}),
+  };
+
   const board = await getKanbanBoard(current.authContext.organizationId, filter);
-  return NextResponse.json({ data: board });
+  return NextResponse.json({ data: board, campaignId: campaignId ?? null });
 }

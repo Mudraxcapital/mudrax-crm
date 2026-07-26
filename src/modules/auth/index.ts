@@ -11,7 +11,6 @@ export type { AuthenticateUserInput } from "./application/use-cases/authenticate
 export type { PasswordHasher } from "./application/ports/PasswordHasher";
 export {
   InvalidCredentialsError,
-  AccountLockedError,
   AccountNotActiveError,
 } from "./domain/errors/AuthErrors";
 

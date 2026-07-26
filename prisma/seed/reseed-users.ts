@@ -15,6 +15,7 @@ import {
   DEMO_USER_PASSWORD,
   DEMO_USERS,
 } from "./steps/03-admin-user";
+import { seedLeadCatalogs } from "./steps/04-lead-catalogs";
 
 async function main(): Promise<void> {
   const prisma = createSeedClient();
@@ -24,11 +25,13 @@ async function main(): Promise<void> {
   const org = await seedOrganization(prisma);
   const rbac = await seedRbac(prisma, org.organizationId);
   await seedAdminUser(prisma, org, rbac.roleIds);
+  await seedLeadCatalogs(prisma, org.organizationId);
 
   section("Done");
   explain(`Admin: ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD}`);
   explain(`Other roles: ${DEMO_USER_PASSWORD}`);
-  explain(`Roster size: ${DEMO_USERS.length} (1 admin, 1 manager, 3 team leads, 9 callers)`);
+  explain(`Roster size: ${DEMO_USERS.length} (1 admin, 1 manager, 3 team leads, 20 callers)`);
+  explain("Lead Sources / Stages catalogs ensured.");
 
   await prisma.$disconnect();
 }

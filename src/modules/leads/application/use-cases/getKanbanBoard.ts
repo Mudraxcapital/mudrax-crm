@@ -16,8 +16,13 @@ export interface KanbanColumn {
   bucket: string;
   closeOutcome: string | null;
   sortOrder: number;
+  /** True total for this stage (not capped by the card page size). */
+  totalCount: number;
   leads: LeadDto[];
 }
+
+/** Max cards loaded onto the board. Counts still reflect the full stage total. */
+const KANBAN_CARD_LIMIT = 10_000;
 
 export function makeGetKanbanBoard(
   repository: LeadRepository,
@@ -29,7 +34,10 @@ export function makeGetKanbanBoard(
   ): Promise<KanbanColumn[]> {
     const [stages, leads, catalogs] = await Promise.all([
       catalogRepository.listStages(organizationId),
-      repository.list(organizationId, { ...filter, limit: filter?.limit ?? 500 }),
+      repository.list(organizationId, {
+        ...filter,
+        limit: filter?.limit ?? KANBAN_CARD_LIMIT,
+      }),
       loadCatalogLookups(catalogRepository, organizationId),
     ]);
 
@@ -37,15 +45,30 @@ export function makeGetKanbanBoard(
       .filter((stage) => stage.isActive)
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    return activeStages.map((stage) => ({
-      stageId: stage.id,
-      stageName: stage.name,
-      bucket: stage.bucket,
-      closeOutcome: stage.closeOutcome,
-      sortOrder: stage.sortOrder,
-      leads: leads
+    const stageCounts = await Promise.all(
+      activeStages.map(async (stage) => ({
+        stageId: stage.id,
+        count: await repository.count(organizationId, {
+          ...filter,
+          currentStageId: stage.id,
+        }),
+      })),
+    );
+    const countByStageId = new Map(stageCounts.map((entry) => [entry.stageId, entry.count]));
+
+    return activeStages.map((stage) => {
+      const stageLeads = leads
         .filter((lead) => lead.currentStageId === stage.id)
-        .map((lead) => toLeadDto(lead, catalogs)),
-    }));
+        .map((lead) => toLeadDto(lead, catalogs));
+      return {
+        stageId: stage.id,
+        stageName: stage.name,
+        bucket: stage.bucket,
+        closeOutcome: stage.closeOutcome,
+        sortOrder: stage.sortOrder,
+        totalCount: countByStageId.get(stage.id) ?? stageLeads.length,
+        leads: stageLeads,
+      };
+    });
   };
 }

@@ -35,6 +35,7 @@ export function UserForm({
     (name) => allowAdminRole || name !== "Admin",
   );
   const [role, setRole] = useState<string>(roles[0] ?? "Caller");
+  const [status, setStatus] = useState<string>("ACTIVE");
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -90,13 +91,24 @@ export function UserForm({
           </select>
         </Field>
         <Field label="Account status *" htmlFor="status">
-          <select id="status" name="status" className={inputClass} defaultValue="ACTIVE">
-            {USER_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status === "INACTIVE" ? "Disabled" : status === "ACTIVE" ? "Active" : "Suspended"}
+          <select
+            id="status"
+            name="status"
+            className={inputClass}
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            {USER_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {value === "INACTIVE" ? "Disabled" : value === "ACTIVE" ? "Active" : "Suspended"}
               </option>
             ))}
           </select>
+          {status !== "ACTIVE" ? (
+            <p className="text-warning text-xs">
+              This employee will not be able to sign in until the account is activated.
+            </p>
+          ) : null}
         </Field>
       </div>
 

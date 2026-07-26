@@ -5,9 +5,11 @@ import { BcryptPasswordHasher } from "@/modules/auth/infrastructure/adapters/Bcr
 import { LocalDiskStorageAdapter } from "@/integrations/storage/local/LocalDiskStorageAdapter";
 import { PrismaUserRepository } from "./infrastructure/repositories/PrismaUserRepository";
 import { RbacRoleAssignmentAdapter } from "./infrastructure/adapters/RbacRoleAssignmentAdapter";
+import { PrismaLeadOwnershipAdapter } from "./infrastructure/adapters/PrismaLeadOwnershipAdapter";
 import { makeUserAuthUseCases } from "./application/use-cases/authLookups";
 import { makeCreateUser } from "./application/use-cases/createUser";
 import { makeUpdateUser } from "./application/use-cases/updateUser";
+import { makeUpdateOwnProfile } from "./application/use-cases/updateOwnProfile";
 import {
   makeGetUser,
   makeListUserAuditLog,
@@ -16,11 +18,7 @@ import {
   makeListUsersByRole,
 } from "./application/use-cases/getUser";
 import { makeResetPassword } from "./application/use-cases/resetPassword";
-import {
-  makeBulkDeleteUsers,
-  makeBulkSetUserStatus,
-  makeDeleteUser,
-} from "./application/use-cases/deleteUser";
+import { makeBulkDeleteUsers, makeDeleteUser } from "./application/use-cases/deleteUser";
 import {
   makeBulkChangeAccountStatus,
   makeChangeAccountStatus,
@@ -32,7 +30,6 @@ import {
   makeRevokeAllUserSessions,
   makeRevokeUserSession,
 } from "./application/use-cases/manageSessions";
-import { makeUnlockUser } from "./application/use-cases/unlockUser";
 import { makeChangeOwnPassword } from "./application/use-cases/changeOwnPassword";
 import { makeUpdateProfilePhoto } from "./application/use-cases/updateProfilePhoto";
 import { makeExportUsers } from "./application/use-cases/exportUsers";
@@ -50,7 +47,6 @@ export {
   USER_STATUS_LABELS,
   FIXED_USER_ROLES,
   isAccountLoginAllowed,
-  isAccountTemporarilyLocked,
   accountDisplayStatus,
 } from "./domain/entities/User";
 export type { RecordLoginAttemptInput, ListUsersFilter } from "./domain/repositories/UserRepository";
@@ -64,12 +60,14 @@ export type {
 export {
   createUserSchema,
   updateUserSchema,
+  updateOwnProfileSchema,
   resetPasswordSchema,
   changeOwnPasswordSchema,
   bulkUserIdsSchema,
   listUsersQuerySchema,
   type CreateUserInput,
   type UpdateUserInput,
+  type UpdateOwnProfileInput,
   type ResetPasswordInput,
   type ChangeOwnPasswordInput,
   type BulkUserIdsInput,
@@ -90,6 +88,7 @@ export {
 
 const userRepository = new PrismaUserRepository(prisma);
 const roleAssignment = new RbacRoleAssignmentAdapter();
+const leadOwnership = new PrismaLeadOwnershipAdapter(prisma);
 const passwordHasher = new BcryptPasswordHasher();
 const profileStorage = new LocalDiskStorageAdapter(
   process.env.DOCUMENTS_LOCAL_STORAGE_ROOT ?? undefined,
@@ -100,28 +99,26 @@ export const getUserAuthProfileByEmail = userAuthUseCases.getUserAuthProfileByEm
 export const getUserScopeContext = userAuthUseCases.getUserScopeContext;
 export const getAccountSessionState = userAuthUseCases.getAccountSessionState;
 export const assertAccountSessionValid = userAuthUseCases.assertAccountSessionValid;
-export const countRecentFailedLoginAttempts = userAuthUseCases.countRecentFailedLoginAttempts;
 export const recordLoginAttempt = userAuthUseCases.recordLoginAttempt;
 export const touchLastLogin = userAuthUseCases.touchLastLogin;
 export const createLoginSession = userAuthUseCases.createLoginSession;
 export const endLoginSession = userAuthUseCases.endLoginSession;
-export const lockUserAccount = userAuthUseCases.lockUserAccount;
 export const getUserSummary = userAuthUseCases.getUserSummary;
 export const listUserSummaries = userAuthUseCases.listUserSummaries;
 
 export const createUser = makeCreateUser(userRepository, roleAssignment, passwordHasher);
-export const updateUser = makeUpdateUser(userRepository, roleAssignment);
+export const updateUser = makeUpdateUser(userRepository, roleAssignment, leadOwnership);
+export const updateOwnProfile = makeUpdateOwnProfile(userRepository, roleAssignment);
 export const getUser = makeGetUser(userRepository, roleAssignment);
 export const listUsers = makeListUsers(userRepository);
 export const listUserAuditLog = makeListUserAuditLog(userRepository);
 export const listUserLoginSessions = makeListUserLoginSessions(userRepository);
 export const listUsersByRole = makeListUsersByRole(userRepository);
 export const resetUserPassword = makeResetPassword(userRepository, roleAssignment, passwordHasher);
-export const deleteUser = makeDeleteUser(userRepository, roleAssignment);
-export const bulkSetUserStatus = makeBulkSetUserStatus(userRepository, roleAssignment);
+export const deleteUser = makeDeleteUser(userRepository, roleAssignment, leadOwnership);
 export const changeAccountStatus = makeChangeAccountStatus(userRepository, roleAssignment);
 export const bulkChangeAccountStatus = makeBulkChangeAccountStatus(userRepository, roleAssignment);
-export const bulkDeleteUsers = makeBulkDeleteUsers(userRepository, roleAssignment);
+export const bulkDeleteUsers = makeBulkDeleteUsers(userRepository, roleAssignment, leadOwnership);
 export const resolveVisibleHierarchy = makeResolveVisibleHierarchy(
   userRepository,
   roleAssignment,
@@ -131,7 +128,6 @@ export const listActiveUserSessions = makeListActiveUserSessions(userRepository)
 export const listUserSessionHistory = makeListUserSessionHistory(userRepository);
 export const revokeUserSession = makeRevokeUserSession(userRepository, roleAssignment);
 export const revokeAllUserSessions = makeRevokeAllUserSessions(userRepository, roleAssignment);
-export const unlockUser = makeUnlockUser(userRepository, roleAssignment);
 export const changeOwnPassword = makeChangeOwnPassword(userRepository, passwordHasher);
 export const updateProfilePhoto = makeUpdateProfilePhoto(
   userRepository,
@@ -139,6 +135,10 @@ export const updateProfilePhoto = makeUpdateProfilePhoto(
   profileStorage,
 );
 export const exportUsers = makeExportUsers(userRepository);
+
+export async function countAssignedLeadsForUser(userId: string): Promise<number> {
+  return leadOwnership.countAssignedLeads(userId);
+}
 
 /** Low-level storage retrieve for profile photo API. */
 export async function retrieveProfilePhotoBytes(storageKey: string): Promise<Buffer> {

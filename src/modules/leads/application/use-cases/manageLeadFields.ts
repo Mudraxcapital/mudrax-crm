@@ -70,7 +70,7 @@ export function makeCreateLeadField(repository: LeadFieldDefinitionRepository) {
         name: input.name.trim(),
         internalKey,
         fieldType: input.fieldType,
-        fieldGroup: input.isVisible === false ? "HIDDEN" : input.fieldGroup,
+        fieldGroup: input.fieldGroup,
         isRequired: input.isRequired,
         isVisible: input.isVisible,
         isSearchable: input.isSearchable,
@@ -102,8 +102,19 @@ export function makeUpdateLeadField(repository: LeadFieldDefinitionRepository) {
       throw new LeadFieldNotFoundError(command.id);
     }
 
-    if (existing.isSystem && command.input.fieldType && command.input.fieldType !== existing.fieldType) {
-      throw new ProtectedLeadFieldError(existing.internalKey, "retyped");
+    if (isProtectedSystemField(existing)) {
+      if (command.input.fieldType && command.input.fieldType !== existing.fieldType) {
+        throw new ProtectedLeadFieldError(existing.internalKey, "retyped");
+      }
+      if (command.input.isVisible === false) {
+        throw new ProtectedLeadFieldError(existing.internalKey, "hidden");
+      }
+      if (command.input.fieldGroup && command.input.fieldGroup !== existing.fieldGroup) {
+        throw new ProtectedLeadFieldError(existing.internalKey, "regrouped");
+      }
+      if (command.input.isRequired === false && existing.isRequired) {
+        throw new ProtectedLeadFieldError(existing.internalKey, "made optional");
+      }
     }
 
     const validationChanged =
@@ -112,14 +123,12 @@ export function makeUpdateLeadField(repository: LeadFieldDefinitionRepository) {
       command.input.selectOptions !== undefined;
     const action = validationChanged ? "LeadFieldValidationChanged" : "LeadFieldUpdated";
 
+    // Visibility toggles must preserve fieldGroup (PRIMARY stays PRIMARY).
+    // Do not auto-coerce isVisible=false into fieldGroup=HIDDEN.
     const updated = await repository.updateWithAudit(
       command.id,
       {
         ...command.input,
-        fieldGroup:
-          command.input.isVisible === false
-            ? "HIDDEN"
-            : command.input.fieldGroup ?? existing.fieldGroup,
       },
       command.actor,
       action,
@@ -138,9 +147,13 @@ export function makeHideLeadField(repository: LeadFieldDefinitionRepository) {
     if (!existing || existing.organizationId !== command.organizationId) {
       throw new LeadFieldNotFoundError(command.id);
     }
+    if (isProtectedSystemField(existing)) {
+      throw new ProtectedLeadFieldError(existing.internalKey, "hidden");
+    }
+    // Preserve fieldGroup so Unhide restores PRIMARY/SECONDARY correctly.
     const updated = await repository.updateWithAudit(
       command.id,
-      { isVisible: false, fieldGroup: "HIDDEN" },
+      { isVisible: false },
       command.actor,
       "LeadFieldHidden",
     );
@@ -162,7 +175,9 @@ export function makeShowLeadField(repository: LeadFieldDefinitionRepository) {
       command.id,
       {
         isVisible: true,
-        fieldGroup: existing.fieldGroup === "HIDDEN" ? "SECONDARY" : existing.fieldGroup,
+        // Only remap legacy rows that were previously forced into HIDDEN group.
+        fieldGroup:
+          existing.fieldGroup === "HIDDEN" ? "SECONDARY" : existing.fieldGroup,
       },
       command.actor,
       "LeadFieldShown",

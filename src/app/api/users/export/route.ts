@@ -24,7 +24,9 @@ export async function GET(request: Request) {
       hierarchy: current.authContext.hierarchy,
       format,
     });
-    return new NextResponse(file.body, {
+    const body =
+      typeof file.body === "string" ? file.body : new Uint8Array(file.body);
+    return new NextResponse(body, {
       headers: {
         "Content-Type": file.contentType,
         "Content-Disposition": `attachment; filename="${file.filename}"`,

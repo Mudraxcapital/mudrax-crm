@@ -26,7 +26,6 @@ const BLOCKED_PREFIXES = [
   "/customers",
   "/users",
   "/reports",
-  "/settings",
   "/campaigns",
   "/leads/import",
   "/leads/pipeline",

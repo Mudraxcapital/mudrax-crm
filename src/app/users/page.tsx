@@ -106,10 +106,17 @@ export default async function UsersPage() {
           id: user.id,
           fullName: user.fullName,
         }))}
-        managerOptions={scopedManagers.map((user) => ({
+        managerOptions={managerPicker.map((user) => ({
           id: user.id,
           fullName: user.fullName,
         }))}
+        leadAssigneeOptions={users
+          .filter((user) => user.status === "ACTIVE")
+          .map((user) => ({
+            id: user.id,
+            fullName: user.fullName,
+            roleName: user.roleName,
+          }))}
         rows={users.map((user) => ({
           id: user.id,
           fullName: user.fullName,

@@ -3,6 +3,7 @@ import {
   makeArchiveLeadField,
   makeCreateLeadField,
   makeHideLeadField,
+  makeShowLeadField,
 } from "../application/use-cases/manageLeadFields";
 import { ProtectedLeadFieldError } from "../domain/errors/LeadFieldErrors";
 import { FakeLeadFieldDefinitionRepository } from "./fakeLeadFieldDefinitionRepository";
@@ -54,16 +55,57 @@ describe("manageLeadFields", () => {
     ).rejects.toBeInstanceOf(ProtectedLeadFieldError);
   });
 
-  it("can hide a system field", async () => {
+  it("rejects hiding protected core fields", async () => {
     const hideLeadField = makeHideLeadField(repository);
     await repository.ensureSystemDefaults(ORG_ID);
     const name = await repository.findByInternalKey(ORG_ID, "full_name");
+
+    await expect(
+      hideLeadField({
+        id: name!.id,
+        organizationId: ORG_ID,
+        actor: { actorType: "USER", actorId: "admin-1" },
+      }),
+    ).rejects.toBeInstanceOf(ProtectedLeadFieldError);
+  });
+
+  it("hides a custom field while preserving its field group on unhide", async () => {
+    const createLeadField = makeCreateLeadField(repository);
+    const hideLeadField = makeHideLeadField(repository);
+    const showLeadField = makeShowLeadField(repository);
+
+    const created = await createLeadField({
+      organizationId: ORG_ID,
+      input: {
+        name: "City",
+        fieldType: "TEXT",
+        fieldGroup: "PRIMARY",
+        isRequired: false,
+        isVisible: true,
+        isSearchable: false,
+        isFilterable: false,
+        isImportable: true,
+        isExportable: true,
+      },
+      actor: { actorType: "USER", actorId: "admin-1" },
+    });
+
     const hidden = await hideLeadField({
-      id: name!.id,
+      id: created.id,
       organizationId: ORG_ID,
       actor: { actorType: "USER", actorId: "admin-1" },
     });
     expect(hidden.isVisible).toBe(false);
+    expect(hidden.fieldGroup).toBe("PRIMARY");
     expect(hidden.section).toBe("hidden");
+
+    const shown = await showLeadField({
+      id: created.id,
+      organizationId: ORG_ID,
+      actor: { actorType: "USER", actorId: "admin-1" },
+    });
+    expect(shown.isVisible).toBe(true);
+    expect(shown.fieldGroup).toBe("PRIMARY");
+    expect(shown.section).toBe("primary");
   });
 });

@@ -8,6 +8,7 @@
 // Account status + sessionVersion are enforced here centrally via
 // `assertAccountSessionValid` so every authenticated request rejects
 // Disabled / Suspended / revoked sessions without scattered checks.
+// Failed-login lockout is intentionally not used.
 // ============================================================================
 
 import { cache } from "react";
@@ -68,9 +69,6 @@ export async function requireAuth(): Promise<CurrentUser> {
   const session = await auth();
   if (session?.user?.id) {
     const state = await getAccountSessionState(session.user.id);
-    if (state?.lockedUntil && state.lockedUntil.getTime() > Date.now()) {
-      redirect(`${CLEAR_STALE_SESSION_PATH}?reason=locked`);
-    }
     if (state && state.status !== "ACTIVE") {
       const reason = state.status === "SUSPENDED" ? "suspended" : "disabled";
       redirect(`${CLEAR_STALE_SESSION_PATH}?reason=${reason}`);
