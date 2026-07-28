@@ -13,8 +13,13 @@ import {
   InvalidCampaignStatusTransitionError,
   changeCampaignStatus,
   changeCampaignStatusSchema,
+  getCampaign,
 } from "@/modules/campaigns";
 import { requirePermission } from "@/infra/auth/session";
+import {
+  assertCanAccessCampaignRecord,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
 import type { CampaignFormState } from "./createCampaign.action";
 
 export async function changeCampaignStatusAction(
@@ -22,7 +27,7 @@ export async function changeCampaignStatusAction(
   _previousState: CampaignFormState | undefined,
   formData: FormData,
 ): Promise<CampaignFormState> {
-  const { session } = await requirePermission("campaign.manage");
+  const { session, authContext } = await requirePermission("campaign.manage");
 
   const parsed = changeCampaignStatusSchema.safeParse({ status: formData.get("status") });
 
@@ -31,12 +36,17 @@ export async function changeCampaignStatusAction(
   }
 
   try {
+    const existing = await getCampaign(id);
+    assertCanAccessCampaignRecord(authContext, existing);
     await changeCampaignStatus({
       id,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
+    if (error instanceof CampaignAccessDeniedError) {
+      return { error: "Campaign not found or access denied." };
+    }
     if (
       error instanceof CampaignNotFoundError ||
       error instanceof InvalidCampaignStatusTransitionError
@@ -47,6 +57,7 @@ export async function changeCampaignStatusAction(
   }
 
   revalidatePath(`/campaigns/${id}`);
+  revalidatePath(`/campaigns/${id}/dashboard`);
   revalidatePath("/campaigns");
   return {};
 }

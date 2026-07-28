@@ -155,8 +155,17 @@ export function assertCanActOnHierarchyTarget(input: {
   targetUserId: string;
   targetRole: FixedUserRole | null;
   action: HierarchyAction;
+  /** Required when the actor is a Team Lead performing delete / status changes. */
+  actorCanManageCallerAccounts?: boolean;
 }): void {
-  const { hierarchy, actorRoles, actorUserId, targetUserId, targetRole, action } = input;
+  const {
+    hierarchy,
+    actorRoles,
+    actorUserId,
+    targetUserId,
+    targetRole,
+    action,
+  } = input;
 
   if (actorUserId === targetUserId) {
     if (action === "view") return;
@@ -200,6 +209,16 @@ export function assertCanActOnHierarchyTarget(input: {
   }
 
   if (hierarchy.primaryRole === "Team Lead") {
+    if (
+      (action === "delete" || action === "change_status") &&
+      !input.actorCanManageCallerAccounts
+    ) {
+      throw new InvalidUserHierarchyError(
+        action === "delete"
+          ? "Your Team Lead account is not permitted to delete Caller accounts. Ask your Manager or Admin to grant Caller account management."
+          : "Your Team Lead account is not permitted to disable or suspend Caller accounts. Ask your Manager or Admin to grant Caller account management.",
+      );
+    }
     if (targetRole !== "Caller" && targetUserId !== actorUserId) {
       throw new InvalidUserHierarchyError(
         `Team Leads can only ${actionLabel(action)} their own Callers.`,

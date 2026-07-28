@@ -14,6 +14,7 @@ import {
   UserNotFoundError,
 } from "../../domain/errors/UserErrors";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
+import { roleMaySelfServiceChangePassword } from "../services/selfServicePasswordPolicy";
 
 export interface ResetPasswordCommand {
   userId: string;
@@ -65,7 +66,7 @@ export function makeResetPassword(
 
     const passwordHash = await passwordHasher.hash(password);
     await repository.setPasswordHashWithAudit(userId, passwordHash, actor, correlationId, {
-      mustChangePassword: true,
+      mustChangePassword: roleMaySelfServiceChangePassword(targetRole),
       action: "Password Reset (Admin)",
       ipAddress: ipAddress ?? null,
     });

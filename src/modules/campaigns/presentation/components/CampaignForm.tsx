@@ -95,7 +95,8 @@ export function CampaignForm({
         <div className="flex flex-col gap-1.5">
           <span className="mx-label">Agents</span>
           <p className="text-muted text-xs">
-            Select agents to enroll as campaign members for auto-distribution.
+            Select Admins, Managers, Team Leads, or Callers to enroll for auto-distribution and taking
+            calls.
           </p>
           <div className="max-h-40 overflow-y-auto rounded-lg border border-border p-3">
             {agents.map((agent) => (

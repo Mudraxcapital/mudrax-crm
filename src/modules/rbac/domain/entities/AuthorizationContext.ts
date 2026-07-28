@@ -36,6 +36,8 @@ export interface AuthorizationContext {
    * Repositories / APIs must apply this — never rely on UI hiding alone.
    */
   hierarchy: HierarchyScope;
+  /** Team Lead only — delete/disable/suspend assigned Callers when true. */
+  canManageCallerAccounts: boolean;
 }
 
 export function hasPermission(context: AuthorizationContext, permissionCode: string): boolean {

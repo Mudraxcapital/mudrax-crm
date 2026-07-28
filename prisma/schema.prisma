@@ -35,5 +35,5 @@ generator client {
 // surface — `organizationId` is company-scope only.
 datasource db {
   provider = "postgresql"
-  schemas  = ["organization", "users", "rbac", "customers", "leads", "follow_ups", "campaigns", "banks", "loan_products", "loan_applications", "loan_accounts", "disbursements", "telephony", "documents", "notifications", "reports", "ai_core", "ai_documents", "ai_telephony", "ai_crm", "ai_analytics", "ai_governance"]
+  schemas  = ["organization", "users", "rbac", "customers", "leads", "follow_ups", "campaigns", "lead_center", "integrations", "banks", "loan_products", "loan_applications", "loan_accounts", "disbursements", "telephony", "documents", "notifications", "reports", "ai_core", "ai_documents", "ai_telephony", "ai_crm", "ai_analytics", "ai_governance"]
 }

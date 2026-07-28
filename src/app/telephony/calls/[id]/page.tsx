@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { getCustomer } from "@/modules/customers";
 import { getLead } from "@/modules/leads";
 import {
@@ -20,7 +20,9 @@ import { updateCallAttemptStatusAction } from "@/modules/telephony/presentation/
 import { addCallNoteAction } from "@/modules/telephony/presentation/controllers/addCallNote.action";
 import { updateCallNoteAction } from "@/modules/telephony/presentation/controllers/updateCallNote.action";
 import { createCallRecordingAction } from "@/modules/telephony/presentation/controllers/createCallRecording.action";
+import { canAccessCall } from "@/shared/auth/assertCanAccessCall";
 import { resolveDisplayName } from "@/shared/ui/displayName";
+import { humanizeAuditAction } from "@/shared/ui/humanizeAuditAction";
 
 export default async function TelephonyCallDetailPage({
   params,
@@ -28,6 +30,7 @@ export default async function TelephonyCallDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { authContext } = await requirePermission("call.view");
+  const callerWorkspace = isCallerWorkspaceUser(authContext);
   const { id } = await params;
 
   let call;
@@ -38,6 +41,10 @@ export default async function TelephonyCallDetailPage({
       notFound();
     }
     throw error;
+  }
+
+  if (!canAccessCall(authContext, call)) {
+    notFound();
   }
 
   const [outcomes, notes, recordings, auditLog, lead, customer, agent] = await Promise.all([
@@ -94,7 +101,11 @@ export default async function TelephonyCallDetailPage({
               <dt className="text-muted">Lead</dt>
               <dd>
                 <Link
-                  href={`/leads/${call.leadId}`}
+                  href={
+                    callerWorkspace
+                      ? `/caller/leads/${call.leadId}${lead?.campaignId ? `?campaignId=${lead.campaignId}` : ""}`
+                      : `/leads/${call.leadId}`
+                  }
                   className="text-accent hover:underline underline-offset-4"
                 >
                   {leadName}
@@ -122,7 +133,11 @@ export default async function TelephonyCallDetailPage({
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Update Status</h2>
           <div className="mt-4">
-            <CallStatusForm action={boundUpdateStatus} outcomes={outcomes} />
+            <CallStatusForm
+              action={boundUpdateStatus}
+              outcomes={outcomes}
+              currentStatus={call.status}
+            />
           </div>
         </section>
       ) : null}
@@ -198,7 +213,7 @@ export default async function TelephonyCallDetailPage({
                 key={record.id}
                 className="flex justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
               >
-                <span>{record.action}</span>
+                <span>{humanizeAuditAction(record.action)}</span>
                 <span className="text-muted">
                   {new Date(record.occurredAt).toLocaleString()}
                 </span>

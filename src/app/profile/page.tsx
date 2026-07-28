@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAuth } from "@/infra/auth/session";
-import { getUser } from "@/modules/users";
+import { getUser, roleMaySelfServiceChangePassword } from "@/modules/users";
 import { ProfileEditor } from "@/modules/users/presentation/components/ProfileEditor";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
@@ -9,6 +9,7 @@ import { Badge } from "@/shared/ui/Badge";
 export default async function ProfilePage() {
   const { session, authContext } = await requireAuth();
   const user = await getUser(session.user.id);
+  const canChangePassword = roleMaySelfServiceChangePassword(user.roleName);
 
   return (
     <PageSection>
@@ -65,17 +66,32 @@ export default async function ProfilePage() {
           </CardBody>
         </Card>
 
-        <Link href="/profile/security" className="block">
-          <Card className="h-full transition-colors hover:border-accent/40">
+        {canChangePassword ? (
+          <Link href="/profile/security" className="block">
+            <Card className="h-full transition-colors hover:border-accent/40">
+              <CardHeader
+                title="Security"
+                description="Change your password. Requires your current password."
+              />
+              <CardBody>
+                <span className="text-accent text-sm font-medium">Change password →</span>
+              </CardBody>
+            </Card>
+          </Link>
+        ) : (
+          <Card className="h-full">
             <CardHeader
               title="Security"
-              description="Change your password. Requires your current password."
+              description="Password managed by your administrator."
             />
             <CardBody>
-              <span className="text-accent text-sm font-medium">Change password →</span>
+              <p className="text-muted text-sm">
+                Team Leads and Callers use administrator-assigned passwords. Contact an Admin
+                if you need a reset via User Management.
+              </p>
             </CardBody>
           </Card>
-        </Link>
+        )}
       </div>
     </PageSection>
   );

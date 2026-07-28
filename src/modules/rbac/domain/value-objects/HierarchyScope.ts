@@ -89,6 +89,12 @@ export function assertOwnsManagerData(
   ownerManagerId: string | null | undefined,
 ): boolean {
   if (hierarchy.unrestricted || hierarchy.primaryRole === "Admin") return true;
+
+  // Direct Admin Callers (no Team Lead / Manager book) own the org-scoped null book.
+  if (hierarchy.primaryRole === "Caller" && !hierarchy.ownerManagerId) {
+    return ownerManagerId == null;
+  }
+
   if (!hierarchy.ownerManagerId) return false;
   return ownerManagerId === hierarchy.ownerManagerId;
 }

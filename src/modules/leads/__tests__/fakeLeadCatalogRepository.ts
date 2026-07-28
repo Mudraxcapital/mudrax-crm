@@ -93,6 +93,18 @@ export class FakeLeadCatalogRepository implements LeadCatalogRepository {
     return this.sources.filter((source) => source.organizationId === organizationId);
   }
 
+  async findDefaultSource(organizationId: string): Promise<LeadSource | null> {
+    const sources = await this.listSources(organizationId);
+    return (
+      sources.find(
+        (source) => source.isActive && source.name.trim().toLowerCase() === "data",
+      ) ??
+      sources.find((source) => source.isActive) ??
+      sources[0] ??
+      null
+    );
+  }
+
   async findLostReasonById(id: string): Promise<LostReason | null> {
     return this.lostReasons.find((reason) => reason.id === id) ?? null;
   }

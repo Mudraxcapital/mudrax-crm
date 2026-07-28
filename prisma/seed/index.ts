@@ -120,9 +120,9 @@ async function main(): Promise<void> {
   section("Done");
   explain(`DEV-ONLY logins (see README.md):`);
   explain(`  Admin      ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD}`);
-  explain(`  Manager    manager@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
-  explain(`  Team Lead  (3)  *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
-  explain(`  Caller     (20) *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Manager    salaudin.malik@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Team Lead  (${DEMO_USERS.filter((u) => u.role === "Team Lead").length})  *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
+  explain(`  Caller     (${DEMO_USERS.filter((u) => u.role === "Caller").length}) *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
   explain(`Total employees seeded: ${DEMO_USERS.length}`);
 
   await prisma.$disconnect();

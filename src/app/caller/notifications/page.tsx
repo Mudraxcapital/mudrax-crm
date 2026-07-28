@@ -1,6 +1,7 @@
 import { requireCallerWorkspace } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { listNotifications } from "@/modules/notifications";
+import { notificationRecipientFilter } from "@/shared/auth/notificationRecipientFilter";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
@@ -10,12 +11,15 @@ export default async function CallerNotificationsPage() {
   const canView = hasPermission(authContext, "notification.view");
 
   const notifications = canView
-    ? await listNotifications(authContext.organizationId, { limit: 80 }).catch(() => [])
+    ? await listNotifications(
+        authContext.organizationId,
+        notificationRecipientFilter(authContext, {
+          permissionCode: "notification.view",
+          actorUserId: session.user.id,
+          limit: 80,
+        }) as never,
+      ).catch(() => [])
     : [];
-
-  const mine = notifications.filter(
-    (item) => item.recipientType === "USER" && item.recipientId === session.user.id,
-  );
 
   return (
     <PageSection>
@@ -25,10 +29,10 @@ export default async function CallerNotificationsPage() {
         <CardBody className="space-y-2">
           {!canView ? (
             <p className="text-muted text-sm">You do not have notification visibility.</p>
-          ) : mine.length === 0 ? (
+          ) : notifications.length === 0 ? (
             <p className="text-muted text-sm">No notifications yet.</p>
           ) : (
-            mine.map((item) => (
+            notifications.map((item) => (
               <div
                 key={item.id}
                 className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm"

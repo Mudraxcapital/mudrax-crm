@@ -12,6 +12,7 @@ import {
   LeadFieldKeyConflictError,
   LeadFieldNameConflictError,
   LeadFieldNotFoundError,
+  LeadFieldStaleEditError,
   ProtectedLeadFieldError,
 } from "../../domain/errors/LeadFieldErrors";
 import type {
@@ -102,6 +103,30 @@ export function makeUpdateLeadField(repository: LeadFieldDefinitionRepository) {
       throw new LeadFieldNotFoundError(command.id);
     }
 
+    if (command.input.expectedUpdatedAt) {
+      const expected = new Date(command.input.expectedUpdatedAt).getTime();
+      if (
+        Number.isNaN(expected) ||
+        expected !== existing.updatedAt.getTime()
+      ) {
+        throw new LeadFieldStaleEditError();
+      }
+    }
+
+    if (command.input.name) {
+      const trimmed = command.input.name.trim();
+      const siblings = await repository.list(command.organizationId);
+      if (
+        siblings.some(
+          (field) =>
+            field.id !== command.id &&
+            field.name.toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        throw new LeadFieldNameConflictError(trimmed);
+      }
+    }
+
     if (isProtectedSystemField(existing)) {
       if (command.input.fieldType && command.input.fieldType !== existing.fieldType) {
         throw new ProtectedLeadFieldError(existing.internalKey, "retyped");
@@ -115,6 +140,19 @@ export function makeUpdateLeadField(repository: LeadFieldDefinitionRepository) {
       if (command.input.isRequired === false && existing.isRequired) {
         throw new ProtectedLeadFieldError(existing.internalKey, "made optional");
       }
+    }
+
+    const nextFieldType = command.input.fieldType ?? existing.fieldType;
+    const nextSelectOptions =
+      command.input.selectOptions !== undefined
+        ? command.input.selectOptions
+        : existing.selectOptions;
+    const needsOptions =
+      nextFieldType === "DROPDOWN" ||
+      nextFieldType === "MULTI_SELECT" ||
+      nextFieldType === "RADIO";
+    if (needsOptions && (!nextSelectOptions || nextSelectOptions.length === 0)) {
+      throw new Error(`${nextFieldType} fields require at least one option.`);
     }
 
     const validationChanged =
@@ -132,6 +170,10 @@ export function makeUpdateLeadField(repository: LeadFieldDefinitionRepository) {
       },
       command.actor,
       action,
+      undefined,
+      command.input.expectedUpdatedAt
+        ? { expectedUpdatedAt: new Date(command.input.expectedUpdatedAt) }
+        : undefined,
     );
     return toLeadFieldDefinitionDto(updated);
   };
@@ -175,6 +217,7 @@ export function makeShowLeadField(repository: LeadFieldDefinitionRepository) {
       command.id,
       {
         isVisible: true,
+        ...(existing.status !== "ACTIVE" ? { status: "ACTIVE" as const } : {}),
         // Only remap legacy rows that were previously forced into HIDDEN group.
         fieldGroup:
           existing.fieldGroup === "HIDDEN" ? "SECONDARY" : existing.fieldGroup,

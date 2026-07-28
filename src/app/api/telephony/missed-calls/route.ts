@@ -6,22 +6,20 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission } from "@/modules/rbac";
+import { requireApiUser } from "@/infra/auth/apiGuard";
+import { hasPermission } from "@/modules/rbac";
 import { listMissedCalls } from "@/modules/telephony";
+import { agentHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
-export async function GET() {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "call.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const scope = getPermissionScope(current.authContext, "call.view");
-  const filter = scope === "SELF" ? { agentUserId: current.session.user.id } : undefined;
-
+  const filter = agentHierarchyFilter(current.authContext);
   const calls = await listMissedCalls(current.authContext.organizationId, filter);
   return NextResponse.json({ data: calls });
 }

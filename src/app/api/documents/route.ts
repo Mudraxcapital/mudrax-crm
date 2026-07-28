@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   InvalidCustomerReferenceError,
@@ -15,12 +15,16 @@ import {
   uploadDocument,
   uploadDocumentSchema,
 } from "@/modules/documents";
+import {
+  filterDocumentsByOwnerVisibility,
+  resolveVisibleOwnerIds,
+} from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "document.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -29,18 +33,22 @@ export async function GET(request: Request) {
   const ownerType = url.searchParams.get("ownerType") ?? undefined;
   const ownerId = url.searchParams.get("ownerId") ?? undefined;
 
-  const documents = await listDocuments(current.authContext.organizationId, {
-    ownerType: ownerType as "CUSTOMER" | "LEAD" | undefined,
-    ownerId: ownerId ?? undefined,
-  });
+  const visibility = await resolveVisibleOwnerIds(current.authContext);
+  const documents = filterDocumentsByOwnerVisibility(
+    await listDocuments(current.authContext.organizationId, {
+      ownerType: ownerType as "CUSTOMER" | "LEAD" | undefined,
+      ownerId: ownerId ?? undefined,
+    }),
+    visibility,
+  );
   return NextResponse.json({ data: documents });
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "document.upload")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -55,6 +63,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    const visibility = await resolveVisibleOwnerIds(current.authContext);
+    if (!visibility.unrestricted) {
+      const allowed =
+        parsed.data.ownerType === "CUSTOMER"
+          ? visibility.customerIds?.has(parsed.data.ownerId)
+          : visibility.leadIds?.has(parsed.data.ownerId);
+      if (!allowed) {
+        return NextResponse.json({ error: "Owner not found or access denied." }, { status: 404 });
+      }
+    }
+
     const document = await uploadDocument({
       organizationId: current.authContext.organizationId,
       userId: current.session.user.id,

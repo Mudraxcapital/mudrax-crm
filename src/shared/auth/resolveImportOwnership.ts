@@ -8,10 +8,15 @@ import { getCampaign } from "@/modules/campaigns";
 import { getUser } from "@/modules/users";
 
 /**
- * Derives a single Manager id from selected callers / agents.
- * Throws when selected people belong to more than one Manager book.
+ * Derives Manager id(s) from selected callers / agents.
+ * When `allowMixed` is false, throws if they span more than one Manager book.
+ * When `allowMixed` is true (All agents), returns null so each lead can take
+ * ownership from its assignee instead of a single batch Manager.
  */
-async function ownerManagerFromAssignees(userIds: string[]): Promise<string | null> {
+async function ownerManagerFromAssignees(
+  userIds: string[],
+  allowMixed = false,
+): Promise<string | null> {
   const managerIds = new Set<string>();
 
   for (const userId of userIds) {
@@ -44,8 +49,9 @@ async function ownerManagerFromAssignees(userIds: string[]): Promise<string | nu
 
   if (managerIds.size === 0) return null;
   if (managerIds.size > 1) {
+    if (allowMixed) return null;
     throw new Error(
-      "Selected callers belong to different Managers. Choose one Manager or Team Lead, or select callers from the same Manager.",
+      "Selected agents belong to different Managers. Choose one Manager or Team Lead, or select agents from the same Manager.",
     );
   }
   return [...managerIds][0]!;
@@ -57,8 +63,11 @@ export async function resolveImportOwnership(input: {
   agentUserIds?: string[];
   manualAssigneeUserId?: string | null;
   explicitOwnerManagerId?: string | null;
+  /** When true (All agents), allow assigning across Manager books. */
+  allowMixedManagers?: boolean;
 }): Promise<{ ownerManagerId: string | null; ownerTeamLeadId: string | null }> {
   const { authContext } = input;
+  const allowMixed = input.allowMixedManagers === true;
   let ownerManagerId =
     resolveOwnerManagerId(authContext, input.explicitOwnerManagerId) ?? null;
 
@@ -76,8 +85,13 @@ export async function resolveImportOwnership(input: {
     ...(input.manualAssigneeUserId ? [input.manualAssigneeUserId] : []),
   ];
 
+  // All agents: each lead inherits ownership from its assignee at create time.
+  if (allowMixed) {
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+
   if (!ownerManagerId && candidateIds.length > 0) {
-    ownerManagerId = await ownerManagerFromAssignees(candidateIds);
+    ownerManagerId = await ownerManagerFromAssignees(candidateIds, false);
   }
 
   let ownerTeamLeadId = authContext.hierarchy.teamLeadId;
@@ -89,6 +103,16 @@ export async function resolveImportOwnership(input: {
       const user = await getUser(userId);
       if (user.roleName === "Caller" && !user.assignedTeamLeadId) {
         hasDirectAdminCaller = true;
+        continue;
+      }
+      if (user.roleName === "Admin") {
+        // Admin agents are org-scoped (same book clearing as Direct Admin Callers).
+        hasDirectAdminCaller = true;
+        continue;
+      }
+      if (user.roleName === "Manager") {
+        // Managers take calls in their own book (no Team Lead ownership).
+        hasHierarchicalCaller = true;
         continue;
       }
       if (user.roleName === "Team Lead") {
@@ -106,13 +130,13 @@ export async function resolveImportOwnership(input: {
     }
   }
 
-  // Direct Admin Callers are Admin-scoped — never place them in a Manager book.
+  // Direct Admin Callers / Admin agents are org-scoped — never place them in a Manager book.
   if (hasDirectAdminCaller && !hasHierarchicalCaller) {
     return { ownerManagerId: null, ownerTeamLeadId: null };
   }
   if (hasDirectAdminCaller && hasHierarchicalCaller) {
     throw new Error(
-      "Cannot mix Direct Admin Callers (freelancers) with Team Lead Callers in one import.",
+      "Cannot mix Admins or Direct Admin Callers (freelancers) with Managers, Team Leads, or hierarchical Callers in one import.",
     );
   }
 

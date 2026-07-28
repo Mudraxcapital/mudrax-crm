@@ -32,3 +32,10 @@ export class LeadFieldValidationError extends Error {
     this.name = "LeadFieldValidationError";
   }
 }
+
+export class LeadFieldStaleEditError extends Error {
+  constructor() {
+    super("This field was updated elsewhere. Refresh the page and try again.");
+    this.name = "LeadFieldStaleEditError";
+  }
+}

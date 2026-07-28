@@ -92,6 +92,28 @@ export class PrismaLeadRepository implements LeadRepository {
     return this.prisma.lead.count({ where: this.buildWhere(organizationId, filter) });
   }
 
+  async countDistinctCustomers(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<number> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["customerId"],
+      where: this.buildWhere(organizationId, filter),
+    });
+    return groups.length;
+  }
+
+  async listDistinctCustomerIds(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<string[]> {
+    const groups = await this.prisma.lead.groupBy({
+      by: ["customerId"],
+      where: this.buildWhere(organizationId, filter),
+    });
+    return groups.map((group) => group.customerId);
+  }
+
   async countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]> {
     const groups = await this.prisma.lead.groupBy({
       by: ["currentStageId"],
@@ -169,8 +191,35 @@ export class PrismaLeadRepository implements LeadRepository {
     } else if (filter?.hasNextAction) {
       where.nextActionAt = { not: null };
     }
+    if (filter?.currentAssignedAtFrom || filter?.currentAssignedAtTo) {
+      where.assignments = {
+        some: {
+          unassignedAt: null,
+          ...(filter.assignedToUserIds
+            ? { assignedToUserId: { in: filter.assignedToUserIds } }
+            : {}),
+          assignedAt: {
+            ...(filter.currentAssignedAtFrom ? { gte: filter.currentAssignedAtFrom } : {}),
+            ...(filter.currentAssignedAtTo ? { lte: filter.currentAssignedAtTo } : {}),
+          },
+        },
+      };
+    }
 
     const and: Prisma.LeadWhereInput[] = [];
+
+    if (filter?.teamLeadCustomerScope) {
+      const { teamLeadId, callerUserIds } = filter.teamLeadCustomerScope;
+      and.push({
+        OR: [
+          { ownerTeamLeadId: teamLeadId },
+          {
+            campaignId: { not: null },
+            currentAssigneeUserId: { in: callerUserIds },
+          },
+        ],
+      });
+    }
 
     if (filter?.search) {
       const q = filter.search.trim();

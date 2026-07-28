@@ -12,9 +12,11 @@ import { requirePermission } from "@/infra/auth/session";
 import {
   CustomerNotFoundError,
   InvalidCustomerStateError,
+  getCustomer,
   updateCustomer,
   updateCustomerSchema,
 } from "@/modules/customers";
+import { canAccessCustomer } from "@/shared/auth/assertCanAccessCustomer";
 import type { CustomerFormState } from "./createCustomer.action";
 
 export async function updateCustomerAction(
@@ -22,7 +24,7 @@ export async function updateCustomerAction(
   _previousState: CustomerFormState | undefined,
   formData: FormData,
 ): Promise<CustomerFormState> {
-  const { session } = await requirePermission("customer.update");
+  const { session, authContext } = await requirePermission("customer.update");
 
   const parsed = updateCustomerSchema.safeParse({
     fullName: formData.get("fullName") || undefined,
@@ -34,6 +36,10 @@ export async function updateCustomerAction(
   }
 
   try {
+    const existing = await getCustomer(id);
+    if (!(await canAccessCustomer(authContext, existing))) {
+      return { error: "Customer not found or access denied." };
+    }
     await updateCustomer({
       id,
       input: parsed.data,

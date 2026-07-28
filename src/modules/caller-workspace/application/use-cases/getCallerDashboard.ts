@@ -5,10 +5,15 @@
 // ============================================================================
 
 import { listCampaignsForMember, getCampaign } from "@/modules/campaigns";
-import { listLeads } from "@/modules/leads";
+import { countLeads, listLeads } from "@/modules/leads";
 import { listFollowUps } from "@/modules/follow-ups";
 import { listCallAttempts } from "@/modules/telephony";
+import { getDailyLoginDuration } from "@/modules/users";
 import type { CallerDashboardDto, CallerLeadQueueItemDto } from "../dto/CallerWorkspaceDto";
+
+const QUEUE_LIMIT = 100;
+const FOLLOW_UP_LIMIT = 100;
+const CALL_LIMIT = 100;
 
 function startOfToday(): Date {
   const date = new Date();
@@ -20,6 +25,7 @@ export interface GetCallerDashboardQuery {
   organizationId: string;
   callerUserId: string;
   loginAt: string;
+  currentSessionId?: string | null;
   campaignId?: string | null;
 }
 
@@ -34,11 +40,39 @@ export function makeGetCallerDashboard() {
         : (campaigns[0]?.id ?? null);
 
     const today = startOfToday();
-    const myLeads = await listLeads(query.organizationId, {
+    const leadScope = {
       assignedToUserIds: [query.callerUserId],
       campaignId: selectedCampaignId ?? undefined,
-      limit: 500,
-    });
+    };
+
+    const [myLeads, assignedToday, followUps, recentCalls, dailyLogin] = await Promise.all([
+      listLeads(query.organizationId, {
+        ...leadScope,
+        limit: QUEUE_LIMIT,
+      }),
+      // Assignment timestamp — not lead.createdAt.
+      countLeads(query.organizationId, {
+        ...leadScope,
+        currentAssignedAtFrom: today,
+      }),
+      listFollowUps(query.organizationId, {
+        assignedToUserIds: [query.callerUserId],
+        limit: FOLLOW_UP_LIMIT,
+      }).catch(() => []),
+      listCallAttempts(query.organizationId, {
+        agentUserId: query.callerUserId,
+        initiatedFrom: today,
+        limit: CALL_LIMIT,
+      }).catch(() => []),
+      getDailyLoginDuration({
+        userId: query.callerUserId,
+        currentSessionId: query.currentSessionId,
+      }).catch(() => ({
+        priorSecondsToday: 0,
+        totalSecondsToday: 0,
+        dayStartedAt: today.toISOString(),
+      })),
+    ]);
 
     const queue: CallerLeadQueueItemDto[] = myLeads
       .filter((lead) => lead.currentStageBucket !== "CLOSED")
@@ -52,32 +86,26 @@ export function makeGetCallerDashboard() {
         nextActionAt: lead.nextActionAt,
         leadSourceName: lead.leadSourceName,
       }));
-
-    const assignedToday = myLeads.filter((lead) => new Date(lead.createdAt) >= today).length;
-    const completedCalls = myLeads.filter((lead) => lead.currentStageBucket === "CLOSED").length;
-
-    const [followUps, recentCalls] = await Promise.all([
-      listFollowUps(query.organizationId, {
-        assignedToUserIds: [query.callerUserId],
-        limit: 100,
-      }).catch(() => []),
-      listCallAttempts(query.organizationId, {
-        agentUserId: query.callerUserId,
-        initiatedFrom: today,
-        limit: 50,
-      }).catch(() => []),
-    ]);
+    // Pending = open leads in the loaded page (caller day queues stay small).
+    const pendingCalls = queue.length;
 
     const leadIds = new Set(myLeads.map((lead) => lead.id));
     const campaignCalls = selectedCampaignId
       ? recentCalls.filter((call) => !call.leadId || leadIds.has(call.leadId))
       : recentCalls;
 
-    const todaysFollowUps = followUps.filter((item) => {
-      if (selectedCampaignId) {
-        const lead = myLeads.find((l) => l.id === item.leadId);
-        if (!lead) return false;
-      }
+    const scopedFollowUps = followUps.filter((item) => {
+      if (!selectedCampaignId) return true;
+      return leadIds.has(item.leadId);
+    });
+
+    // Reporting definition: "Completed" = follow-ups completed (not closed leads).
+    const completedFollowUps = scopedFollowUps.filter((item) => {
+      if (item.status !== "COMPLETED" || !item.completedAt) return false;
+      return new Date(item.completedAt) >= today;
+    }).length;
+
+    const todaysFollowUps = scopedFollowUps.filter((item) => {
       const scheduled = new Date(item.scheduledFor);
       return scheduled >= today && item.status !== "COMPLETED" && item.status !== "CANCELLED";
     });
@@ -97,8 +125,8 @@ export function makeGetCallerDashboard() {
       selectedCampaignId,
       progress: {
         assignedToday,
-        pendingCalls: queue.length,
-        completedCalls,
+        pendingCalls,
+        completedCalls: completedFollowUps,
         followUpsToday: todaysFollowUps.length,
         callsToday: campaignCalls.length,
       },
@@ -126,6 +154,8 @@ export function makeGetCallerDashboard() {
         triggerType: item.triggerType,
       })),
       loginAt: query.loginAt,
+      priorLoginSecondsToday: dailyLogin.priorSecondsToday,
+      dayStartedAt: dailyLogin.dayStartedAt,
     };
   };
 }

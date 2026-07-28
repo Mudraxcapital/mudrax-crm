@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
@@ -9,14 +9,11 @@ import {
   UserNotFoundError,
 } from "@/modules/users";
 
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
 
   const { id } = await context.params;
   const isSelf = current.session.user.id === id;

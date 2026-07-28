@@ -31,6 +31,7 @@ import { completeFollowUpAction } from "@/modules/follow-ups/presentation/contro
 import { reassignFollowUpAction } from "@/modules/follow-ups/presentation/controllers/reassignFollowUp.action";
 import { getCustomer } from "@/modules/customers";
 import { nameFromMap, resolveDisplayName } from "@/shared/ui/displayName";
+import { humanizeAuditAction } from "@/shared/ui/humanizeAuditAction";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { session, authContext } = await requirePermission("lead.view");
@@ -327,7 +328,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 key={record.id}
                 className="flex justify-between border-b border-border px-4 py-3 text-sm last:border-0 "
               >
-                <span>{record.action}</span>
+                <span>{humanizeAuditAction(record.action)}</span>
                 <span className="text-muted">
                   {new Date(record.occurredAt).toLocaleString()}
                 </span>

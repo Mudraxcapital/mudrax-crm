@@ -8,8 +8,14 @@
 // — Auth.js's CSRF protection defaults apply here too.
 // ============================================================================
 
+import { redirect } from "next/navigation";
 import { signOut } from "@/infra/auth";
 
 export async function logoutAction(): Promise<void> {
-  await signOut({ redirectTo: "/login" });
+  try {
+    await signOut({ redirect: false });
+  } catch {
+    // Already signed out.
+  }
+  redirect("/login");
 }

@@ -6,7 +6,10 @@
 // (mirrors crm's CRM Dashboard aggregation-use-case pattern).
 // ============================================================================
 
-import type { CallAttemptRepository } from "../../domain/repositories/CallAttemptRepository";
+import type {
+  CallAgentScopeFilter,
+  CallAttemptRepository,
+} from "../../domain/repositories/CallAttemptRepository";
 import type { CallOutcomeRepository } from "../../domain/repositories/CallOutcomeRepository";
 import type { UserLookupPort } from "../ports/UserLookupPort";
 import { MISSED_CALL_STATUSES, type CallStatus } from "../../domain/entities/CallAttempt";
@@ -43,8 +46,10 @@ export function makeGetTelephonyDashboard(
   return async function getTelephonyDashboard(
     organizationId: string,
     now: Date = new Date(),
+    agentScope?: CallAgentScopeFilter,
   ): Promise<TelephonyDashboardDto> {
     const range = { from: startOfDay(now), to: endOfDay(now) };
+    const scope = agentScope ?? {};
 
     const [
       callsToday,
@@ -55,12 +60,18 @@ export function makeGetTelephonyDashboard(
       recentCallsRaw,
       lookups,
     ] = await Promise.all([
-      repository.countInRange(organizationId, range),
-      repository.countInRange(organizationId, range, { statuses: CONNECTED_CALL_STATUSES }),
-      repository.countInRange(organizationId, range, { statuses: MISSED_CALL_STATUSES }),
-      repository.averageDurationInRange(organizationId, range),
-      repository.countByAgentInRange(organizationId, range),
-      repository.listRecent(organizationId, 20),
+      repository.countInRange(organizationId, range, scope),
+      repository.countInRange(organizationId, range, {
+        statuses: CONNECTED_CALL_STATUSES,
+        ...scope,
+      }),
+      repository.countInRange(organizationId, range, {
+        statuses: MISSED_CALL_STATUSES,
+        ...scope,
+      }),
+      repository.averageDurationInRange(organizationId, range, scope),
+      repository.countByAgentInRange(organizationId, range, scope),
+      repository.listRecent(organizationId, 20, scope),
       loadCallOutcomeLookups(callOutcomeRepository, organizationId),
     ]);
 

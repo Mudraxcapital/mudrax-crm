@@ -173,7 +173,20 @@ const SYSTEM_ALIASES: Record<string, string[]> = {
     "client name",
     "full_name",
   ],
-  phone: ["phone", "mobile", "mobile number", "phone number", "contact number", "cell", "cellphone"],
+  phone: [
+    "phone",
+    "mobile",
+    "mobile number",
+    "phone number",
+    "contact number",
+    "cell",
+    "cellphone",
+    // Many Mudrax sheets use Lead ID as the phone / unique contact key.
+    "lead id",
+    "leadid",
+    "lead_id",
+    "leadid / phone",
+  ],
   email: ["email", "email address", "e-mail", "mail"],
 };
 

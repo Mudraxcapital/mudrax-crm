@@ -65,6 +65,7 @@ export async function changeLeadStageAction(
   revalidatePath("/leads");
   revalidatePath(`/caller/leads/${id}`);
   revalidatePath("/caller/leads");
+  revalidatePath("/campaigns");
   revalidatePath("/");
   return {};
 }

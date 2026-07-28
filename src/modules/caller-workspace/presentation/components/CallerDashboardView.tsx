@@ -26,7 +26,12 @@ export function CallerDashboardView({
             <Badge tone="accent" dot>
               Caller
             </Badge>
-            <LoginDurationTimer loginAt={data.loginAt} alwaysVisible />
+            <LoginDurationTimer
+              loginAt={data.loginAt}
+              priorSecondsToday={data.priorLoginSecondsToday}
+              dayStartedAt={data.dayStartedAt}
+              alwaysVisible
+            />
           </>
         }
         actions={
@@ -41,7 +46,7 @@ export function CallerDashboardView({
         <StatCard label="Today's Assigned" value={data.progress.assignedToday} />
         <StatCard label="Pending Calls" value={data.progress.pendingCalls} />
         <StatCard label="Calls Today" value={data.progress.callsToday} />
-        <StatCard label="Completed" value={data.progress.completedCalls} />
+        <StatCard label="Follow-ups Completed" value={data.progress.completedCalls} />
         <StatCard label="Follow-ups Today" value={data.progress.followUpsToday} />
       </section>
 
@@ -103,7 +108,7 @@ export function CallerDashboardView({
                   className="flex justify-between gap-2 border-b border-border pb-2 text-sm last:border-0"
                 >
                   <Link
-                    href={`/caller/leads/${item.leadId}`}
+                    href={`/caller/leads/${item.leadId}${data.selectedCampaignId ? `?campaignId=${data.selectedCampaignId}` : ""}`}
                     className="text-accent hover:underline"
                   >
                     {item.leadName}
@@ -122,7 +127,9 @@ export function CallerDashboardView({
             title="Recent Calls"
             description="Your latest attempts"
             actions={
-              <Link href="/caller/history">
+              <Link
+                href={`/caller/history${data.selectedCampaignId ? `?campaignId=${data.selectedCampaignId}` : ""}`}
+              >
                 <Button variant="ghost" size="sm">
                   History
                 </Button>
@@ -152,7 +159,7 @@ export function CallerDashboardView({
           <Button variant="secondary">My Performance</Button>
         </Link>
         <Link href="/caller/campaigns">
-          <Button variant="secondary">My Campaigns</Button>
+          <Button variant="secondary">Campaigns</Button>
         </Link>
       </div>
     </PageSection>

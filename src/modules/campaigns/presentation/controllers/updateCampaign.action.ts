@@ -9,7 +9,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { CampaignNotFoundError, updateCampaign, updateCampaignSchema } from "@/modules/campaigns";
+import {
+  CampaignNotFoundError,
+  getCampaign,
+  updateCampaign,
+  updateCampaignSchema,
+} from "@/modules/campaigns";
+import {
+  assertCanAccessCampaignRecord,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
 import type { CampaignFormState } from "./createCampaign.action";
 
 export async function updateCampaignAction(
@@ -17,7 +26,7 @@ export async function updateCampaignAction(
   _previousState: CampaignFormState | undefined,
   formData: FormData,
 ): Promise<CampaignFormState> {
-  const { session } = await requirePermission("campaign.manage");
+  const { session, authContext } = await requirePermission("campaign.manage");
 
   const parsed = updateCampaignSchema.safeParse({
     name: formData.get("name") || undefined,
@@ -31,14 +40,16 @@ export async function updateCampaignAction(
   }
 
   try {
+    const existing = await getCampaign(id);
+    assertCanAccessCampaignRecord(authContext, existing);
     await updateCampaign({
       id,
       input: parsed.data,
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof CampaignNotFoundError) {
-      return { error: error.message };
+    if (error instanceof CampaignNotFoundError || error instanceof CampaignAccessDeniedError) {
+      return { error: "Campaign not found or access denied." };
     }
     throw error;
   }

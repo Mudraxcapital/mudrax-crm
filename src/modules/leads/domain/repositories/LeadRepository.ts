@@ -82,6 +82,21 @@ export interface ListLeadsFilter {
   nextActionTo?: Date;
   /** When true, only leads with a non-null nextActionAt are returned. */
   hasNextAction?: boolean;
+  /**
+   * Inclusive lower bound on the open LeadAssignment.assignedAt
+   * (current assignee). Used for "assigned today" — not lead.createdAt.
+   */
+  currentAssignedAtFrom?: Date;
+  /** Inclusive upper bound on the open LeadAssignment.assignedAt. */
+  currentAssignedAtTo?: Date;
+  /**
+   * Team Lead customer visibility — leads owned by the Team Lead OR campaign
+   * leads assigned to callers under their supervision.
+   */
+  teamLeadCustomerScope?: {
+    teamLeadId: string;
+    callerUserIds: string[];
+  };
   limit?: number;
   offset?: number;
 }
@@ -95,6 +110,13 @@ export interface LeadRepository {
   /** Used after Customer Merge to keep Lead ownership pointing at the survivor. */
   repointCustomer(fromCustomerId: string, toCustomerId: string): Promise<number>;
   count(organizationId: string, filter?: ListLeadsFilter): Promise<number>;
+  /**
+   * Distinct Customer count for Leads matching the filter (CRM dashboard
+   * campaign-scoped "Total Customers" — Customers have no campaignId column).
+   */
+  countDistinctCustomers(organizationId: string, filter?: ListLeadsFilter): Promise<number>;
+  /** Distinct Customer ids for Leads matching the filter (Team Lead customer lists). */
+  listDistinctCustomerIds(organizationId: string, filter?: ListLeadsFilter): Promise<string[]>;
   countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]>;
   countBySource(organizationId: string): Promise<{ sourceId: string; count: number }[]>;
   /**

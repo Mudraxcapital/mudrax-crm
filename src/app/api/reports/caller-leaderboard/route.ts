@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
+import { hasPermission } from "@/modules/rbac";
 import { callerLeaderboardQuerySchema, getCallerLeaderboard } from "@/modules/reports";
 
 export async function GET(request: Request) {
-  const { authContext } = await requirePermission("report.view");
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
+  if (!hasPermission(current.authContext, "report.view")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const url = new URL(request.url);
   const raw = Object.fromEntries(url.searchParams.entries());
   const parsed = callerLeaderboardQuerySchema.safeParse(raw);
@@ -14,6 +22,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const data = await getCallerLeaderboard(authContext.organizationId, parsed.data);
+  const data = await getCallerLeaderboard(
+    current.authContext.organizationId,
+    parsed.data,
+    new Date(),
+    { visibleUserIds: current.authContext.hierarchy.visibleUserIds },
+  );
   return NextResponse.json({ data });
 }

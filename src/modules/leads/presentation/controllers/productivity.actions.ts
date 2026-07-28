@@ -148,6 +148,8 @@ export async function importLeadsFileAction(input: {
   manualAssigneeUserId?: string;
   /** Admin-selected Manager (or resolved from Team Lead / callers). */
   ownerManagerId?: string;
+  /** When true (All agents), allow assignees across Manager books. */
+  allowMixedManagers?: boolean;
   /** Unknown Excel columns accepted as new dynamic CRM fields. */
   dynamicFields?: DynamicFieldCreateInput[];
 }): Promise<ProductivityFormState> {
@@ -273,13 +275,10 @@ export async function importLeadsFileAction(input: {
       agentUserIds: parsed.data.agentUserIds,
       manualAssigneeUserId: parsed.data.manualAssigneeUserId,
       explicitOwnerManagerId: cleanId(input.ownerManagerId),
+      allowMixedManagers: input.allowMixedManagers === true,
     });
-    if (!ownership.ownerManagerId) {
-      return {
-        error:
-          "A Manager is required for ownership. Select a Manager/Team Lead, or choose callers that belong to one Manager.",
-      };
-    }
+    // Batch ownership may be null for All-agents / Direct Admin imports —
+    // each Lead inherits Manager/Team Lead from its assignee.
     const batch = await importLeadsCsv({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -292,6 +291,24 @@ export async function importLeadsFileAction(input: {
         actorUserId: session.user.id,
       }),
     });
+
+    // Ensure assigned agents become Campaign members so Callers can see
+    // the campaign under Campaigns (membership-scoped).
+    if (batch.campaignId && (parsed.data.agentUserIds?.length ?? 0) > 0) {
+      const { addCampaignMember } = await import("@/modules/campaigns");
+      for (const userId of parsed.data.agentUserIds ?? []) {
+        try {
+          await addCampaignMember({
+            campaignId: batch.campaignId,
+            input: { userId },
+            actor,
+            redistribute: false,
+          });
+        } catch {
+          // Already a member or invalid — continue.
+        }
+      }
+    }
     revalidatePath("/leads");
     revalidatePath("/leads/import");
     revalidatePath("/crm/field-settings");

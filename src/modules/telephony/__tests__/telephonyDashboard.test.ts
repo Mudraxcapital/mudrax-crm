@@ -92,4 +92,41 @@ describe("getTelephonyDashboard", () => {
     expect(dashboard.callsByAgent).toEqual([]);
     expect(dashboard.recentCalls).toEqual([]);
   });
+
+  it("scopes dashboard metrics to a single agent when agentScope is provided", async () => {
+    const otherAgent = "agent-2";
+    userLookup.users.set(otherAgent, {
+      id: otherAgent,
+      organizationId: ORG_ID,
+      status: "ACTIVE",
+      fullName: "Other Agent",
+    });
+
+    await seedCall("COMPLETED", 60);
+    const other = await repository.createWithAudit(
+      {
+        organizationId: ORG_ID,
+        leadId: "lead-2",
+        customerId: null,
+        agentUserId: otherAgent,
+        direction: "OUTBOUND",
+        status: "RINGING",
+      },
+      { actorType: "USER", actorId: otherAgent },
+    );
+    await repository.updateStatusWithAudit(
+      other.id,
+      { status: "COMPLETED", durationSeconds: 30, endedAt: now },
+      { actorType: "USER", actorId: otherAgent },
+    );
+
+    const dashboard = await getTelephonyDashboard(ORG_ID, now, { agentUserId: AGENT_ID });
+
+    expect(dashboard.callsToday).toBe(1);
+    expect(dashboard.callsByAgent).toEqual([
+      { agentUserId: AGENT_ID, agentName: "Agent Smith", count: 1 },
+    ]);
+    expect(dashboard.recentCalls).toHaveLength(1);
+    expect(dashboard.recentCalls[0]?.agentUserId).toBe(AGENT_ID);
+  });
 });

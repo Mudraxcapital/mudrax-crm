@@ -108,8 +108,13 @@ export class PrismaCustomerRepository implements CustomerRepository {
       status: { not: "MERGED" },
     };
     if (options?.ownerManagerId) where.ownerManagerId = options.ownerManagerId;
+    if (options?.customerIds) where.id = { in: options.customerIds };
     if (options?.search) {
       where.fullName = { contains: options.search, mode: "insensitive" };
+    }
+
+    if (options?.customerIds?.length === 0) {
+      return [];
     }
 
     const rows = await this.prisma.customer.findMany({
@@ -131,8 +136,13 @@ export class PrismaCustomerRepository implements CustomerRepository {
       status: { not: "MERGED" },
     };
     if (options?.ownerManagerId) where.ownerManagerId = options.ownerManagerId;
+    if (options?.customerIds) where.id = { in: options.customerIds };
     if (options?.search) {
       where.fullName = { contains: options.search, mode: "insensitive" };
+    }
+
+    if (options?.customerIds?.length === 0) {
+      return [];
     }
 
     const rows = await this.prisma.customer.findMany({
@@ -150,13 +160,17 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
   async count(
     organizationId: string,
-    options?: Pick<ListCustomersOptions, "ownerManagerId">,
+    options?: Pick<ListCustomersOptions, "ownerManagerId" | "customerIds">,
   ): Promise<number> {
+    if (options?.customerIds?.length === 0) {
+      return 0;
+    }
     return this.prisma.customer.count({
       where: {
         organizationId,
         status: { not: "MERGED" },
         ...(options?.ownerManagerId ? { ownerManagerId: options.ownerManagerId } : {}),
+        ...(options?.customerIds ? { id: { in: options.customerIds } } : {}),
       },
     });
   }

@@ -7,8 +7,14 @@
 // ============================================================================
 
 import { revalidatePath } from "next/cache";
-import { addCallNote, CallAttemptNotFoundError, createCallNoteSchema } from "@/modules/telephony";
+import {
+  addCallNote,
+  CallAttemptNotFoundError,
+  createCallNoteSchema,
+  getCallAttempt,
+} from "@/modules/telephony";
 import { requirePermission } from "@/infra/auth/session";
+import { canAccessCall } from "@/shared/auth/assertCanAccessCall";
 import type { TelephonyFormState } from "./initiateClickToCall.action";
 
 export async function addCallNoteAction(
@@ -16,7 +22,7 @@ export async function addCallNoteAction(
   _previousState: TelephonyFormState | undefined,
   formData: FormData,
 ): Promise<TelephonyFormState> {
-  const { session } = await requirePermission("call.note.manage");
+  const { session, authContext } = await requirePermission("call.note.manage");
 
   const parsed = createCallNoteSchema.safeParse({ body: formData.get("body") });
   if (!parsed.success) {
@@ -24,6 +30,11 @@ export async function addCallNoteAction(
   }
 
   try {
+    const existing = await getCallAttempt(callAttemptId);
+    if (!canAccessCall(authContext, existing, { permissionCode: "call.note.manage" })) {
+      return { error: "Call not found or access denied." };
+    }
+
     await addCallNote({
       callAttemptId,
       authorUserId: session.user.id,

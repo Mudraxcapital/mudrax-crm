@@ -1,10 +1,17 @@
+import { redirect } from "next/navigation";
 import { requireAuth } from "@/infra/auth/session";
+import { getUser, roleMaySelfServiceChangePassword } from "@/modules/users";
 import { ChangePasswordForm } from "@/modules/auth/presentation/components/ChangePasswordForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
 
 export default async function ProfileSecurityPage() {
-  await requireAuth();
+  const { session } = await requireAuth();
+  const user = await getUser(session.user.id);
+
+  if (!roleMaySelfServiceChangePassword(user.roleName)) {
+    redirect("/profile");
+  }
 
   return (
     <PageSection>

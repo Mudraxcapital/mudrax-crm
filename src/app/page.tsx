@@ -11,7 +11,11 @@ import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
 import { BarList } from "@/shared/ui/Charts";
 import { Button } from "@/shared/ui/Button";
-import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import {
+  leadHierarchyFilter,
+  managerBookFilter,
+  resolveCustomerListOptions,
+} from "@/shared/auth/applyHierarchyListFilter";
 
 const QUICK_LINKS = [
   { href: "/customers", label: "Customers", desc: "Identity records", perm: "customer.view" },
@@ -21,7 +25,7 @@ const QUICK_LINKS = [
   { href: "/campaigns", label: "Campaigns", desc: "Outbound distribution", perm: "campaign.view" },
   {
     href: "/telephony",
-    label: "Telephony",
+    label: "Call Logs",
     desc: "Call operations",
     perm: "telephony.dashboard.view",
   },
@@ -57,6 +61,7 @@ export default async function Home({
       organizationId: authContext.organizationId,
       callerUserId: session.user.id,
       loginAt: session.user.loginAt,
+      currentSessionId: session.user.sessionId || null,
       campaignId,
     });
     return <CallerDashboardView data={dashboard} callerName={session.user.fullName} />;
@@ -67,9 +72,14 @@ export default async function Home({
   const canCampaigns = hasPermission(authContext, "campaign.view");
   const book = managerBookFilter(authContext);
   const leadFilter = leadHierarchyFilter(authContext);
+  const customerOptions = canCustomers
+    ? await resolveCustomerListOptions(authContext)
+    : null;
 
   const [totalCustomers, totalLeads, leadsByStage, campaigns] = await Promise.all([
-    canCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
+    customerOptions
+      ? countCustomers(authContext.organizationId, customerOptions)
+      : Promise.resolve(0),
     canLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
     canLeads ? getLeadsByStage(authContext.organizationId, leadFilter) : Promise.resolve([]),
     canCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),

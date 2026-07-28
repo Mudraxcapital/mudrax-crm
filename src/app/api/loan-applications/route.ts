@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   createLoanApplication,
@@ -9,20 +9,33 @@ import {
   InvalidLoanProductReferenceError,
   listLoanApplications,
 } from "@/modules/loan-applications";
+import {
+  filterLoanAppsByVisibility,
+  resolveVisibleOwnerIds,
+} from "@/shared/auth/applyHierarchyListFilter";
 
-export async function GET() {
-  const current = await getCurrentUser();
-  if (!current) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(request: Request) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "loan_application.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const data = await listLoanApplications(current.authContext.organizationId);
+
+  const visibility = await resolveVisibleOwnerIds(current.authContext);
+  const data = filterLoanAppsByVisibility(
+    await listLoanApplications(current.authContext.organizationId),
+    visibility,
+  );
   return NextResponse.json({ data });
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "loan_application.create")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -35,6 +48,20 @@ export async function POST(request: Request) {
     );
   }
   try {
+    const visibility = await resolveVisibleOwnerIds(current.authContext);
+    if (!visibility.unrestricted) {
+      const customerOk = visibility.customerIds?.has(parsed.data.customerId);
+      const leadOk = parsed.data.leadId
+        ? visibility.leadIds?.has(parsed.data.leadId)
+        : true;
+      if (!customerOk || !leadOk) {
+        return NextResponse.json(
+          { error: "Customer or Lead not found or access denied." },
+          { status: 404 },
+        );
+      }
+    }
+
     const data = await createLoanApplication({
       organizationId: current.authContext.organizationId,
       input: parsed.data,

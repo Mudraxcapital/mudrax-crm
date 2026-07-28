@@ -88,7 +88,7 @@ describe("updateCallAttemptStatus", () => {
     expect(dto.callOutcomeName).toBe("Interested");
   });
 
-  it("rejects an illegal transition (e.g. COMPLETED -> RINGING)", async () => {
+  it("allows reversing a terminal status (e.g. COMPLETED -> RINGING)", async () => {
     const call = await seedCall("RINGING");
     await updateCallAttemptStatus({
       id: call.id,
@@ -100,6 +100,34 @@ describe("updateCallAttemptStatus", () => {
       input: { status: "COMPLETED" },
       actor: { actorType: "USER", actorId: "agent-1" },
     });
+
+    const dto = await updateCallAttemptStatus({
+      id: call.id,
+      input: { status: "RINGING" },
+      actor: { actorType: "USER", actorId: "agent-1" },
+    });
+
+    expect(dto.status).toBe("RINGING");
+    expect(dto.endedAt).toBeNull();
+    expect(dto.durationSeconds).toBeNull();
+  });
+
+  it("does not invent answeredAt when completing a never-answered call", async () => {
+    const call = await seedCall("RINGING");
+    const dto = await updateCallAttemptStatus({
+      id: call.id,
+      input: { status: "COMPLETED" },
+      actor: { actorType: "USER", actorId: "agent-1" },
+    });
+
+    expect(dto.status).toBe("COMPLETED");
+    expect(dto.answeredAt).toBeNull();
+    expect(dto.endedAt).not.toBeNull();
+    expect(dto.durationSeconds).toBeNull();
+  });
+
+  it("rejects a no-op same-status update", async () => {
+    const call = await seedCall("RINGING");
 
     await expect(
       updateCallAttemptStatus({

@@ -84,6 +84,7 @@ export interface LeadFieldDefinitionRepository {
     actor: LeadAuditActor,
     action: string,
     correlationId?: string | null,
+    options?: { expectedUpdatedAt?: Date },
   ): Promise<LeadFieldDefinition>;
 
   reorderWithAudit(

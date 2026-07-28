@@ -10,7 +10,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { resolveOwnerManagerId } from "@/modules/rbac";
+import { isCallerWorkspaceUser, resolveOwnerManagerId } from "@/modules/rbac";
 import { getUser } from "@/modules/users";
 import {
   createCustomer,
@@ -27,6 +27,10 @@ import {
   LeadFieldValidationError,
   listActiveLeadFields,
 } from "@/modules/leads";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
 
 export interface LeadFormState {
@@ -143,10 +147,14 @@ export async function createLeadAction(
     customerId = resolved.id;
   }
 
+  const callerWorkspace = isCallerWorkspaceUser(authContext);
   const parsed = createLeadSchema.safeParse({
     customerId,
     leadSourceId: formData.get("leadSourceId"),
-    currentAssigneeUserId: formData.get("currentAssigneeUserId") || undefined,
+    // Callers may only assign leads to themselves.
+    currentAssigneeUserId: callerWorkspace
+      ? session.user.id
+      : formData.get("currentAssigneeUserId") || undefined,
     fieldValues,
   });
 
@@ -157,6 +165,17 @@ export async function createLeadAction(
   let resolvedOwnerManagerId = ownerManagerId;
   let ownerTeamLeadId = authContext.hierarchy.teamLeadId;
   if (parsed.data.currentAssigneeUserId) {
+    try {
+      assertCanAssignToUser(authContext, parsed.data.currentAssigneeUserId, {
+        permissionCode: "lead.create",
+        actorUserId: session.user.id,
+      });
+    } catch (error) {
+      if (error instanceof AssigneeNotAllowedError) {
+        return { error: error.message };
+      }
+      throw error;
+    }
     try {
       const assignee = await getUser(parsed.data.currentAssigneeUserId);
       if (assignee.roleName === "Caller" && !assignee.assignedTeamLeadId) {
@@ -169,7 +188,7 @@ export async function createLeadAction(
         ownerTeamLeadId = assignee.assignedTeamLeadId;
       }
     } catch {
-      // Keep hierarchy teamLeadId fallback.
+      // Keep hierarchy teamLeadId fallback for getUser failures.
     }
   }
 
@@ -189,7 +208,8 @@ export async function createLeadAction(
       error instanceof InvalidLeadSourceReferenceError ||
       error instanceof InvalidLeadStageReferenceError ||
       error instanceof InvalidAssigneeReferenceError ||
-      error instanceof LeadFieldValidationError
+      error instanceof LeadFieldValidationError ||
+      error instanceof AssigneeNotAllowedError
     ) {
       return { error: error.message };
     }

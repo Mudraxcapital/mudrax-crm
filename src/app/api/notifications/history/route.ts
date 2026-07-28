@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { listNotificationHistory } from "@/modules/notifications";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "notification.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -7,7 +7,9 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
 import {
+  DocumentNotFoundError,
   DocumentVerificationNotFoundError,
+  getDocument,
   InvalidVerificationTransitionError,
   updateVerificationStatus,
   updateVerificationStatusSchema,
@@ -20,7 +22,7 @@ export async function updateVerificationStatusAction(
   _previousState: DocumentsFormState | undefined,
   formData: FormData,
 ): Promise<DocumentsFormState> {
-  const { session } = await requirePermission("document.verify");
+  const { session, authContext } = await requirePermission("document.verify");
 
   const parsed = updateVerificationStatusSchema.safeParse({
     status: formData.get("status"),
@@ -32,6 +34,10 @@ export async function updateVerificationStatusAction(
   }
 
   try {
+    const document = await getDocument(documentId);
+    if (document.organizationId !== authContext.organizationId) {
+      return { error: "Document not found or access denied." };
+    }
     await updateVerificationStatus({
       id: verificationId,
       userId: session.user.id,
@@ -40,6 +46,7 @@ export async function updateVerificationStatusAction(
     });
   } catch (error) {
     if (
+      error instanceof DocumentNotFoundError ||
       error instanceof DocumentVerificationNotFoundError ||
       error instanceof InvalidVerificationTransitionError
     ) {

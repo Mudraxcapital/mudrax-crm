@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { addLeadNote, createLeadNoteSchema, listLeadNotes } from "@/modules/leads";
 import {
@@ -18,11 +18,10 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: RouteParams) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "lead.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -44,10 +43,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "lead.update")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

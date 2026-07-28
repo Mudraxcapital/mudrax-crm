@@ -149,6 +149,7 @@ export function LeadFieldForm({
 
   const needsOptions =
     fieldType === "DROPDOWN" || fieldType === "MULTI_SELECT" || fieldType === "RADIO";
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const isProtectedCore =
     Boolean(field?.isSystem) &&
     (field?.internalKey === "full_name" || field?.internalKey === "phone");
@@ -164,6 +165,22 @@ export function LeadFieldForm({
       action={formAction}
       className="flex flex-col gap-4"
       onSubmit={(event) => {
+        const form = event.currentTarget;
+        if (needsOptions) {
+          const optionsInput = form.elements.namedItem("selectOptions");
+          const raw =
+            optionsInput instanceof HTMLTextAreaElement ? optionsInput.value.trim() : "";
+          const options = raw
+            .split(/\r?\n|,/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+          if (options.length === 0) {
+            event.preventDefault();
+            setOptionsError("Add at least one option (one per line).");
+            return;
+          }
+          setOptionsError(null);
+        }
         if (!isEdit || isProtectedCore) return;
         const nameInput = event.currentTarget.elements.namedItem("name");
         const nextName =
@@ -184,6 +201,9 @@ export function LeadFieldForm({
     >
       <input type="hidden" name="fieldType" value={fieldType} />
       <input type="hidden" name="fieldGroup" value={field?.fieldGroup ?? "SECONDARY"} />
+      {isEdit && field ? (
+        <input type="hidden" name="expectedUpdatedAt" value={field.updatedAt} />
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="mx-label">
@@ -257,7 +277,7 @@ export function LeadFieldForm({
       {needsOptions ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor="selectOptions" className="mx-label">
-            Options
+            Options *
           </label>
           <textarea
             id="selectOptions"
@@ -266,7 +286,9 @@ export function LeadFieldForm({
             defaultValue={(field?.selectOptions ?? []).join("\n")}
             placeholder={"One option per line"}
             className="mx-input"
+            onChange={() => setOptionsError(null)}
           />
+          {optionsError ? <p className="text-danger text-xs">{optionsError}</p> : null}
         </div>
       ) : (
         <input type="hidden" name="selectOptions" value={(field?.selectOptions ?? []).join("\n")} />

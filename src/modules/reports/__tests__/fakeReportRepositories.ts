@@ -55,6 +55,27 @@ export class FakeSourceDataPort implements SourceDataPort {
     pendingDocumentVerification: 1,
     notificationsSent: 9,
     failedNotifications: 0,
+    conversionFunnel: [
+      { key: "fresh", label: "Fresh", count: 2 },
+      { key: "contacted", label: "Contacted", count: 1 },
+      { key: "interested", label: "Interested", count: 1 },
+      { key: "documents", label: "Documents", count: 0 },
+      { key: "approved", label: "Approved", count: 0 },
+      { key: "disbursed", label: "Disbursed", count: 1 },
+    ],
+    leadTrend: [{ key: "2026-07-01", label: "2026-07-01", count: 2 }],
+    leadTrendGranularity: "daily",
+    topPerformingUsers: [{ key: "u1", label: "Alex", count: 3 }],
+    topCampaigns: [{ key: "c1", label: "Q1 Dialer", count: 10 }],
+    followUpCompletion: [
+      { key: "completed", label: "Completed", count: 4 },
+      { key: "pending", label: "Pending", count: 2 },
+    ],
+    sourceConversions: [{ key: "src1", label: "Web", count: 1 }],
+    todayConversions: 1,
+    todayConversionRate: 0.5,
+    weekLeadCount: 3,
+    weekConversions: 1,
   };
 
   rowsByType = new Map<ReportType, ReportResult>();

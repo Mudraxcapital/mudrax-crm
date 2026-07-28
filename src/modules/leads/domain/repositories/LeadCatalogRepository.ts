@@ -18,6 +18,8 @@ export interface LeadCatalogRepository {
 
   findSourceById(id: string): Promise<LeadSource | null>;
   listSources(organizationId: string): Promise<LeadSource[]>;
+  /** Preferred default source for new leads / imports — active catalog row named "Data", else first active. */
+  findDefaultSource(organizationId: string): Promise<LeadSource | null>;
 
   findLostReasonById(id: string): Promise<LostReason | null>;
   listLostReasons(organizationId: string): Promise<LostReason[]>;

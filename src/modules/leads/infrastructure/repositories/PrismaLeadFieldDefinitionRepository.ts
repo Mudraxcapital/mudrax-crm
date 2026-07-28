@@ -11,6 +11,10 @@ import type {
 } from "../../domain/repositories/LeadFieldDefinitionRepository";
 import type { LeadFieldDefinition } from "../../domain/entities/LeadFieldDefinition";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
+import {
+  LeadFieldNameConflictError,
+  LeadFieldStaleEditError,
+} from "../../domain/errors/LeadFieldErrors";
 import { toLeadFieldDefinition, toLeadFieldValue, toPrismaFieldType } from "../mappers/leadFieldMapper";
 
 const TARGET_TYPE = "LeadFieldDefinition";
@@ -134,8 +138,9 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
     actor: LeadAuditActor,
     correlationId?: string | null,
   ): Promise<LeadFieldDefinition> {
-    return this.prisma.$transaction(async (tx) => {
-      const row = await tx.customFieldDefinition.create({
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const row = await tx.customFieldDefinition.create({
         data: {
           organizationId: data.organizationId,
           name: data.name,
@@ -176,7 +181,16 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
         },
       });
       return field;
-    });
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        throw new LeadFieldNameConflictError(data.name);
+      }
+      throw error;
+    }
   }
 
   async updateWithAudit(
@@ -185,6 +199,7 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
     actor: LeadAuditActor,
     action: string,
     correlationId?: string | null,
+    options?: { expectedUpdatedAt?: Date },
   ): Promise<LeadFieldDefinition> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.customFieldDefinition.findUnique({ where: { id } });
@@ -192,36 +207,51 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
         throw new Error(`Lead field ${id} not found`);
       }
       const before = toLeadFieldDefinition(existing);
-      const row = await tx.customFieldDefinition.update({
-        where: { id },
-        data: {
-          name: data.name,
-          dataType: data.fieldType ? toPrismaFieldType(data.fieldType) : undefined,
-          fieldGroup: data.fieldGroup,
-          status: data.status,
-          isActive: data.status ? data.status === "ACTIVE" : undefined,
-          isRequired: data.isRequired,
-          isVisible: data.isVisible,
-          isSearchable: data.isSearchable,
-          isFilterable: data.isFilterable,
-          isImportable: data.isImportable,
-          isExportable: data.isExportable,
-          defaultValue: data.defaultValue,
-          validationRules:
-            data.validationRules === undefined
-              ? undefined
-              : data.validationRules === null
-                ? Prisma.DbNull
-                : (data.validationRules as Prisma.InputJsonValue),
-          selectOptions:
-            data.selectOptions === undefined
-              ? undefined
-              : data.selectOptions === null
-                ? Prisma.DbNull
-                : (data.selectOptions as Prisma.InputJsonValue),
-          displayOrder: data.displayOrder,
-        },
-      });
+
+      const updateData = {
+        name: data.name,
+        dataType: data.fieldType ? toPrismaFieldType(data.fieldType) : undefined,
+        fieldGroup: data.fieldGroup,
+        status: data.status,
+        isActive: data.status ? data.status === "ACTIVE" : undefined,
+        isRequired: data.isRequired,
+        isVisible: data.isVisible,
+        isSearchable: data.isSearchable,
+        isFilterable: data.isFilterable,
+        isImportable: data.isImportable,
+        isExportable: data.isExportable,
+        defaultValue: data.defaultValue,
+        validationRules:
+          data.validationRules === undefined
+            ? undefined
+            : data.validationRules === null
+              ? Prisma.DbNull
+              : (data.validationRules as Prisma.InputJsonValue),
+        selectOptions:
+          data.selectOptions === undefined
+            ? undefined
+            : data.selectOptions === null
+              ? Prisma.DbNull
+              : (data.selectOptions as Prisma.InputJsonValue),
+        displayOrder: data.displayOrder,
+      };
+
+      if (options?.expectedUpdatedAt) {
+        const { count } = await tx.customFieldDefinition.updateMany({
+          where: { id, updatedAt: options.expectedUpdatedAt },
+          data: updateData,
+        });
+        if (count === 0) {
+          throw new LeadFieldStaleEditError();
+        }
+      } else {
+        await tx.customFieldDefinition.update({
+          where: { id },
+          data: updateData,
+        });
+      }
+
+      const row = await tx.customFieldDefinition.findUniqueOrThrow({ where: { id } });
       const after = toLeadFieldDefinition(row);
       await tx.leadAuditLog.create({
         data: {

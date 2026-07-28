@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { assertOwnsManagerData, hasPermission } from "@/modules/rbac";
+import { canViewUserId, hasPermission, isAssignableAgentRole } from "@/modules/rbac";
 import {
   CampaignNotFoundError,
   getCampaign,
@@ -10,7 +10,7 @@ import {
   listCampaignMembers,
 } from "@/modules/campaigns";
 import { countLeads, listActiveLeadFields, listImportBatches, listLeads } from "@/modules/leads";
-import { listUserSummaries } from "@/modules/users";
+import { listUsers } from "@/modules/users";
 import { CampaignStatusForm } from "@/modules/campaigns/presentation/components/CampaignStatusForm";
 import { AddCampaignMemberForm } from "@/modules/campaigns/presentation/components/AddCampaignMemberForm";
 import { AssignCampaignLeadsForm } from "@/modules/campaigns/presentation/components/AssignCampaignLeadsForm";
@@ -18,6 +18,11 @@ import { changeCampaignStatusAction } from "@/modules/campaigns/presentation/con
 import { addCampaignMemberAction } from "@/modules/campaigns/presentation/controllers/addCampaignMember.action";
 import { removeCampaignMemberAction } from "@/modules/campaigns/presentation/controllers/removeCampaignMember.action";
 import { assignCampaignLeadsAction } from "@/modules/campaigns/presentation/controllers/assignCampaignLeads.action";
+import {
+  assertCanAccessCampaignAsStaff,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
+import { leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { TabNav } from "@/shared/ui/Tabs";
 import { EmployeeLink } from "@/shared/ui/EmployeeLink";
 import { nameFromMap } from "@/shared/ui/displayName";
@@ -38,11 +43,9 @@ export default async function CampaignDetailPage({
   let campaign;
   try {
     campaign = await getCampaign(id);
-    if (!assertOwnsManagerData(authContext.hierarchy, campaign.ownerManagerId)) {
-      notFound();
-    }
+    await assertCanAccessCampaignAsStaff(authContext, campaign);
   } catch (error) {
-    if (error instanceof CampaignNotFoundError) {
+    if (error instanceof CampaignNotFoundError || error instanceof CampaignAccessDeniedError) {
       notFound();
     }
     throw error;
@@ -61,16 +64,24 @@ export default async function CampaignDetailPage({
       ? query.employeeId.trim()
       : undefined;
 
+  // Hierarchy-scoped lead visibility (Team Lead must not see sibling-team leads).
+  const hierarchyLead = leadHierarchyFilter(authContext);
+  const safeEmployeeId =
+    employeeId && canViewUserId(authContext.hierarchy, employeeId) ? employeeId : undefined;
+
   const [members, statistics, auditLog, users, leads, totalLeadCount, importBatches] =
     await Promise.all([
       listCampaignMembers(id),
       getCampaignStatistics(id),
       listCampaignAuditLog(id),
-      listUserSummaries(authContext.organizationId),
+      listUsers({ status: "ACTIVE", limit: 5_000 }),
       listLeads(authContext.organizationId, {
         campaignId: id,
+        ...hierarchyLead,
         limit: 100_000,
-        assignedToUserIds: employeeId ? [employeeId] : undefined,
+        assignedToUserIds: safeEmployeeId
+          ? [safeEmployeeId]
+          : hierarchyLead.assignedToUserIds,
         fieldFilters: Object.keys(fieldFilterParams).length > 0 ? fieldFilterParams : undefined,
         searchableCustomKeys: activeFields
           .filter((field) => field.isSearchable)
@@ -78,7 +89,10 @@ export default async function CampaignDetailPage({
           .filter((key) => !["full_name", "phone", "email"].includes(key)),
         search: typeof query.search === "string" ? query.search : undefined,
       }),
-      countLeads(authContext.organizationId, { campaignId: id }),
+      countLeads(authContext.organizationId, {
+        campaignId: id,
+        ...hierarchyLead,
+      }),
       listImportBatches(authContext.organizationId, { campaignId: id }),
     ]);
 
@@ -88,16 +102,24 @@ export default async function CampaignDetailPage({
 
   const userNameById = new Map(users.map((user) => [user.id, user.fullName]));
   const activeMembers = members.filter((member) => member.isActive);
+  // Team Lead assign UI only lists agents in hierarchy.
+  const scopedActiveMembers = activeMembers.filter((member) =>
+    canViewUserId(authContext.hierarchy, member.userId),
+  );
+  const assignableMembers =
+    authContext.hierarchy.primaryRole === "Team Lead" ? scopedActiveMembers : activeMembers;
   const memberCandidates = users.filter(
     (user) =>
-      user.status === "ACTIVE" && !activeMembers.some((member) => member.userId === user.id),
+      isAssignableAgentRole(user.roleName) &&
+      canViewUserId(authContext.hierarchy, user.id) &&
+      !activeMembers.some((member) => member.userId === user.id),
   );
   const boundChangeStatus = changeCampaignStatusAction.bind(null, id);
   const boundAddMember = addCampaignMemberAction.bind(null, id);
   const boundAssignLeads = assignCampaignLeadsAction.bind(
     null,
     id,
-    activeMembers.map((member) => member.userId),
+    assignableMembers.map((member) => member.userId),
   );
 
   const sourceFromDescription =
@@ -114,7 +136,7 @@ export default async function CampaignDetailPage({
     { href: `/campaigns/${id}?tab=analytics`, label: "Analytics" },
   ];
 
-  const distribution = activeMembers.map((member) => {
+  const distribution = assignableMembers.map((member) => {
     const count = leads.filter((lead) => lead.currentAssigneeUserId === member.userId).length;
     return {
       userId: member.userId,
@@ -256,7 +278,9 @@ export default async function CampaignDetailPage({
                 action={boundAddMember}
                 candidates={memberCandidates.map((user) => ({
                   id: user.id,
-                  fullName: user.fullName,
+                  fullName: user.roleName
+                    ? `${user.fullName} (${user.roleName})`
+                    : user.fullName,
                 }))}
               />
             </div>
@@ -284,11 +308,11 @@ export default async function CampaignDetailPage({
               Employee
               <select
                 name="employeeId"
-                defaultValue={employeeId ?? ""}
+                defaultValue={safeEmployeeId ?? ""}
                 className="mx-input mt-1 w-full"
               >
                 <option value="">All assigned callers</option>
-                {activeMembers.map((member) => (
+                {assignableMembers.map((member) => (
                   <option key={member.userId} value={member.userId}>
                     {nameFromMap(userNameById, member.userId)}
                   </option>
@@ -314,12 +338,12 @@ export default async function CampaignDetailPage({
               Apply filters
             </button>
           </form>
-          {employeeId ? (
+          {safeEmployeeId ? (
             <p className="text-muted mb-3 text-sm">
               Showing customers assigned to{" "}
               <EmployeeLink
-                userId={employeeId}
-                name={nameFromMap(userNameById, employeeId)}
+                userId={safeEmployeeId}
+                name={nameFromMap(userNameById, safeEmployeeId)}
                 campaignId={id}
               />
               .
@@ -356,7 +380,7 @@ export default async function CampaignDetailPage({
                     currentStageName: lead.currentStageName,
                     assigned: Boolean(lead.currentAssigneeUserId),
                   }))}
-                  members={activeMembers.map((member) => ({
+                  members={assignableMembers.map((member) => ({
                     userId: member.userId,
                     fullName: nameFromMap(userNameById, member.userId),
                   }))}
@@ -400,7 +424,12 @@ export default async function CampaignDetailPage({
       {tab === "analytics" ? (
         <>
           <section className="mx-card p-5">
-            <h2 className="text-sm font-medium">Analytics</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-medium">Analytics</h2>
+              <Link href={`/campaigns/${id}/dashboard`} className="text-accent text-sm hover:underline">
+                Open Campaign Dashboard
+              </Link>
+            </div>
             <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
               <dt className="text-muted">Active members</dt>
               <dd>{statistics.activeMemberCount}</dd>

@@ -32,8 +32,8 @@ export function AddCampaignMemberForm({
   return (
     <form action={formAction} className="flex flex-col gap-3">
       <p className="text-muted text-xs">
-        Adding a caller automatically redistributes all uncompleted leads across every active
-        member (respects allocation weights / campaign distribution setting).
+        Add an Admin, Manager, Team Lead, or Caller. New members trigger redistribution of uncompleted
+        leads across every active member (respects allocation weights / campaign distribution).
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
       <div className="flex flex-1 flex-col gap-1.5">

@@ -1,11 +1,10 @@
 // ============================================================================
 // src/modules/telephony/application/use-cases/updateCallAttemptStatus.ts
 //
-// Transitions a Call Attempt's lifecycle status (docs/modules/telephony.md
-// state diagram), validated against CallLifecycle's state machine. An
-// Agent may attach a Call Outcome and/or Disposition when moving into a
-// terminal status. Immutable once terminal (ADR 0006): no further
-// transitions once COMPLETED/NO_ANSWER/BUSY/FAILED/ABANDONED.
+// Transitions a Call Attempt's lifecycle status. Agents may move to any
+// different status (including reversing or leaving a terminal status) so
+// CRM operators can correct mistakes while on a call. An Agent may attach
+// a Call Outcome and/or Disposition when updating status.
 // ============================================================================
 
 import type { CallAttemptRepository } from "../../domain/repositories/CallAttemptRepository";
@@ -55,18 +54,39 @@ export function makeUpdateCallAttemptStatus(
     }
 
     const now = new Date();
+    const leavingTerminal = isTerminalCallStatus(existing.status);
     const becameTerminal = isTerminalCallStatus(input.status);
+    const becomingAnswered = input.status === "ANSWERED";
+
+    const answeredAt = becomingAnswered
+      ? (existing.answeredAt ?? now)
+      : undefined;
+
+    const answerStamp = existing.answeredAt ?? answeredAt ?? null;
+    const shouldStampDuration =
+      answerStamp != null &&
+      existing.durationSeconds == null &&
+      !leavingTerminal &&
+      (becameTerminal ||
+        (existing.answeredAt != null &&
+          input.status !== "ANSWERED" &&
+          input.status !== "ON_HOLD" &&
+          input.status !== "TRANSFERRING" &&
+          input.status !== "CONFERENCING"));
+
     const updated = await repository.updateStatusWithAudit(
       id,
       {
         status: input.status,
         disposition: input.disposition ?? undefined,
         callOutcomeId: input.callOutcomeId,
-        answeredAt: input.status === "ANSWERED" ? now : undefined,
-        endedAt: becameTerminal ? now : undefined,
-        durationSeconds:
-          becameTerminal && existing.answeredAt
-            ? Math.max(0, Math.round((now.getTime() - existing.answeredAt.getTime()) / 1000))
+        answeredAt,
+        // Clear end markers when leaving a terminal status so re-completion recalculates.
+        endedAt: becameTerminal ? now : leavingTerminal ? null : undefined,
+        durationSeconds: shouldStampDuration
+          ? Math.max(0, Math.round((now.getTime() - answerStamp!.getTime()) / 1000))
+          : leavingTerminal
+            ? null
             : undefined,
       },
       actor,

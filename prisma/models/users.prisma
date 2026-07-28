@@ -28,6 +28,8 @@ model User {
 
   assignedTeamLeadId String? @db.Uuid
   reportingManagerId String? @db.Uuid
+  /// When true (Team Lead only), Admin/Manager allow delete/disable/suspend of assigned Callers.
+  canManageCallerAccounts Boolean @default(false)
 
   // Operational membership pointers for RBAC Data Scope resolution.
   currentTeamId       String? @db.Uuid

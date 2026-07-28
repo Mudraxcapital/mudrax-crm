@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
-import { runReport, runReportSchema } from "@/modules/reports";
+import { emptyReportFilter, runReport, runReportSchema } from "@/modules/reports";
+import { mergeReportHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "report.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -23,7 +24,13 @@ export async function POST(request: Request) {
 
   const execution = await runReport({
     organizationId: current.authContext.organizationId,
-    input: parsed.data,
+    input: {
+      ...parsed.data,
+      filter: {
+        ...emptyReportFilter(),
+        ...mergeReportHierarchyFilter(current.authContext, parsed.data.filter),
+      },
+    },
     actor: { actorType: "USER", actorId: current.session.user.id },
   });
   return NextResponse.json({ data: execution }, { status: 201 });

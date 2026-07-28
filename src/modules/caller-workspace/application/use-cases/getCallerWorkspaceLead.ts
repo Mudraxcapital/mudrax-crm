@@ -13,6 +13,8 @@ import {
   LeadNotFoundError,
 } from "@/modules/leads";
 import { listFollowUpsByLead } from "@/modules/follow-ups";
+import { listCallAttempts } from "@/modules/telephony";
+import { humanizeAuditAction } from "@/shared/ui/humanizeAuditAction";
 import type { CallerWorkspaceLeadDto } from "../dto/CallerWorkspaceDto";
 
 export class CallerLeadAccessDeniedError extends Error {
@@ -51,23 +53,27 @@ export function makeGetCallerWorkspaceLead() {
       throw new CallerLeadAccessDeniedError(query.leadId);
     }
 
-    const [notes, auditLog, followUps, siblings] = await Promise.all([
+    const [notes, auditLog, followUps, siblings, callAttempts] = await Promise.all([
       listLeadNotes(query.leadId),
       listLeadAuditLog(query.leadId),
       listFollowUpsByLead(query.leadId),
       listLeads(query.organizationId, {
         assignedToUserIds: [query.callerUserId],
         campaignId: query.campaignId ?? lead.campaignId ?? undefined,
-        limit: 500,
+        limit: 200,
       }),
+      listCallAttempts(query.organizationId, {
+        leadId: query.leadId,
+        agentUserId: query.callerUserId,
+        limit: 5,
+      }).catch(() => []),
     ]);
 
     const openQueue = siblings.filter((item) => item.currentStageBucket !== "CLOSED");
     const index = openQueue.findIndex((item) => item.id === lead.id);
-    const nextLeadId =
-      index >= 0 && index < openQueue.length - 1 ? openQueue[index + 1]!.id : (openQueue[0]?.id ?? null);
+    // Do not loop back to the first lead when the current/last lead is done.
     const resolvedNext =
-      nextLeadId === lead.id ? (openQueue.find((item) => item.id !== lead.id)?.id ?? null) : nextLeadId;
+      index >= 0 && index < openQueue.length - 1 ? openQueue[index + 1]!.id : null;
 
     let campaignName: string | null = null;
     if (lead.campaignId) {
@@ -76,6 +82,16 @@ export function makeGetCallerWorkspaceLead() {
       } catch {
         campaignName = null;
       }
+    }
+
+    const latestCall = callAttempts[0] ?? null;
+    const fieldValues: Record<string, string | undefined> = {
+      full_name: lead.fullNameSnapshot,
+      phone: lead.phoneSnapshot ?? undefined,
+      email: lead.emailSnapshot ?? undefined,
+    };
+    for (const value of lead.fieldValues ?? []) {
+      fieldValues[value.internalKey] = value.displayValue;
     }
 
     return {
@@ -91,6 +107,9 @@ export function makeGetCallerWorkspaceLead() {
       campaignName,
       customerId: lead.customerId,
       nextLeadId: resolvedNext,
+      fieldValues,
+      latestCallAttemptId: latestCall?.id ?? null,
+      latestCallStatus: latestCall?.status ?? null,
       notes: notes.map((note) => ({
         id: note.id,
         body: note.body,
@@ -111,7 +130,7 @@ export function makeGetCallerWorkspaceLead() {
           entry.occurredAt instanceof Date
             ? entry.occurredAt.toISOString()
             : String(entry.occurredAt),
-        summary: entry.action,
+        summary: humanizeAuditAction(entry.action),
       })),
     };
   };

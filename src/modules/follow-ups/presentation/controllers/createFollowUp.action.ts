@@ -9,6 +9,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
+import { isCallerWorkspaceUser } from "@/modules/rbac";
 import {
   createFollowUp,
   createFollowUpSchema,
@@ -20,6 +21,10 @@ import {
   assertCanAccessLead,
   LeadAccessDeniedError,
 } from "@/shared/auth/assertCanAccessLead";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 
 export interface FollowUpFormState {
   error?: string;
@@ -31,12 +36,16 @@ export async function createFollowUpAction(
   formData: FormData,
 ): Promise<FollowUpFormState> {
   const { session, authContext } = await requirePermission("follow_up.create");
+  const callerWorkspace = isCallerWorkspaceUser(authContext);
 
   const parsed = createFollowUpSchema.safeParse({
     leadId,
     triggerType: formData.get("triggerType"),
     scheduledFor: formData.get("scheduledFor"),
-    currentAssigneeUserId: formData.get("currentAssigneeUserId") || undefined,
+    // Callers may only assign follow-ups to themselves.
+    currentAssigneeUserId: callerWorkspace
+      ? session.user.id
+      : formData.get("currentAssigneeUserId") || undefined,
   });
 
   if (!parsed.success) {
@@ -49,9 +58,18 @@ export async function createFollowUpAction(
       permissionCode: "lead.view",
       actorUserId: session.user.id,
     });
+    const assigneeId =
+      parsed.data.currentAssigneeUserId ?? lead.currentAssigneeUserId ?? session.user.id;
+    assertCanAssignToUser(authContext, assigneeId, {
+      permissionCode: "follow_up.create",
+      actorUserId: session.user.id,
+    });
     await createFollowUp({
       organizationId: authContext.organizationId,
-      input: parsed.data,
+      input: {
+        ...parsed.data,
+        currentAssigneeUserId: assigneeId,
+      },
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
@@ -59,7 +77,8 @@ export async function createFollowUpAction(
       error instanceof InvalidLeadReferenceError ||
       error instanceof InvalidAssigneeReferenceError ||
       error instanceof LeadNotFoundError ||
-      error instanceof LeadAccessDeniedError
+      error instanceof LeadAccessDeniedError ||
+      error instanceof AssigneeNotAllowedError
     ) {
       return { error: error.message };
     }
@@ -71,5 +90,6 @@ export async function createFollowUpAction(
   revalidatePath("/follow-ups");
   revalidatePath("/calendar");
   revalidatePath("/");
+  revalidatePath("/campaigns");
   return {};
 }

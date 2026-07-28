@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   CampaignNotFoundError,
@@ -14,16 +14,20 @@ import {
   updateCampaign,
   updateCampaignSchema,
 } from "@/modules/campaigns";
+import {
+  assertCanAccessCampaignRecord,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: RouteParams) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "campaign.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -31,20 +35,21 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   try {
     const campaign = await getCampaign(id);
+    assertCanAccessCampaignRecord(current.authContext, campaign);
     return NextResponse.json({ data: campaign });
   } catch (error) {
-    if (error instanceof CampaignNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof CampaignNotFoundError || error instanceof CampaignAccessDeniedError) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     throw error;
   }
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "campaign.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -60,6 +65,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
+    const existing = await getCampaign(id);
+    assertCanAccessCampaignRecord(current.authContext, existing);
     const campaign = await updateCampaign({
       id,
       input: parsed.data,
@@ -67,8 +74,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     });
     return NextResponse.json({ data: campaign });
   } catch (error) {
-    if (error instanceof CampaignNotFoundError) {
-      return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof CampaignNotFoundError || error instanceof CampaignAccessDeniedError) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     throw error;
   }

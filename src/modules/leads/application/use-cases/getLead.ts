@@ -101,3 +101,22 @@ export function makeCountLeads(repository: LeadRepository) {
     return repository.count(organizationId, filter);
   };
 }
+
+/** Distinct Customers referenced by Leads matching the filter (campaign-scoped CRM KPI). */
+export function makeCountLeadCustomers(repository: LeadRepository) {
+  return async function countLeadCustomers(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<number> {
+    return repository.countDistinctCustomers(organizationId, filter);
+  };
+}
+
+export function makeListDistinctCustomerIds(repository: LeadRepository) {
+  return async function listDistinctCustomerIds(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<string[]> {
+    return repository.listDistinctCustomerIds(organizationId, filter);
+  };
+}

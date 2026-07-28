@@ -8,13 +8,14 @@
 export const CAMPAIGN_STATUSES = ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"] as const;
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 
-/** Valid forward transitions (campaigns.md — Campaign Status lifecycle). */
+/** Valid status transitions (campaigns.md — Campaign Status lifecycle). */
 export const CAMPAIGN_STATUS_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
   DRAFT: ["ACTIVE", "ARCHIVED"],
   ACTIVE: ["PAUSED", "COMPLETED", "ARCHIVED"],
   PAUSED: ["ACTIVE", "COMPLETED", "ARCHIVED"],
   COMPLETED: ["ARCHIVED"],
-  ARCHIVED: [],
+  /** Archived campaigns may be restored to ACTIVE (same update/status flow). */
+  ARCHIVED: ["ACTIVE"],
 };
 
 export interface Campaign {

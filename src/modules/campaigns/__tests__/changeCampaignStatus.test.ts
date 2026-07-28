@@ -64,7 +64,29 @@ describe("changeCampaignStatus", () => {
     ).rejects.toBeInstanceOf(CampaignNotFoundError);
   });
 
-  it("rejects ARCHIVED -> anything (terminal status)", async () => {
+  it("allows ARCHIVED -> ACTIVE (restore)", async () => {
+    const campaign = await createCampaign({
+      organizationId: ORG_ID,
+      input: { name: "Spring Push" },
+      actor: { actorType: "USER", actorId: "actor-1" },
+      ownerManagerId: "actor-1",
+    });
+    await changeCampaignStatus({
+      id: campaign.id,
+      input: { status: "ARCHIVED" },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    const restored = await changeCampaignStatus({
+      id: campaign.id,
+      input: { status: "ACTIVE" },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    expect(restored.status).toBe("ACTIVE");
+  });
+
+  it("rejects ARCHIVED -> COMPLETED (only ACTIVE restore is allowed)", async () => {
     const campaign = await createCampaign({
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
@@ -80,7 +102,7 @@ describe("changeCampaignStatus", () => {
     await expect(
       changeCampaignStatus({
         id: campaign.id,
-        input: { status: "ACTIVE" },
+        input: { status: "COMPLETED" },
         actor: { actorType: "USER", actorId: "actor-1" },
       }),
     ).rejects.toBeInstanceOf(InvalidCampaignStatusTransitionError);

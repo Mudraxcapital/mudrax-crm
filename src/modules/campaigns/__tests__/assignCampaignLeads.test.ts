@@ -13,6 +13,7 @@ import { FakeLeadAssignmentPort, FakeUserLookupPort } from "./fakeLookupPorts";
 const ORG_ID = "org-1";
 const USER_A = "00000000-0000-0000-0000-0000000000a1";
 const USER_B = "00000000-0000-0000-0000-0000000000a2";
+const USER_C = "00000000-0000-0000-0000-0000000000a3";
 
 function leadId(n: number): string {
   return `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
@@ -47,6 +48,12 @@ describe("assignCampaignLeads", () => {
       fullName: "B",
       status: "ACTIVE",
     });
+    userLookup.users.set(USER_C, {
+      id: USER_C,
+      organizationId: ORG_ID,
+      fullName: "C",
+      status: "ACTIVE",
+    });
 
     const campaign = await createCampaign({
       organizationId: ORG_ID,
@@ -67,7 +74,7 @@ describe("assignCampaignLeads", () => {
       actor: { actorType: "USER", actorId: "actor-1" },
     });
 
-    for (let i = 1; i <= 4; i += 1) {
+    for (let i = 1; i <= 10; i += 1) {
       leadLookup.leads.set(leadId(i), {
         id: leadId(i),
         organizationId: ORG_ID,
@@ -213,5 +220,49 @@ describe("assignCampaignLeads", () => {
     });
 
     expect(dto.status).toBe("FAILED");
+  });
+
+  it("marks the batch FAILED when only some per-Lead assignments fail", async () => {
+    leadLookup.failFor.add(leadId(2));
+
+    const dto = await assignCampaignLeads({
+      campaignId,
+      input: {
+        leadIds: [leadId(1), leadId(2)],
+        allocationMethod: "MANUAL",
+        manualAssigneeUserId: USER_A,
+      },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    expect(dto.status).toBe("FAILED");
+    expect(leadLookup.assignCalls.some((call) => call.leadId === leadId(1))).toBe(true);
+  });
+
+  it("does not starve the last percentage bucket on small lead counts", async () => {
+    await addCampaignMember({
+      campaignId,
+      input: { userId: USER_C },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    const dto = await assignCampaignLeads({
+      campaignId,
+      input: {
+        leadIds: Array.from({ length: 10 }, (_, i) => leadId(i + 1)),
+        allocationMethod: "PERCENTAGE",
+        percentages: { [USER_A]: 45, [USER_B]: 45, [USER_C]: 10 },
+      },
+      actor: { actorType: "USER", actorId: "actor-1" },
+    });
+
+    expect(dto.status).toBe("COMPLETED");
+    const counts = Object.fromEntries(
+      dto.allocations.map((row) => [row.userId, row.allocatedCount]),
+    );
+    expect(counts[USER_A]).toBeGreaterThan(0);
+    expect(counts[USER_B]).toBeGreaterThan(0);
+    expect(counts[USER_C]).toBeGreaterThan(0);
+    expect((counts[USER_A] ?? 0) + (counts[USER_B] ?? 0) + (counts[USER_C] ?? 0)).toBe(10);
   });
 });

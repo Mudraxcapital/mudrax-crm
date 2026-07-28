@@ -29,6 +29,9 @@ export interface AppShellUser {
   isStaff: boolean;
   isCallerWorkspace?: boolean;
   loginAt?: string;
+  /** Ended sessions earlier today — daily timer survives logout. */
+  priorLoginSecondsToday?: number;
+  dayStartedAt?: string;
 }
 
 export function AppShell({
@@ -221,7 +224,11 @@ function ShellFrame({
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             {user.isCallerWorkspace && user.loginAt ? (
-              <LoginDurationTimer loginAt={user.loginAt} />
+              <LoginDurationTimer
+                loginAt={user.loginAt}
+                priorSecondsToday={user.priorLoginSecondsToday ?? 0}
+                dayStartedAt={user.dayStartedAt}
+              />
             ) : null}
             <ThemeToggle />
             <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-sunken/50 px-2.5 py-1.5 sm:flex">

@@ -35,6 +35,8 @@ export interface CallerDashboardDto {
   recentCalls: CallerCallHistoryRowDto[];
   followUps: CallerFollowUpRowDto[];
   loginAt: string;
+  priorLoginSecondsToday: number;
+  dayStartedAt: string;
 }
 
 export interface CallerCallHistoryRowDto {
@@ -67,6 +69,8 @@ export interface CallerOutcomeCountDto {
 
 export interface CallerTimeMetricsDto {
   loginAt: string | null;
+  dayStartedAt: string;
+  priorLoginSecondsToday: number;
   firstCallAt: string | null;
   lastCallAt: string | null;
   currentSessionSeconds: number;
@@ -96,6 +100,11 @@ export interface CallerWorkspaceLeadDto {
   campaignName: string | null;
   customerId: string;
   nextLeadId: string | null;
+  /** Dynamic lead field values (same shape as Admin Lead Detail). */
+  fieldValues: Record<string, string | undefined>;
+  /** Latest call attempt for in-workspace disposition (telephony). */
+  latestCallAttemptId: string | null;
+  latestCallStatus: string | null;
   notes: { id: string; body: string; createdAt: string }[];
   followUps: CallerFollowUpRowDto[];
   timeline: { id: string; action: string; at: string; summary: string }[];

@@ -1,11 +1,13 @@
 // ============================================================================
 // Shared lead reassignment used by LeadOwnershipPort and atomic user lifecycle TX.
+// Batched for large assignee volumes (avoids per-lead round trips).
 // ============================================================================
 
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 
 const PLACEHOLDER_RECORD_HASH = "pending-hash-chain-trigger";
+const BATCH_SIZE = 250;
 
 export async function reassignLeadsInTx(
   tx: Prisma.TransactionClient,
@@ -16,35 +18,46 @@ export async function reassignLeadsInTx(
 ): Promise<number> {
   if (fromUserId === toUserId) return 0;
 
-  const leads = await tx.lead.findMany({
-    where: { currentAssigneeUserId: fromUserId },
-    select: { id: true, organizationId: true },
-  });
-  if (leads.length === 0) return 0;
-
   const now = new Date();
-  for (const lead of leads) {
+  let total = 0;
+  let cursor: string | undefined;
+
+  for (;;) {
+    const leads = await tx.lead.findMany({
+      where: { currentAssigneeUserId: fromUserId },
+      select: { id: true, organizationId: true },
+      take: BATCH_SIZE,
+      orderBy: { id: "asc" },
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    });
+    if (leads.length === 0) break;
+
+    const batchIds = leads.map((lead) => lead.id);
+
     await tx.leadAssignment.updateMany({
-      where: { leadId: lead.id, unassignedAt: null },
+      where: { leadId: { in: batchIds }, unassignedAt: null },
       data: { unassignedAt: now },
     });
-    await tx.leadAssignment.create({
-      data: {
-        leadId: lead.id,
+
+    await tx.leadAssignment.createMany({
+      data: batchIds.map((leadId) => ({
+        leadId,
         assignedToUserId: toUserId,
         assignedByUserId: actorUserId,
-        assignmentType: "MANUAL_REASSIGNMENT",
-      },
+        assignmentType: "MANUAL_REASSIGNMENT" as const,
+      })),
     });
-    await tx.lead.update({
-      where: { id: lead.id },
+
+    await tx.lead.updateMany({
+      where: { id: { in: batchIds } },
       data: { currentAssigneeUserId: toUserId },
     });
-    await tx.leadAuditLog.create({
-      data: {
+
+    await tx.leadAuditLog.createMany({
+      data: leads.map((lead) => ({
         id: randomUUID(),
         organizationId: lead.organizationId,
-        actorType: "USER",
+        actorType: "USER" as const,
         actorId: actorUserId,
         action: "LeadReassigned",
         targetType: "Lead",
@@ -52,8 +65,12 @@ export async function reassignLeadsInTx(
         beforeState: { currentAssigneeUserId: fromUserId },
         afterState: { currentAssigneeUserId: toUserId, reason },
         recordHash: PLACEHOLDER_RECORD_HASH,
-      },
+      })),
     });
+
+    total += leads.length;
+    cursor = leads[leads.length - 1]?.id;
   }
-  return leads.length;
+
+  return total;
 }

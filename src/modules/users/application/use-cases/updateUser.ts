@@ -28,6 +28,11 @@ import {
 } from "../services/userHierarchyPolicy";
 import { assertKeepsActiveAdmin } from "../services/lastAdminPolicy";
 import { assertActiveHierarchyTarget } from "../services/activeHierarchyTarget";
+import {
+  assertActorMayReassignCallersToDirectAdmin,
+  isDirectAdminCallerReassignment,
+} from "../services/callerReassignment";
+import { resolveCanManageCallerAccountsForUser } from "../services/callerManageGrant";
 import { toUserDto, type UserDto } from "../dto/UserDto";
 
 export interface UpdateUserCommand {
@@ -159,22 +164,26 @@ export function makeUpdateUser(
         const targetLeadId = input.reassignCallersToTeamLeadId || null;
         if (!targetLeadId) {
           throw new UserDeleteBlockedError(
-            `This Team Lead has ${callerCount} Caller(s). Reassign them to another Team Lead before changing the role.`,
+            `This Team Lead has ${callerCount} Caller(s). Reassign them to another Team Lead or Direct Admin before changing the role.`,
           );
         }
-        if (targetLeadId === userId) {
-          throw new InvalidUserHierarchyError(
-            "Choose a different Team Lead to receive the Callers.",
-          );
+        if (isDirectAdminCallerReassignment(targetLeadId)) {
+          assertActorMayReassignCallersToDirectAdmin({ actorRoles, hierarchy });
+        } else {
+          if (targetLeadId === userId) {
+            throw new InvalidUserHierarchyError(
+              "Choose a different Team Lead to receive the Callers.",
+            );
+          }
+          await assertActiveHierarchyTarget({
+            repository,
+            roles,
+            userId: targetLeadId,
+            expectedRoles: ["Team Lead"],
+            label: "Reassignment Team Lead",
+            hierarchy,
+          });
         }
-        await assertActiveHierarchyTarget({
-          repository,
-          roles,
-          userId: targetLeadId,
-          expectedRoles: ["Team Lead"],
-          label: "Reassignment Team Lead",
-          hierarchy,
-        });
         reassignCallersToTeamLeadId = targetLeadId;
       }
     }
@@ -259,6 +268,19 @@ export function makeUpdateUser(
       );
     }
 
+    const canManageCallerAccounts =
+      nextRole === "Team Lead"
+        ? resolveCanManageCallerAccountsForUser({
+            role: nextRole,
+            requested:
+              input.canManageCallerAccounts !== undefined
+                ? input.canManageCallerAccounts
+                : existing.canManageCallerAccounts,
+            actorRoles,
+            hierarchy,
+          })
+        : false;
+
     const updateData = {
       fullName: input.fullName?.trim(),
       email: nextEmail,
@@ -270,6 +292,7 @@ export function makeUpdateUser(
           : input.profilePhotoUrl?.trim() || null,
       assignedTeamLeadId,
       reportingManagerId,
+      canManageCallerAccounts,
       updatedByUserId: actor.actorId,
     };
 

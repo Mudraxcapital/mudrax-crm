@@ -12,6 +12,8 @@ Each module is internally layered `domain -> application -> infrastructure -> pr
 | `organization` | Teams, Branches, Regions, Departments, calendars, working hours, and escalation policies |
 | `customers` | Permanent customer record and multi-year history, identity resolved via weighted PAN/Aadhaar/phone/email matching |
 | `leads` | Inbound sales inquiries prior to a Loan Application; owns Lead identity and Lead Assignment |
+| `lead-center` | Staging area for inbound leads by source; Campaign Leads are created only after review + import |
+| `integrations` | Connector configuration (field mappings, webhooks, API keys); does not display leads |
 | `campaigns` | Campaign lifecycle, membership, and allocation decisions (initiates assignment through `leads`; does not own Campaign Analytics) |
 | `loan-applications` | Central loan request lifecycle |
 | `loan-products` | Catalog of loan products per bank |

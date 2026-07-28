@@ -43,15 +43,26 @@ export interface BulkChangeAccountStatusCommand {
   correlationId?: string | null;
 }
 
-function assertActorMayChangeStatus(actorRoles: string[], hierarchy: HierarchyScope): void {
+function assertActorMayChangeStatus(
+  actorRoles: string[],
+  hierarchy: HierarchyScope,
+  actorCanManageCallerAccounts: boolean,
+): void {
   if (hierarchy.primaryRole === "Caller") {
     throw new InvalidUserHierarchyError("Callers cannot modify account status.");
+  }
+  if (hierarchy.primaryRole === "Team Lead") {
+    if (!actorCanManageCallerAccounts) {
+      throw new InvalidUserHierarchyError(
+        "Your Team Lead account is not permitted to disable or suspend Caller accounts. Ask your Manager or Admin to grant Caller account management.",
+      );
+    }
+    return;
   }
   if (
     !actorRoles.includes("Admin") &&
     hierarchy.primaryRole !== "Admin" &&
-    hierarchy.primaryRole !== "Manager" &&
-    hierarchy.primaryRole !== "Team Lead"
+    hierarchy.primaryRole !== "Manager"
   ) {
     throw new InvalidUserHierarchyError("You cannot modify account status.");
   }
@@ -73,7 +84,10 @@ export function makeChangeAccountStatus(repository: UserRepository, roles: RoleA
       correlationId,
     } = command;
 
-    assertActorMayChangeStatus(actorRoles, hierarchy);
+    const actorUser = actor.actorId ? await repository.findById(actor.actorId) : null;
+    const actorCanManageCallerAccounts = actorUser?.canManageCallerAccounts ?? false;
+
+    assertActorMayChangeStatus(actorRoles, hierarchy, actorCanManageCallerAccounts);
 
     const user = await repository.findById(userId);
     if (!user) throw new UserNotFoundError(userId);
@@ -86,6 +100,7 @@ export function makeChangeAccountStatus(repository: UserRepository, roles: RoleA
       targetUserId: userId,
       targetRole,
       action: "change_status",
+      actorCanManageCallerAccounts,
     });
 
     await assertKeepsActiveAdmin({
@@ -132,7 +147,10 @@ export function makeBulkChangeAccountStatus(
       correlationId,
     } = command;
 
-    assertActorMayChangeStatus(actorRoles, hierarchy);
+    const actorUser = actor.actorId ? await repository.findById(actor.actorId) : null;
+    const actorCanManageCallerAccounts = actorUser?.canManageCallerAccounts ?? false;
+
+    assertActorMayChangeStatus(actorRoles, hierarchy, actorCanManageCallerAccounts);
     const allowed: string[] = [];
 
     for (const id of userIds) {
@@ -147,6 +165,7 @@ export function makeBulkChangeAccountStatus(
           targetUserId: id,
           targetRole: role,
           action: "change_status",
+          actorCanManageCallerAccounts,
         });
         await assertKeepsActiveAdmin({
           repository,

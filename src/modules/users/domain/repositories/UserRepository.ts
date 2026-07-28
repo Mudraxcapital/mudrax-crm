@@ -39,6 +39,7 @@ export interface CreateUserData {
   reportingManagerId: string | null;
   createdByUserId: string | null;
   mustChangePassword?: boolean;
+  canManageCallerAccounts?: boolean;
 }
 
 export interface UpdateUserData {
@@ -51,6 +52,7 @@ export interface UpdateUserData {
   reportingManagerId?: string | null;
   updatedByUserId?: string | null;
   mustChangePassword?: boolean;
+  canManageCallerAccounts?: boolean;
 }
 
 export interface UserListItem extends User {
@@ -103,6 +105,8 @@ export interface UserRepository {
   countCallersForTeamLead(teamLeadId: string): Promise<number>;
   /** Team Leads reporting to this Manager (any status). */
   countTeamLeadsForManager(managerId: string): Promise<number>;
+  /** Campaigns owned by this Manager (`campaigns.ownerManagerId`). */
+  countCampaignsForManager(managerId: string): Promise<number>;
   countApiKeysForUser(userId: string): Promise<number>;
   reassignCallersToTeamLead(fromTeamLeadId: string, toTeamLeadId: string): Promise<number>;
   /** Move Team Leads reporting to fromManagerId onto toManagerId. */
@@ -158,6 +162,18 @@ export interface UserRepository {
     actor: UserAuditActor;
     correlationId?: string | null;
     targetRole: FixedUserRole | null;
+    reassignCallersToTeamLeadId?: string | null;
+    reassignTeamLeadsToManagerId?: string | null;
+    reassignLeadsToUserId?: string | null;
+  }): Promise<void>;
+
+  /**
+   * Delete many users in one database transaction (all-or-nothing).
+   */
+  bulkDeleteAtomically(input: {
+    deletes: Array<{ userId: string; targetRole: FixedUserRole | null }>;
+    actor: UserAuditActor;
+    correlationId?: string | null;
     reassignCallersToTeamLeadId?: string | null;
     reassignTeamLeadsToManagerId?: string | null;
     reassignLeadsToUserId?: string | null;

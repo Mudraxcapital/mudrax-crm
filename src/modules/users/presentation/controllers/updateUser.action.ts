@@ -39,6 +39,7 @@ export async function updateUserAction(
     reassignCallersToTeamLeadId: formString(formData, "reassignCallersToTeamLeadId"),
     reassignTeamLeadsToManagerId: formString(formData, "reassignTeamLeadsToManagerId"),
     reassignLeadsToUserId: formString(formData, "reassignLeadsToUserId"),
+    canManageCallerAccounts: formData.get("canManageCallerAccounts") === "on",
   });
 
   if (!parsed.success) {

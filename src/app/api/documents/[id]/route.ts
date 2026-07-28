@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   DocumentNotFoundError,
@@ -12,12 +12,16 @@ import {
   updateDocumentMetadata,
   updateDocumentMetadataSchema,
 } from "@/modules/documents";
+import {
+  filterDocumentsByOwnerVisibility,
+  resolveVisibleOwnerIds,
+} from "@/shared/auth/applyHierarchyListFilter";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "document.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -26,6 +30,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   try {
     const document = await getDocument(id);
     if (document.organizationId !== current.authContext.organizationId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const visibility = await resolveVisibleOwnerIds(current.authContext);
+    if (filterDocumentsByOwnerVisibility([document], visibility).length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     return NextResponse.json({ data: document });
@@ -38,10 +46,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "document.upload")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -59,6 +66,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const existing = await getDocument(id);
     if (existing.organizationId !== current.authContext.organizationId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const visibility = await resolveVisibleOwnerIds(current.authContext);
+    if (filterDocumentsByOwnerVisibility([existing], visibility).length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

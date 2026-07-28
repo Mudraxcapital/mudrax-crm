@@ -16,7 +16,7 @@ export function makeGetLoanDashboard(
     const topBanks = await metrics.getTopBanks(organizationId);
     return {
       activeApplications: active,
-      approved: counts.APPROVED ?? 0,
+      approved: (counts.APPROVED ?? 0) + (counts.CONVERTED ?? 0),
       rejected: counts.REJECTED ?? 0,
       pending,
       totalDisbursedAmount: totals.totalDisbursed,

@@ -27,6 +27,11 @@ export interface AssignCampaignLeadsCommand {
   input: AssignCampaignLeadsInput;
   actor: CampaignAuditActor;
   correlationId?: string | null;
+  /**
+   * When set, only these active members participate in allocation
+   * (Team Lead hierarchy scope — never assign to agents outside the book).
+   */
+  restrictToMemberUserIds?: string[];
 }
 
 interface PlannedAllocation {
@@ -119,23 +124,40 @@ function planPercentageAllocation(
     }
   }
 
+  // Largest-remainder method so early buckets cannot consume the whole list.
+  const entries = Object.entries(percentages);
+  const exact = entries.map(([userId, percentage]) => ({
+    userId,
+    percentage,
+    exactCount: (percentage / 100) * leadIds.length,
+  }));
+  const floors = exact.map((row) => ({
+    ...row,
+    floor: Math.floor(row.exactCount),
+    fraction: row.exactCount - Math.floor(row.exactCount),
+  }));
+  let remaining = leadIds.length - floors.reduce((sum, row) => sum + row.floor, 0);
+  const ranked = [...floors].sort((a, b) => b.fraction - a.fraction || a.userId.localeCompare(b.userId));
+  const extra = new Map<string, number>();
+  for (const row of ranked) {
+    if (remaining <= 0) break;
+    extra.set(row.userId, 1);
+    remaining -= 1;
+  }
+
   const plans: PlannedAllocation[] = [];
   let cursor = 0;
-  const entries = Object.entries(percentages);
-  entries.forEach(([userId, percentage], entryIndex) => {
-    const isLast = entryIndex === entries.length - 1;
-    const count = isLast
-      ? leadIds.length - cursor
-      : Math.round((percentage / 100) * leadIds.length);
+  for (const row of floors) {
+    const count = row.floor + (extra.get(row.userId) ?? 0);
     const slice = leadIds.slice(cursor, cursor + count);
     cursor += slice.length;
     plans.push({
-      userId,
+      userId: row.userId,
       allocatedCount: slice.length,
-      allocatedPercentage: percentage,
+      allocatedPercentage: row.percentage,
       leadIds: slice,
     });
-  });
+  }
 
   return plans.filter((plan) => plan.allocatedCount > 0);
 }
@@ -203,9 +225,23 @@ export function makeAssignCampaignLeads(
     }
 
     const members = await repository.listMembers(campaignId);
-    const activeMembers = members.filter((member) => member.isActive);
+    const restrictTo = command.restrictToMemberUserIds
+      ? new Set(command.restrictToMemberUserIds)
+      : null;
+    const activeMembers = members.filter(
+      (member) => member.isActive && (!restrictTo || restrictTo.has(member.userId)),
+    );
     if (activeMembers.length === 0) {
       throw new NoActiveMembersError(campaignId);
+    }
+
+    if (
+      input.allocationMethod === "MANUAL" &&
+      input.manualAssigneeUserId &&
+      restrictTo &&
+      !restrictTo.has(input.manualAssigneeUserId)
+    ) {
+      throw new InvalidAllocationError("Assignee is outside your hierarchy scope.");
     }
 
     for (const leadId of input.leadIds) {
@@ -247,19 +283,29 @@ export function makeAssignCampaignLeads(
       }
     }
 
-    let allFailed = true;
+    let succeeded = 0;
+    let failed = 0;
     for (const leadId of input.leadIds) {
       const assignee = assigneeByLeadId.get(leadId);
-      if (!assignee) continue;
+      if (!assignee) {
+        failed += 1;
+        continue;
+      }
       try {
         await leadLookup.assign(leadId, assignee, actor.actorId, assignment.id);
-        allFailed = false;
+        succeeded += 1;
       } catch {
         // A single Lead assignment failure does not abort the batch.
+        failed += 1;
       }
     }
 
-    const finalStatus = allFailed && input.leadIds.length > 0 ? "FAILED" : "COMPLETED";
+    // COMPLETED only when every targeted Lead was assigned; otherwise FAILED
+    // (partial success still applied individual assigns — surface via FAILED).
+    const finalStatus =
+      input.leadIds.length > 0 && failed === 0 && succeeded > 0
+        ? "COMPLETED"
+        : "FAILED";
     const executed = await repository.markAssignmentExecutedWithAudit(
       assignment.id,
       finalStatus,

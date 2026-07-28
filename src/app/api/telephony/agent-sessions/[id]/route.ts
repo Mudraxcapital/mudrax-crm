@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { AgentSessionNotFoundError, getAgentSession } from "@/modules/telephony";
 
@@ -14,11 +14,10 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: RouteParams) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
 
   const canManage = hasPermission(current.authContext, "agent_session.manage");
   const canSelf = hasPermission(current.authContext, "agent_session.self");

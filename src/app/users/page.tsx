@@ -1,6 +1,13 @@
+import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { FIXED_ROLES, hasPermission, hasRole } from "@/modules/rbac";
-import { listUsers, listUsersByRole } from "@/modules/users";
+import {
+  canChangeCallerAccountStatus,
+  canDeleteUserAccounts,
+  listUsers,
+  listUsersByRole,
+  countAssignedLeadsByUserIds,
+} from "@/modules/users";
 import { rolesActorMayCreate } from "@/modules/users/application/services/userHierarchyPolicy";
 import { UserForm } from "@/modules/users/presentation/components/UserForm";
 import { createUserAction } from "@/modules/users/presentation/controllers/createUser.action";
@@ -11,9 +18,12 @@ import { UsersTable } from "./_components/UsersTable";
 export default async function UsersPage() {
   const { session, authContext } = await requirePermission("user.view");
   const canManage = hasPermission(authContext, "user.manage");
-  const canDelete = hasPermission(authContext, "user.delete");
+  const canDelete = canDeleteUserAccounts(authContext);
+  const canChangeStatus = canChangeCallerAccountStatus(authContext);
   const canReset = hasPermission(authContext, "user.reset_password");
   const allowAdminRole = hasRole(authContext, "Admin");
+  const allowGrantCallerLifecycle =
+    allowAdminRole || authContext.hierarchy.primaryRole === "Manager";
   const hierarchy = authContext.hierarchy;
   const visibleIds = hierarchy.visibleUserIds;
 
@@ -28,6 +38,11 @@ export default async function UsersPage() {
     listUsersByRole("Manager"),
     listUsersByRole("Admin"),
   ]);
+
+  const leadCounts =
+    canDelete && users.length > 0
+      ? await countAssignedLeadsByUserIds(users.map((user) => user.id))
+      : new Map<string, number>();
 
   const scopedTeamLeads = teamLeads.filter(
     (user) => !visibleIds || visibleIds.includes(user.id),
@@ -49,12 +64,12 @@ export default async function UsersPage() {
           <>
             {(allowAdminRole || hierarchy.primaryRole === "Manager") ? (
               <div className="flex flex-wrap gap-2">
-                <a href="/api/users/export?format=csv" className="mx-btn mx-btn-secondary">
+                <Link href="/api/users/export?format=csv" className="mx-btn mx-btn-secondary">
                   Export CSV
-                </a>
-                <a href="/api/users/export?format=excel" className="mx-btn mx-btn-secondary">
+                </Link>
+                <Link href="/api/users/export?format=excel" className="mx-btn mx-btn-secondary">
                   Export Excel
-                </a>
+                </Link>
               </div>
             ) : null}
             {canManage && creatableRoles.length > 0 ? (
@@ -84,6 +99,7 @@ export default async function UsersPage() {
                   defaultAssignedTeamLeadId={
                     hierarchy.primaryRole === "Team Lead" ? authContext.userId : undefined
                   }
+                  allowGrantCallerLifecycle={allowGrantCallerLifecycle}
                 />
               </CreatePanel>
             ) : null}
@@ -95,7 +111,9 @@ export default async function UsersPage() {
         currentUserId={session.user.id}
         canManage={canManage}
         canDelete={canDelete}
+        canChangeStatus={canChangeStatus}
         canReset={canReset}
+        allowDirectAdminReassign={allowAdminRole}
         roleFilterOptions={[...FIXED_ROLES].filter(
           (role) =>
             hierarchy.unrestricted ||
@@ -132,6 +150,7 @@ export default async function UsersPage() {
           reportingManagerName: user.reportingManagerName,
           lastLoginAt: user.lastLoginAt,
           profilePhotoUrl: user.profilePhotoUrl,
+          leadCount: leadCounts.get(user.id) ?? 0,
         }))}
       />
     </PageSection>

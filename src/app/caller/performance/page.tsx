@@ -32,6 +32,7 @@ export default async function CallerPerformancePage({
     organizationId: authContext.organizationId,
     callerUserId: session.user.id,
     loginAt: session.user.loginAt,
+    currentSessionId: session.user.sessionId || null,
     campaignId: selectedCampaignId,
   });
 
@@ -42,7 +43,14 @@ export default async function CallerPerformancePage({
       <PageHeader
         title="My Performance"
         description="Your statistics only — never other employees."
-        meta={<LoginDurationTimer loginAt={session.user.loginAt} alwaysVisible />}
+        meta={
+          <LoginDurationTimer
+            loginAt={session.user.loginAt}
+            priorSecondsToday={tm.priorLoginSecondsToday}
+            dayStartedAt={tm.dayStartedAt}
+            alwaysVisible
+          />
+        }
         actions={
           <CampaignSelector
             campaigns={campaigns.map((c) => ({ id: c.id, name: c.name, status: c.status }))}
@@ -58,9 +66,12 @@ export default async function CallerPerformancePage({
       </section>
 
       <Card>
-        <CardHeader title="Time Metrics" description="Session and talk-time for today" />
+        <CardHeader title="Time Metrics" description="Login and talk-time for today (survives logout)" />
         <CardBody className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4 text-sm">
-          <Metric label="Login Time" value={tm.loginAt ? new Date(tm.loginAt).toLocaleString() : "—"} />
+          <Metric
+            label="Current Login"
+            value={tm.loginAt ? new Date(tm.loginAt).toLocaleString() : "—"}
+          />
           <Metric
             label="First Call"
             value={tm.firstCallAt ? new Date(tm.firstCallAt).toLocaleString() : "—"}

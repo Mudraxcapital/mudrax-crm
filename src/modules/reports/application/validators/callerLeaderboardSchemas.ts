@@ -16,6 +16,7 @@ export const callerLeaderboardPresetSchema = z.enum([
   "yesterday",
   "this_week",
   "this_month",
+  "this_year",
   "custom",
 ]);
 
@@ -25,6 +26,8 @@ export const callerLeaderboardSortSchema = z.enum([
   "highest_conversion",
   "longest_talk_time",
   "fastest_follow_ups",
+  "most_follow_ups_completed",
+  "most_won_leads",
 ]);
 
 const emptyToUndefined = z.literal("").transform(() => undefined);
@@ -51,9 +54,18 @@ export const callerLeaderboardQuerySchema = z.object({
   callerId: optionalUuid.optional(),
   /** Lead Stage id filter (CRM metadata — never a hardcoded status name). */
   stageId: optionalUuid.optional(),
-  sortBy: callerLeaderboardSortSchema.default("most_calls"),
+  sortBy: callerLeaderboardSortSchema.default("most_connections"),
 });
 
 export type CallerLeaderboardQuery = z.infer<typeof callerLeaderboardQuerySchema>;
 export type CallerLeaderboardPreset = z.infer<typeof callerLeaderboardPresetSchema>;
 export type CallerLeaderboardSort = z.infer<typeof callerLeaderboardSortSchema>;
+
+/** Server-only scope — never accepted from client query strings. */
+export interface CallerLeaderboardScope {
+  /**
+   * Hierarchy allow-list. When set, users / calls / leads / follow-ups are
+   * restricted to these ids. Admin passes null/undefined (unrestricted).
+   */
+  visibleUserIds?: string[] | null;
+}

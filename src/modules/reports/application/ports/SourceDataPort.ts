@@ -15,6 +15,8 @@ export interface NamedCount {
   count: number;
 }
 
+export type LeadTrendGranularity = "daily" | "weekly" | "monthly";
+
 export interface AnalyticsKpis {
   totalCustomers: number;
   totalLeads: number;
@@ -28,6 +30,27 @@ export interface AnalyticsKpis {
   pendingDocumentVerification: number;
   notificationsSent: number;
   failedNotifications: number;
+  /** Curated funnel steps (Fresh → … → Disbursed), mapped from CRM stage names. */
+  conversionFunnel: NamedCount[];
+  /** Lead creation volume over the selected range. */
+  leadTrend: NamedCount[];
+  leadTrendGranularity: LeadTrendGranularity;
+  /** Assignees ranked by assigned lead volume (open + closed). */
+  topPerformingUsers: NamedCount[];
+  /** Campaigns ranked by lead volume. */
+  topCampaigns: NamedCount[];
+  /** Follow-up Completed vs Pending (open statuses). */
+  followUpCompletion: NamedCount[];
+  /** Won leads attributed to each source (highest conversions). */
+  sourceConversions: NamedCount[];
+  /** Wins recorded today (wonAt within local calendar day). */
+  todayConversions: number;
+  /** Conversion rate today: wins today / leads created today (0–1). */
+  todayConversionRate: number;
+  /** Leads created in the last 7 days. */
+  weekLeadCount: number;
+  /** Wins recorded in the last 7 days. */
+  weekConversions: number;
 }
 
 export interface ReportRow {

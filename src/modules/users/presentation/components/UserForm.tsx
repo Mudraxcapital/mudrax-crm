@@ -22,6 +22,7 @@ export function UserForm({
   allowedRoles,
   defaultReportingManagerId,
   defaultAssignedTeamLeadId,
+  allowGrantCallerLifecycle = false,
 }: {
   action: CreateUserFormAction;
   teamLeads: HierarchyOption[];
@@ -30,6 +31,7 @@ export function UserForm({
   allowedRoles?: readonly string[];
   defaultReportingManagerId?: string;
   defaultAssignedTeamLeadId?: string;
+  allowGrantCallerLifecycle?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
   const roles = (allowedRoles?.length ? allowedRoles : FIXED_USER_ROLES).filter(
@@ -138,6 +140,18 @@ export function UserForm({
             ))}
           </select>
         </Field>
+      ) : null}
+
+      {allowGrantCallerLifecycle && role === "Team Lead" ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="canManageCallerAccounts" className="mt-0.5" />
+          <span>
+            <span className="font-medium">Caller account management</span>
+            <span className="text-muted block text-xs">
+              Allow this Team Lead to delete, disable, or suspend their assigned Callers.
+            </span>
+          </span>
+        </label>
       ) : null}
 
       <button type="submit" className="mx-btn mx-btn-primary" disabled={isPending}>

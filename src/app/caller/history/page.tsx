@@ -74,7 +74,7 @@ export default async function CallerCallHistoryPage({
                     <td className="px-2 py-2.5">
                       {row.leadId ? (
                         <Link
-                          href={`/caller/leads/${row.leadId}`}
+                          href={`/caller/leads/${row.leadId}${selectedCampaignId ? `?campaignId=${selectedCampaignId}` : ""}`}
                           className="text-accent hover:underline"
                         >
                           {row.customerName}

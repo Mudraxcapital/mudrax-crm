@@ -15,6 +15,7 @@ import { listRecentFollowUpActivity, type FollowUpAuditRecord } from "@/modules/
 import { listRecentCampaignActivity, type CampaignAuditRecord } from "@/modules/campaigns";
 import { listRecentTelephonyActivity } from "@/modules/telephony";
 import { listCustomerAuditLog } from "@/modules/customers";
+import { humanizeAuditAction as humanizeAction } from "@/shared/ui/humanizeAuditAction";
 
 export type TimelineSource =
   | "Lead"
@@ -36,10 +37,6 @@ export interface TimelineEntry {
   leadId: string | null;
   customerId: string | null;
   occurredAt: Date;
-}
-
-function humanizeAction(action: string): string {
-  return action.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
 function fromLead(record: LeadAuditRecord): TimelineEntry {

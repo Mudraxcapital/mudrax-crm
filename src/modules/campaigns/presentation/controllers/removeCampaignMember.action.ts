@@ -12,16 +12,23 @@ import { requirePermission } from "@/infra/auth/session";
 import {
   CampaignMembershipNotFoundError,
   CampaignNotFoundError,
+  getCampaign,
   removeCampaignMember,
 } from "@/modules/campaigns";
+import {
+  assertCanAccessCampaignRecord,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
 
 export async function removeCampaignMemberAction(
   campaignId: string,
   userId: string,
 ): Promise<void> {
-  const { session } = await requirePermission("campaign.manage");
+  const { session, authContext } = await requirePermission("campaign.manage");
 
   try {
+    const campaign = await getCampaign(campaignId);
+    assertCanAccessCampaignRecord(authContext, campaign);
     await removeCampaignMember({
       campaignId,
       userId,
@@ -30,7 +37,8 @@ export async function removeCampaignMemberAction(
   } catch (error) {
     if (
       error instanceof CampaignNotFoundError ||
-      error instanceof CampaignMembershipNotFoundError
+      error instanceof CampaignMembershipNotFoundError ||
+      error instanceof CampaignAccessDeniedError
     ) {
       return;
     }

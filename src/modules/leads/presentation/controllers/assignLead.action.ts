@@ -17,6 +17,10 @@ import {
 import { requirePermission } from "@/infra/auth/session";
 import type { LeadFormState } from "./createLead.action";
 import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 
 export async function assignLeadAction(
   id: string,
@@ -35,6 +39,10 @@ export async function assignLeadAction(
       permissionCode: "lead.reassign",
       actorUserId: session.user.id,
     });
+    assertCanAssignToUser(authContext, parsed.data.assignedToUserId, {
+      permissionCode: "lead.reassign",
+      actorUserId: session.user.id,
+    });
     await assignLead({
       id,
       input: parsed.data,
@@ -44,7 +52,8 @@ export async function assignLeadAction(
     if (
       error instanceof LeadNotFoundError ||
       error instanceof InvalidAssigneeReferenceError ||
-      error instanceof LeadAccessDeniedError
+      error instanceof LeadAccessDeniedError ||
+      error instanceof AssigneeNotAllowedError
     ) {
       return { error: error.message };
     }

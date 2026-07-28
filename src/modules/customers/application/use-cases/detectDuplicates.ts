@@ -1,12 +1,12 @@
 // ============================================================================
 // src/modules/customers/application/use-cases/detectDuplicates.ts
 //
-// Scans active Customers for probabilistic PHONE/EMAIL overlaps and name
-// collisions. Deterministic PAN/Aadhaar uniqueness is already enforced at
-// create time; this raises reviewable Duplicate Candidates (customers.md).
+// Scans active Customers for PHONE/EMAIL overlaps. Name similarity is not used.
+// Same phone or same email raises a reviewable candidate; score is 1 only when
+// both phone and email match. Deterministic PAN/Aadhaar uniqueness is already
+// enforced at create time (customers.md).
 // ============================================================================
 
-import { fuzzyScore } from "@/shared/search/fuzzy";
 import type { CustomerRepository } from "../../domain/repositories/CustomerRepository";
 import type { DuplicateMatchType } from "../../domain/entities/CustomerDuplicateCandidate";
 import { DuplicateCandidateNotFoundError } from "../../domain/errors/CustomerErrors";
@@ -15,18 +15,30 @@ import {
   type DuplicateCandidateDto,
 } from "../dto/DuplicateDto";
 
+function pairKey(aId: string, bId: string): string {
+  const [left, right] = aId < bId ? [aId, bId] : [bId, aId];
+  return `${left}:${right}`;
+}
+
 export function makeDetectDuplicates(repository: CustomerRepository) {
-  return async function detectDuplicates(organizationId: string): Promise<{
+  return async function detectDuplicates(
+    organizationId: string,
+    options?: { customerIds?: string[] },
+  ): Promise<{
     created: DuplicateCandidateDto[];
     existing: DuplicateCandidateDto[];
   }> {
-    // Page through the full active customer set — no arbitrary scan ceiling.
+    // Page through the active customer set — optionally scoped to hierarchy.
     const PAGE_SIZE = 1_000;
     const customers: Awaited<ReturnType<CustomerRepository["listWithIdentifiers"]>> = [];
+    if (options?.customerIds?.length === 0) {
+      return { created: [], existing: [] };
+    }
     for (let offset = 0; ; offset += PAGE_SIZE) {
       const page = await repository.listWithIdentifiers(organizationId, {
         limit: PAGE_SIZE,
         offset,
+        customerIds: options?.customerIds,
       });
       customers.push(...page);
       if (page.length < PAGE_SIZE) break;
@@ -60,25 +72,28 @@ export function makeDetectDuplicates(repository: CustomerRepository) {
       created.push(toDuplicateCandidateDto(candidate));
     }
 
-    // Phone / email overlaps
+    // Index active phone / email identifiers → customer ids
     const phoneIndex = new Map<string, string[]>();
     const emailIndex = new Map<string, string[]>();
     for (const entry of customers) {
       for (const identifier of entry.identifiers) {
         if (identifier.status !== "ACTIVE" || !identifier.valueNormalized) continue;
-        const index = identifier.type === "PHONE" ? phoneIndex : emailIndex;
         if (identifier.type !== "PHONE" && identifier.type !== "EMAIL") continue;
+        const index = identifier.type === "PHONE" ? phoneIndex : emailIndex;
         const list = index.get(identifier.valueNormalized) ?? [];
         list.push(entry.customer.id);
         index.set(identifier.valueNormalized, list);
       }
     }
 
+    const phonePairs = new Set<string>();
+    const emailPairs = new Set<string>();
+
     for (const [, ids] of phoneIndex) {
       const unique = [...new Set(ids)];
       for (let i = 0; i < unique.length; i++) {
         for (let j = i + 1; j < unique.length; j++) {
-          await raise(unique[i]!, unique[j]!, "PROBABILISTIC_PHONE", 0.8);
+          phonePairs.add(pairKey(unique[i]!, unique[j]!));
         }
       }
     }
@@ -86,28 +101,24 @@ export function makeDetectDuplicates(repository: CustomerRepository) {
       const unique = [...new Set(ids)];
       for (let i = 0; i < unique.length; i++) {
         for (let j = i + 1; j < unique.length; j++) {
-          await raise(unique[i]!, unique[j]!, "PROBABILISTIC_EMAIL", 0.8);
+          emailPairs.add(pairKey(unique[i]!, unique[j]!));
         }
       }
     }
 
-    // Name similarity (+ optional DOB)
-    for (let i = 0; i < customers.length; i++) {
-      for (let j = i + 1; j < customers.length; j++) {
-        const a = customers[i]!;
-        const b = customers[j]!;
-        const score = fuzzyScore(a.customer.fullName, b.customer.fullName);
-        if (score < 0.72) continue;
-        const sameDob =
-          a.customer.dob &&
-          b.customer.dob &&
-          a.customer.dob.toISOString().slice(0, 10) === b.customer.dob.toISOString().slice(0, 10);
-        await raise(
-          a.customer.id,
-          b.customer.id,
-          "PROBABILISTIC_NAME_DOB",
-          sameDob ? Math.min(1, score + 0.15) : score,
-        );
+    const allPairs = new Set([...phonePairs, ...emailPairs]);
+    for (const key of allPairs) {
+      const [left, right] = key.split(":") as [string, string];
+      const samePhone = phonePairs.has(key);
+      const sameEmail = emailPairs.has(key);
+
+      if (samePhone && sameEmail) {
+        // Both contact channels match — treat as confirmed same person.
+        await raise(left, right, "PROBABILISTIC_PHONE", 1);
+      } else if (samePhone) {
+        await raise(left, right, "PROBABILISTIC_PHONE", 0.8);
+      } else {
+        await raise(left, right, "PROBABILISTIC_EMAIL", 0.8);
       }
     }
 

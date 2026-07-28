@@ -34,6 +34,9 @@ export const PUBLIC_PATH_PREFIXES = [
   "/clear-session",
   "/unauthorized",
   "/api/auth",
+  "/api/integrations/meta/webhook",
+  "/api/integrations/webhooks",
+  "/api/integrations/rest",
   "/_next",
   "/favicon.ico",
 ];

@@ -21,6 +21,10 @@ import {
   assertCanAccessLead,
   LeadAccessDeniedError,
 } from "@/shared/auth/assertCanAccessLead";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 import type { FollowUpFormState } from "./createFollowUp.action";
 
 export async function reassignFollowUpAction(
@@ -46,6 +50,10 @@ export async function reassignFollowUpAction(
       permissionCode: "lead.view",
       actorUserId: session.user.id,
     });
+    assertCanAssignToUser(authContext, parsed.data.toUserId, {
+      permissionCode: "follow_up.reassign",
+      actorUserId: session.user.id,
+    });
     await reassignFollowUp({
       id,
       input: parsed.data,
@@ -57,7 +65,8 @@ export async function reassignFollowUpAction(
       error instanceof FollowUpNotOpenError ||
       error instanceof InvalidAssigneeReferenceError ||
       error instanceof LeadNotFoundError ||
-      error instanceof LeadAccessDeniedError
+      error instanceof LeadAccessDeniedError ||
+      error instanceof AssigneeNotAllowedError
     ) {
       return { error: error.message };
     }

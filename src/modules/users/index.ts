@@ -30,6 +30,7 @@ import {
   makeRevokeAllUserSessions,
   makeRevokeUserSession,
 } from "./application/use-cases/manageSessions";
+import { makeGetDailyLoginDuration } from "./application/use-cases/getDailyLoginDuration";
 import { makeChangeOwnPassword } from "./application/use-cases/changeOwnPassword";
 import { makeUpdateProfilePhoto } from "./application/use-cases/updateProfilePhoto";
 import { makeExportUsers } from "./application/use-cases/exportUsers";
@@ -57,6 +58,7 @@ export type {
   UserLoginSessionDto,
   UserTrackedSessionDto,
 } from "./application/dto/UserDto";
+export type { DailyLoginDurationDto } from "./application/use-cases/getDailyLoginDuration";
 export {
   createUserSchema,
   updateUserSchema,
@@ -89,6 +91,18 @@ export {
   isDirectAdminCaller,
   callerReportsToLabel,
 } from "./application/services/callerReporting";
+export {
+  DIRECT_ADMIN_REASSIGN_LABEL,
+  REASSIGN_CALLERS_TO_DIRECT_ADMIN,
+} from "./presentation/constants/callerReassignment";
+export {
+  roleMaySelfServiceChangePassword,
+  adminAssignedPasswordRole,
+} from "./application/services/selfServicePasswordPolicy";
+export {
+  canChangeCallerAccountStatus,
+  canDeleteUserAccounts,
+} from "./application/services/callerLifecyclePolicy";
 
 const userRepository = new PrismaUserRepository(prisma);
 const roleAssignment = new RbacRoleAssignmentAdapter();
@@ -132,9 +146,10 @@ export const resolveVisibleHierarchy = makeResolveVisibleHierarchy(
 
 export const listActiveUserSessions = makeListActiveUserSessions(userRepository);
 export const listUserSessionHistory = makeListUserSessionHistory(userRepository);
+export const getDailyLoginDuration = makeGetDailyLoginDuration(userRepository);
 export const revokeUserSession = makeRevokeUserSession(userRepository, roleAssignment);
 export const revokeAllUserSessions = makeRevokeAllUserSessions(userRepository, roleAssignment);
-export const changeOwnPassword = makeChangeOwnPassword(userRepository, passwordHasher);
+export const changeOwnPassword = makeChangeOwnPassword(userRepository, passwordHasher, roleAssignment);
 export const updateProfilePhoto = makeUpdateProfilePhoto(
   userRepository,
   roleAssignment,
@@ -144,6 +159,20 @@ export const exportUsers = makeExportUsers(userRepository);
 
 export async function countAssignedLeadsForUser(userId: string): Promise<number> {
   return leadOwnership.countAssignedLeads(userId);
+}
+
+export async function countAssignedFollowUpsForUser(userId: string): Promise<number> {
+  return leadOwnership.countAssignedFollowUps(userId);
+}
+
+export async function countCampaignsForManagerUser(managerId: string): Promise<number> {
+  return userRepository.countCampaignsForManager(managerId);
+}
+
+export async function countAssignedLeadsByUserIds(
+  userIds: string[],
+): Promise<Map<string, number>> {
+  return leadOwnership.countAssignedLeadsByUserIds(userIds);
 }
 
 /** Low-level storage retrieve for profile photo API. */

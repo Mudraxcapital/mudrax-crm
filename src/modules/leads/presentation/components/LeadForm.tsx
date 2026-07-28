@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useActionState, useMemo, useState } from "react";
 import type { LeadSource } from "../../domain/entities/LeadCatalogs";
+import { pickDefaultLeadSource } from "../../domain/pickDefaultLeadSource";
 import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
 import type { LeadFormState } from "../controllers/createLead.action";
 import { extractFieldValuesFromFormData } from "./DynamicLeadFields";
@@ -88,7 +89,7 @@ export function LeadForm({
     );
   }, [visible, query]);
 
-  const resolvedSourceId = defaultLeadSourceId ?? sources[0]?.id ?? "";
+  const resolvedSourceId = defaultLeadSourceId ?? pickDefaultLeadSource(sources)?.id ?? "";
 
   return (
     <form action={formAction} className="mx-auto flex w-full max-w-3xl flex-col gap-6">

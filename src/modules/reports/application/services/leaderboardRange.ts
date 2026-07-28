@@ -28,6 +28,10 @@ function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
 }
 
+function startOfYear(date: Date): Date {
+  return new Date(date.getFullYear(), 0, 1, 0, 0, 0, 0);
+}
+
 export function resolveLeaderboardRange(
   preset: CallerLeaderboardPreset,
   dateFrom?: string,
@@ -46,6 +50,8 @@ export function resolveLeaderboardRange(
       return { from: startOfWeek(now), to: endOfDay(now) };
     case "this_month":
       return { from: startOfMonth(now), to: endOfDay(now) };
+    case "this_year":
+      return { from: startOfYear(now), to: endOfDay(now) };
     case "custom": {
       const from = dateFrom ? new Date(dateFrom) : startOfDay(now);
       const to = dateTo ? new Date(dateTo) : endOfDay(now);

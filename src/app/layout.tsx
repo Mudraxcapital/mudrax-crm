@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
-import { PATHNAME_HEADER, isCallerAllowedPath } from "@/infra/auth/callerAccess";
+import { PATHNAME_HEADER, callerWorkspaceRedirect, isCallerAllowedPath } from "@/infra/auth/callerAccess";
 import { getCurrentUser } from "@/infra/auth/session";
 import { isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
+import { getDailyLoginDuration, roleMaySelfServiceChangePassword } from "@/modules/users";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
 import { ToastProvider } from "@/shared/ui/Toast";
 import { AppShell } from "./_components/AppShell";
@@ -44,6 +45,7 @@ export default async function RootLayout({
 
   if (
     current?.session.user.mustChangePassword &&
+    roleMaySelfServiceChangePassword(current.authContext.hierarchy.primaryRole) &&
     !pathname.startsWith("/change-password") &&
     !pathname.startsWith("/api/auth") &&
     !pathname.startsWith("/login") &&
@@ -54,10 +56,22 @@ export default async function RootLayout({
   }
 
   if (current && callerWorkspace) {
+    const remap = callerWorkspaceRedirect(pathname);
+    if (remap && remap !== pathname) {
+      redirect(remap);
+    }
     if (!isCallerAllowedPath(pathname)) {
       redirect("/unauthorized");
     }
   }
+
+  const dailyLogin =
+    current && callerWorkspace
+      ? await getDailyLoginDuration({
+          userId: current.session.user.id,
+          currentSessionId: current.session.user.sessionId || null,
+        }).catch(() => null)
+      : null;
 
   const user = current
     ? {
@@ -68,6 +82,8 @@ export default async function RootLayout({
         isStaff: staff,
         isCallerWorkspace: callerWorkspace,
         loginAt: current.session.user.loginAt,
+        priorLoginSecondsToday: dailyLogin?.priorSecondsToday ?? 0,
+        dayStartedAt: dailyLogin?.dayStartedAt,
       }
     : null;
 
@@ -80,7 +96,10 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+        suppressHydrationWarning
+      >
         <ThemeProvider>
           <ToastProvider>
             <AppShell user={user}>{children}</AppShell>

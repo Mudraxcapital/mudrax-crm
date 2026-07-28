@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   createNotificationTemplate,
@@ -8,11 +8,10 @@ import {
   listNotificationTemplates,
 } from "@/modules/notifications";
 
-export async function GET() {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (
     !hasPermission(current.authContext, "notification.template.manage") &&
     !hasPermission(current.authContext, "notification.view")
@@ -25,10 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "notification.template.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

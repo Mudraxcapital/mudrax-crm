@@ -6,6 +6,7 @@ import { LeadForm } from "@/modules/leads/presentation/components/LeadForm";
 import { createLeadAction } from "@/modules/leads/presentation/controllers/createLead.action";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
+import { pickDefaultLeadSource } from "@/modules/leads/domain/pickDefaultLeadSource";
 
 export default async function SingleLeadPage() {
   const { authContext } = await requirePermission("lead.create");
@@ -17,7 +18,7 @@ export default async function SingleLeadPage() {
   ]);
 
   const sources = excludeTestCatalogRows(sourcesRaw);
-  const defaultLeadSourceId = sources[0]?.id;
+  const defaultLeadSourceId = pickDefaultLeadSource(sources)?.id;
   const visibleIds = authContext.hierarchy.visibleUserIds;
   const assignees = visibleIds
     ? assigneesRaw.filter((user) => visibleIds.includes(user.id))

@@ -9,6 +9,7 @@ import { requirePermission } from "@/infra/auth/session";
 import {
   DuplicateDocumentCategoryNameError,
   DocumentCategoryNotFoundError,
+  getDocumentCategory,
   updateDocumentCategory,
   updateDocumentCategorySchema,
 } from "@/modules/documents";
@@ -19,7 +20,7 @@ export async function updateDocumentCategoryAction(
   _previousState: DocumentsFormState | undefined,
   formData: FormData,
 ): Promise<DocumentsFormState> {
-  const { session } = await requirePermission("document.category.manage");
+  const { session, authContext } = await requirePermission("document.category.manage");
 
   const parsed = updateDocumentCategorySchema.safeParse({
     name: formData.get("name") || undefined,
@@ -31,6 +32,10 @@ export async function updateDocumentCategoryAction(
   }
 
   try {
+    const existing = await getDocumentCategory(categoryId);
+    if (existing.organizationId !== authContext.organizationId) {
+      return { error: "Category not found or access denied." };
+    }
     await updateDocumentCategory({
       id: categoryId,
       input: parsed.data,

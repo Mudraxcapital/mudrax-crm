@@ -1,13 +1,25 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CallerWorkspaceLeadDto } from "../../application/dto/CallerWorkspaceDto";
-import type { LeadStage, LostReason } from "@/modules/leads";
+import type { LeadFieldDefinitionDto, LeadStage, LostReason } from "@/modules/leads";
+import {
+  filterCallerLeadStages,
+  findRingingStage,
+} from "../lib/filterCallerLeadStages";
+import { DynamicLeadFields } from "@/modules/leads/presentation/components/DynamicLeadFields";
 import { LeadClickToCallPanel } from "@/modules/leads/presentation/components/LeadClickToCallPanel";
 import { LeadNoteForm } from "@/modules/leads/presentation/components/LeadNoteForm";
 import { LeadStageForm } from "@/modules/leads/presentation/components/LeadStageForm";
 import { addLeadNoteAction } from "@/modules/leads/presentation/controllers/addLeadNote.action";
 import { changeLeadStageAction } from "@/modules/leads/presentation/controllers/changeLeadStage.action";
+import type { LeadFormState } from "@/modules/leads/presentation/controllers/createLead.action";
 import { FollowUpForm } from "@/modules/follow-ups/presentation/components/FollowUpForm";
+import { CompleteFollowUpForm } from "@/modules/follow-ups/presentation/components/CompleteFollowUpForm";
 import { createFollowUpAction } from "@/modules/follow-ups/presentation/controllers/createFollowUp.action";
+import { completeFollowUpAction } from "@/modules/follow-ups/presentation/controllers/completeFollowUp.action";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
@@ -19,30 +31,81 @@ export function CallWorkspaceView({
   agentUserId,
   stages,
   lostReasons,
+  fields,
+  callOutcomes: _callOutcomes,
   assignees,
   canCall,
   canUpdate,
+  canUpdateCall: _canUpdateCall,
   canCreateFollowUp,
+  canCompleteFollowUp,
   campaignId,
 }: {
   lead: CallerWorkspaceLeadDto;
   agentUserId: string;
   stages: LeadStage[];
   lostReasons: LostReason[];
+  fields: LeadFieldDefinitionDto[];
+  callOutcomes: { id: string; name: string }[];
   assignees: { id: string; fullName: string }[];
   canCall: boolean;
   canUpdate: boolean;
+  canUpdateCall: boolean;
   canCreateFollowUp: boolean;
+  canCompleteFollowUp: boolean;
   campaignId: string | null;
 }) {
+  void _callOutcomes;
+  void _canUpdateCall;
+  const router = useRouter();
   const qs = campaignId ? `?campaignId=${campaignId}` : "";
-  const boundChangeStage = changeLeadStageAction.bind(null, lead.id);
+  const [callStarted, setCallStarted] = useState(Boolean(lead.latestCallAttemptId));
+  const [ringingPending, setRingingPending] = useState(false);
+
+  const catalogStages = useMemo(() => excludeTestCatalogRows(stages), [stages]);
+  const stageOptions = useMemo(
+    () => filterCallerLeadStages(catalogStages, lead.currentStageId),
+    [catalogStages, lead.currentStageId],
+  );
+
+  const leadStatusUnlocked = callStarted || Boolean(lead.latestCallAttemptId);
   const boundAddNote = addLeadNoteAction.bind(null, lead.id);
   const boundCreateFollowUp = createFollowUpAction.bind(null, lead.id);
   const waHref = lead.phoneSnapshot
     ? `https://wa.me/${lead.phoneSnapshot.replace(/\D/g, "")}`
     : null;
   const smsHref = lead.phoneSnapshot ? `sms:${lead.phoneSnapshot}` : null;
+
+  async function applyRingingOnCall() {
+    const ringing = findRingingStage(catalogStages);
+    if (!ringing || ringing.id === lead.currentStageId) return;
+    setRingingPending(true);
+    try {
+      const formData = new FormData();
+      formData.set("stageId", ringing.id);
+      const result = await changeLeadStageAction(lead.id, undefined, formData);
+      if (!result.error) router.refresh();
+    } finally {
+      setRingingPending(false);
+    }
+  }
+
+  async function handleCallStarted() {
+    setCallStarted(true);
+    await applyRingingOnCall();
+  }
+
+  async function stageAction(
+    state: LeadFormState | undefined,
+    formData: FormData,
+  ): Promise<LeadFormState> {
+    if (!leadStatusUnlocked) {
+      return { error: "Click Call first — then you can update lead status." };
+    }
+    const result = await changeLeadStageAction(lead.id, state, formData);
+    if (!result.error) router.refresh();
+    return result;
+  }
 
   return (
     <PageSection>
@@ -63,7 +126,9 @@ export function CallWorkspaceView({
             <Link href={`/caller/leads/${lead.nextLeadId}${qs}`}>
               <Button variant="primary">Next Lead</Button>
             </Link>
-          ) : null
+          ) : (
+            <span className="text-muted text-sm">No more leads</span>
+          )
         }
       />
 
@@ -92,6 +157,10 @@ export function CallWorkspaceView({
                       customerId={lead.customerId}
                       phone={lead.phoneSnapshot}
                       agentUserId={agentUserId}
+                      returnPath={`/caller/leads/${lead.id}${qs}`}
+                      onCallStarted={() => {
+                        void handleCallStarted();
+                      }}
                     />
                   </div>
                 ) : null}
@@ -113,15 +182,32 @@ export function CallWorkspaceView({
             </CardBody>
           </Card>
 
+          <Card>
+            <CardHeader title="Lead Fields" description="Visible field settings" />
+            <CardBody>
+              <DynamicLeadFields fields={fields} values={lead.fieldValues} readOnly />
+            </CardBody>
+          </Card>
+
           {canUpdate ? (
             <Card>
-              <CardHeader title="Disposition" description="Update lead stage / outcome" />
+              <CardHeader
+                title="Lead Disposition"
+                description="Ringing · Interested · Follow-up · Lost"
+              />
               <CardBody>
                 <LeadStageForm
-                  action={boundChangeStage}
-                  stages={excludeTestCatalogRows(stages)}
+                  key={`${lead.id}:${lead.currentStageId}:${leadStatusUnlocked ? "open" : "locked"}`}
+                  action={stageAction}
+                  stages={stageOptions}
                   lostReasons={excludeTestCatalogRows(lostReasons)}
                   currentStageId={lead.currentStageId}
+                  disabled={!leadStatusUnlocked || ringingPending}
+                  disabledHint={
+                    leadStatusUnlocked
+                      ? undefined
+                      : "Click Call first — then you can update lead status."
+                  }
                 />
               </CardBody>
             </Card>
@@ -160,17 +246,27 @@ export function CallWorkspaceView({
                 {lead.followUps.length === 0 ? (
                   <li className="text-muted">No follow-ups.</li>
                 ) : (
-                  lead.followUps.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex justify-between gap-2 border-b border-border pb-2 last:border-0"
-                    >
-                      <span>{item.triggerType}</span>
-                      <span className="text-muted text-xs">
-                        {new Date(item.scheduledFor).toLocaleString()}
-                      </span>
-                    </li>
-                  ))
+                  lead.followUps.map((item) => {
+                    const isOpen = item.status !== "COMPLETED" && item.status !== "CANCELLED";
+                    const boundComplete = completeFollowUpAction.bind(null, lead.id, item.id);
+                    return (
+                      <li
+                        key={item.id}
+                        className="space-y-2 border-b border-border pb-2 last:border-0"
+                      >
+                        <div className="flex justify-between gap-2">
+                          <span>{item.triggerType}</span>
+                          <span className="text-muted text-xs">
+                            {new Date(item.scheduledFor).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-muted text-xs">{item.status}</p>
+                        {isOpen && canCompleteFollowUp ? (
+                          <CompleteFollowUpForm action={boundComplete} />
+                        ) : null}
+                      </li>
+                    );
+                  })
                 )}
               </ul>
             </CardBody>

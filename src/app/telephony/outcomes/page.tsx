@@ -1,9 +1,10 @@
-import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { listCallOutcomes } from "@/modules/telephony";
 import { CallOutcomeForm } from "@/modules/telephony/presentation/components/CallOutcomeForm";
 import { createCallOutcomeAction } from "@/modules/telephony/presentation/controllers/createCallOutcome.action";
 import { updateCallOutcomeAction } from "@/modules/telephony/presentation/controllers/updateCallOutcome.action";
+import { TabNav } from "@/shared/ui/Tabs";
+import { telephonyTabItems } from "../_lib/telephonyTabs";
 
 export default async function TelephonyOutcomesPage() {
   const { authContext } = await requirePermission("call.outcome.manage");
@@ -12,16 +13,14 @@ export default async function TelephonyOutcomesPage() {
 
   return (
     <div className="mx-page flex flex-col gap-6">
-      <Link href="/telephony" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
-        ← Telephony Dashboard
-      </Link>
-
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Call Outcomes</h1>
         <p className="text-muted mt-1 text-sm">
           The configurable business outcomes Agents record against a Call.
         </p>
       </div>
+
+      <TabNav activeHref="/telephony/outcomes" items={telephonyTabItems(authContext)} />
 
       <section className="mx-card p-5">
         <h2 className="text-sm font-medium">Add Outcome</h2>

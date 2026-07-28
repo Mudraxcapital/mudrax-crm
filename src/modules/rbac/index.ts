@@ -26,7 +26,13 @@ export {
   INTERNAL_STAFF_ROLES,
   ELEVATED_STAFF_ROLES,
 } from "./domain/entities/AuthorizationContext";
-export { FIXED_ROLES, type FixedRoleName } from "./domain/entities/FixedRoles";
+export {
+  FIXED_ROLES,
+  ASSIGNABLE_AGENT_ROLES,
+  isAssignableAgentRole,
+  type FixedRoleName,
+  type AssignableAgentRole,
+} from "./domain/entities/FixedRoles";
 export {
   DATA_SCOPES,
   widerScope,

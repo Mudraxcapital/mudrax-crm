@@ -30,23 +30,10 @@ async function truncateBestEffort(
   }
 }
 
-async function main(): Promise<void> {
-  const prisma = createSeedClient();
-
-  console.log("Mudrax CRM — reset business data (preserve users & RBAC)\n");
-
-  const before = {
-    users: await prisma.user.count(),
-    roles: await prisma.role.count(),
-    leads: await prisma.lead.count(),
-    campaigns: await prisma.campaign.count(),
-    customers: await prisma.customer.count(),
-    importBatches: await prisma.importBatch.count(),
-    followUps: await prisma.followUp.count(),
-  };
-  console.log("Before:", before);
-
-  section("Wiping downstream / transactional business data");
+/** Wipes transactional CRM data; preserves users, RBAC, org, and catalogs. */
+export async function wipeCrmBusinessData(
+  prisma: ReturnType<typeof createSeedClient>,
+): Promise<void> {
 
   // Core wipe path aligned with scripts/wipe-test-data.ts (proven against this schema).
   await prisma.$executeRawUnsafe(`
@@ -168,8 +155,6 @@ async function main(): Promise<void> {
     `,
   );
 
-  section("Wiping campaigns, leads, customers, import history");
-
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       campaigns.campaign_audit_log,
@@ -202,6 +187,28 @@ async function main(): Promise<void> {
       customers.customers
     CASCADE;
   `);
+}
+
+async function main(): Promise<void> {
+  const prisma = createSeedClient();
+
+  console.log("Mudrax CRM — reset business data (preserve users & RBAC)\n");
+
+  const before = {
+    users: await prisma.user.count(),
+    roles: await prisma.role.count(),
+    leads: await prisma.lead.count(),
+    campaigns: await prisma.campaign.count(),
+    customers: await prisma.customer.count(),
+    importBatches: await prisma.importBatch.count(),
+    followUps: await prisma.followUp.count(),
+  };
+  console.log("Before:", before);
+
+  section("Wiping downstream / transactional business data");
+  await wipeCrmBusinessData(prisma);
+
+  section("Wiping campaigns, leads, customers, import history");
 
   const after = {
     users: await prisma.user.count(),
@@ -231,8 +238,13 @@ async function main(): Promise<void> {
   await prisma.$disconnect();
 }
 
-main().catch(async (error: unknown) => {
-  console.error("\nCRM reset failed:");
-  console.error(error);
-  process.exit(1);
-});
+const isDirectRun =
+  (process.argv[1]?.replace(/\\/g, "/") ?? "").endsWith("reset-crm-data.ts");
+
+if (isDirectRun) {
+  main().catch(async (error: unknown) => {
+    console.error("\nCRM reset failed:");
+    console.error(error);
+    process.exit(1);
+  });
+}

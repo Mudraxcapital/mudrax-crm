@@ -1,28 +1,59 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import {
   CustomerMergeError,
   CustomerNotFoundError,
   detectDuplicates,
   dismissDuplicateCandidate,
   DuplicateCandidateNotFoundError,
+  getCustomer,
   InvalidCustomerStateError,
   mergeCustomers,
   mergeCustomersSchema,
 } from "@/modules/customers";
 import { requirePermission } from "@/infra/auth/session";
+import type { AuthorizationContext } from "@/modules/rbac";
+import { resolveCustomerListOptions } from "@/shared/auth/applyHierarchyListFilter";
+import { assertCanAccessCustomer } from "@/shared/auth/assertCanAccessCustomer";
 
 export type DuplicateFormState = { error?: string; success?: string };
 
-export async function detectDuplicatesAction(): Promise<void> {
-  const { authContext } = await requirePermission("customer.merge");
-  await detectDuplicates(authContext.organizationId);
-  revalidatePath("/customers/duplicates");
+async function visibleCustomerIds(authContext: AuthorizationContext) {
+  const options = await resolveCustomerListOptions(authContext);
+  return options.customerIds;
+}
+
+export async function detectDuplicatesAction(
+  prev: DuplicateFormState | undefined,
+  formData: FormData,
+): Promise<DuplicateFormState> {
+  void prev;
+  void formData;
+  try {
+    const { authContext } = await requirePermission("customer.duplicate.view");
+    const customerIds = await visibleCustomerIds(authContext);
+    const result = await detectDuplicates(authContext.organizationId, { customerIds });
+    revalidatePath("/customers/duplicates");
+    const created = result.created.length;
+    const existing = result.existing.length;
+    if (created === 0 && existing === 0) {
+      return { success: "No phone/email duplicates found." };
+    }
+    return {
+      success: `${created} new candidate${created === 1 ? "" : "s"} · ${existing} already listed.`,
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+    return {
+      error: error instanceof Error ? error.message : "Detection failed. Try again.",
+    };
+  }
 }
 
 export async function dismissDuplicateAction(candidateId: string): Promise<void> {
-  const { session, authContext } = await requirePermission("customer.merge");
+  const { session, authContext } = await requirePermission("customer.duplicate.view");
   try {
     await dismissDuplicateCandidate({
       organizationId: authContext.organizationId,
@@ -54,6 +85,13 @@ export async function mergeCustomersAction(
   }
 
   try {
+    const [survivor, mergedAway] = await Promise.all([
+      getCustomer(parsed.data.survivingCustomerId),
+      getCustomer(parsed.data.mergedAwayCustomerId),
+    ]);
+    await assertCanAccessCustomer(authContext, survivor);
+    await assertCanAccessCustomer(authContext, mergedAway);
+
     await mergeCustomers({
       organizationId: authContext.organizationId,
       input: parsed.data,

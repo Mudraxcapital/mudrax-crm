@@ -10,6 +10,7 @@ import {
   createDocumentVersion,
   createDocumentVersionSchema,
   DocumentNotFoundError,
+  getDocument,
 } from "@/modules/documents";
 import type { DocumentsFormState } from "./documentsFormState";
 
@@ -23,7 +24,7 @@ export async function createDocumentVersionAction(
   _previousState: DocumentsFormState | undefined,
   formData: FormData,
 ): Promise<DocumentsFormState> {
-  const { session } = await requirePermission("document.upload");
+  const { session, authContext } = await requirePermission("document.upload");
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -42,6 +43,10 @@ export async function createDocumentVersionAction(
   }
 
   try {
+    const existing = await getDocument(documentId);
+    if (existing.organizationId !== authContext.organizationId) {
+      return { error: "Document not found or access denied." };
+    }
     await createDocumentVersion({
       documentId,
       userId: session.user.id,

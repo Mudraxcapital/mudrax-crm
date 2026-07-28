@@ -30,6 +30,7 @@ export function toUser(row: PrismaUser): User {
     profilePhotoUrl: row.profilePhotoUrl,
     assignedTeamLeadId: row.assignedTeamLeadId,
     reportingManagerId: row.reportingManagerId,
+    canManageCallerAccounts: row.canManageCallerAccounts,
     currentTeamId: row.currentTeamId,
     currentBranchId: row.currentBranchId,
     currentDepartmentId: row.currentDepartmentId,
@@ -63,6 +64,7 @@ export function toUserScopeContext(row: PrismaUser): UserScopeContext {
     currentDepartmentId: row.currentDepartmentId,
     assignedTeamLeadId: row.assignedTeamLeadId,
     reportingManagerId: row.reportingManagerId,
+    canManageCallerAccounts: row.canManageCallerAccounts,
   };
 }
 

@@ -21,6 +21,7 @@ export interface LeadCatalogSeedResult {
 }
 
 const LEAD_SOURCES = [
+  "Data",
   "Website",
   "Facebook Ads",
   "Google Ads",
@@ -28,7 +29,6 @@ const LEAD_SOURCES = [
   "Walk-in",
   "Cold Call",
   "WhatsApp Inquiry",
-  "Bank Partner Referral",
 ];
 
 const LEAD_STAGES: {
@@ -40,13 +40,22 @@ const LEAD_STAGES: {
   { name: "Fresh", bucket: StageBucket.INITIAL, sortOrder: 1 },
   // Call went through but was not picked up — distinct from Contacted (answered).
   { name: "Ringing", bucket: StageBucket.ACTIVE, sortOrder: 2 },
-  { name: "Contacted", bucket: StageBucket.ACTIVE, sortOrder: 3 },
+  { name: "Just Curious", bucket: StageBucket.ACTIVE, sortOrder: 3 },
   { name: "Interested", bucket: StageBucket.ACTIVE, sortOrder: 4 },
-  { name: "Follow-up Scheduled", bucket: StageBucket.ACTIVE, sortOrder: 5 },
-  { name: "Documentation In Progress", bucket: StageBucket.ACTIVE, sortOrder: 6 },
-  { name: "Submitted to Bank", bucket: StageBucket.ACTIVE, sortOrder: 7 },
-  { name: "Won", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.WON, sortOrder: 8 },
-  { name: "Lost", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 9 },
+  { name: "Follow Up", bucket: StageBucket.ACTIVE, sortOrder: 5 },
+  { name: "Busy", bucket: StageBucket.ACTIVE, sortOrder: 6 },
+  { name: "Not Reachable", bucket: StageBucket.ACTIVE, sortOrder: 7 },
+  { name: "Callback Requested", bucket: StageBucket.ACTIVE, sortOrder: 8 },
+  { name: "Contacted", bucket: StageBucket.ACTIVE, sortOrder: 9 },
+  { name: "Follow-up Scheduled", bucket: StageBucket.ACTIVE, sortOrder: 10 },
+  { name: "Documentation In Progress", bucket: StageBucket.ACTIVE, sortOrder: 11 },
+  { name: "Submitted to Bank", bucket: StageBucket.ACTIVE, sortOrder: 12 },
+  { name: "Won", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.WON, sortOrder: 20 },
+  { name: "Lost", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 21 },
+  { name: "Duplicate", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 22 },
+  { name: "Invalid", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 23 },
+  { name: "No Need", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 24 },
+  { name: "Not Eligible", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 25 },
 ];
 
 const LOST_REASONS = [
@@ -56,6 +65,8 @@ const LOST_REASONS = [
   "Not Eligible",
   "Unreachable / No Response",
   "Duplicate Lead",
+  "No Need",
+  "Invalid Number",
 ];
 
 const CALL_FEEDBACK_STATUSES: { name: string; isConnected: boolean }[] = [

@@ -9,6 +9,7 @@ import {
   runReport,
   runReportSchema,
 } from "@/modules/reports";
+import { mergeReportHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 import type { ReportsFormState } from "./reportsFormState";
 
 export async function runReportAction(
@@ -37,7 +38,10 @@ export async function runReportAction(
   try {
     const execution = await runReport({
       organizationId: authContext.organizationId,
-      input: parsed.data,
+      input: {
+        ...parsed.data,
+        filter: mergeReportHierarchyFilter(authContext, parsed.data.filter),
+      },
       actor: { actorType: "USER", actorId: session.user.id },
     });
     revalidatePath("/reports");

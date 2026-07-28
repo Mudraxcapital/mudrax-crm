@@ -68,6 +68,7 @@ export const updateLeadFieldSchema = z.object({
   validationRules: leadFieldValidationRulesSchema.nullable().optional(),
   selectOptions: z.array(z.string().trim().min(1).max(150)).max(200).optional(),
   displayOrder: z.number().int().min(0).max(100000).optional(),
+  expectedUpdatedAt: z.string().min(1).optional(),
 });
 
 export const reorderLeadFieldsSchema = z.object({

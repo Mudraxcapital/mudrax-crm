@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   InvalidCustomerReferenceError,
@@ -12,29 +12,47 @@ import {
   sendNotification,
   sendNotificationSchema,
 } from "@/modules/notifications";
+import { notificationRecipientFilter } from "@/shared/auth/notificationRecipientFilter";
+
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "notification.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const url = new URL(request.url);
   const status = url.searchParams.get("status") ?? undefined;
-  const notifications = await listNotifications(current.authContext.organizationId, {
+  const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_PAGE_SIZE);
+  const offsetRaw = Number(url.searchParams.get("offset") ?? 0);
+  const limit = Number.isFinite(limitRaw)
+    ? Math.min(Math.max(1, Math.floor(limitRaw)), MAX_PAGE_SIZE)
+    : DEFAULT_PAGE_SIZE;
+  const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+  const filter = notificationRecipientFilter(current.authContext, {
+    permissionCode: "notification.view",
+    actorUserId: current.session.user.id,
     status: status as never,
+    limit,
+    offset,
   });
-  return NextResponse.json({ data: notifications });
+
+  const notifications = await listNotifications(
+    current.authContext.organizationId,
+    filter as Parameters<typeof listNotifications>[1],
+  );
+  return NextResponse.json({ data: notifications, meta: { limit, offset } });
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "notification.send")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

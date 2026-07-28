@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   CallAttemptNotFoundError,
@@ -16,16 +16,16 @@ import {
   updateCallAttemptStatus,
   updateCallAttemptStatusSchema,
 } from "@/modules/telephony";
+import { canAccessCall } from "@/shared/auth/assertCanAccessCall";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: RouteParams) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "call.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -33,6 +33,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   try {
     const call = await getCallAttempt(id);
+    if (!canAccessCall(current.authContext, call)) {
+      return NextResponse.json({ error: "Call not found or access denied." }, { status: 404 });
+    }
     return NextResponse.json({ data: call });
   } catch (error) {
     if (error instanceof CallAttemptNotFoundError) {
@@ -43,10 +46,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "call.update")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -62,6 +64,11 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
+    const existing = await getCallAttempt(id);
+    if (!canAccessCall(current.authContext, existing, { permissionCode: "call.update" })) {
+      return NextResponse.json({ error: "Call not found or access denied." }, { status: 404 });
+    }
+
     const call = await updateCallAttemptStatus({
       id,
       input: parsed.data,

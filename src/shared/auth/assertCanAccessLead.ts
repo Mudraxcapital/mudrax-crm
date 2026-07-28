@@ -42,12 +42,15 @@ export function canAccessLead(
     return false;
   }
 
-  if (
-    authContext.hierarchy.primaryRole === "Team Lead" &&
-    lead.ownerTeamLeadId &&
-    lead.ownerTeamLeadId !== authContext.hierarchy.teamLeadId
-  ) {
-    return false;
+  // Team Leads only see leads they own — null ownerTeamLeadId (Admin / Direct
+  // Admin book) must not leak through the Manager-book check alone.
+  if (authContext.hierarchy.primaryRole === "Team Lead") {
+    if (
+      !lead.ownerTeamLeadId ||
+      lead.ownerTeamLeadId !== authContext.hierarchy.teamLeadId
+    ) {
+      return false;
+    }
   }
 
   const permissionCode = options?.permissionCode ?? "lead.view";

@@ -23,6 +23,14 @@ function makeId(): string {
   return `00000000-0000-0000-0005-${String(nextId++).padStart(12, "0")}`;
 }
 
+function omitPaging(filter?: ListLeadsFilter): Omit<ListLeadsFilter, "limit" | "offset"> {
+  if (!filter) return {};
+  const rest = { ...filter };
+  delete rest.limit;
+  delete rest.offset;
+  return rest;
+}
+
 export class FakeLeadRepository implements LeadRepository {
   leads = new Map<string, Lead>();
   assignments = new Map<string, LeadAssignment[]>();
@@ -64,6 +72,16 @@ export class FakeLeadRepository implements LeadRepository {
           filter.assignedToUserIds!.includes(lead.currentAssigneeUserId),
       );
     }
+    if (filter?.teamLeadCustomerScope) {
+      const { teamLeadId, callerUserIds } = filter.teamLeadCustomerScope;
+      results = results.filter(
+        (lead) =>
+          lead.ownerTeamLeadId === teamLeadId ||
+          (lead.campaignId != null &&
+            lead.currentAssigneeUserId != null &&
+            callerUserIds.includes(lead.currentAssigneeUserId)),
+      );
+    }
     if (filter?.hasNextAction) {
       results = results.filter((lead) => lead.nextActionAt != null);
     }
@@ -76,6 +94,28 @@ export class FakeLeadRepository implements LeadRepository {
       results = results.filter(
         (lead) => lead.nextActionAt != null && lead.nextActionAt <= filter.nextActionTo!,
       );
+    }
+    if (filter?.currentAssignedAtFrom || filter?.currentAssignedAtTo) {
+      results = results.filter((lead) => {
+        const open = (this.assignments.get(lead.id) ?? []).find((a) => a.unassignedAt == null);
+        if (!open) return false;
+        if (
+          filter.assignedToUserIds &&
+          !filter.assignedToUserIds.includes(open.assignedToUserId)
+        ) {
+          return false;
+        }
+        if (
+          filter.currentAssignedAtFrom &&
+          open.assignedAt < filter.currentAssignedAtFrom
+        ) {
+          return false;
+        }
+        if (filter.currentAssignedAtTo && open.assignedAt > filter.currentAssignedAtTo) {
+          return false;
+        }
+        return true;
+      });
     }
     if (filter?.search) {
       const q = filter.search.toLowerCase();
@@ -109,8 +149,24 @@ export class FakeLeadRepository implements LeadRepository {
   }
 
   async count(organizationId: string, filter?: ListLeadsFilter): Promise<number> {
-    const { limit: _limit, offset: _offset, ...rest } = filter ?? {};
+    const rest = omitPaging(filter);
     return (await this.list(organizationId, rest)).length;
+  }
+
+  async countDistinctCustomers(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<number> {
+    const leads = await this.list(organizationId, omitPaging(filter));
+    return new Set(leads.map((lead) => lead.customerId)).size;
+  }
+
+  async listDistinctCustomerIds(
+    organizationId: string,
+    filter?: ListLeadsFilter,
+  ): Promise<string[]> {
+    const leads = await this.list(organizationId, omitPaging(filter));
+    return [...new Set(leads.map((lead) => lead.customerId))];
   }
 
   async countByStage(organizationId: string): Promise<{ stageId: string; count: number }[]> {

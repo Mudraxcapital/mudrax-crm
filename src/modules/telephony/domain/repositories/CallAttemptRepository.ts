@@ -54,6 +54,12 @@ export interface CallsByAgentEntry {
   count: number;
 }
 
+/** Agent scope for dashboard aggregations (Caller SELF / Team Lead tree). */
+export interface CallAgentScopeFilter {
+  agentUserId?: string;
+  agentUserIds?: string[];
+}
+
 export interface CallAttemptRepository {
   findById(id: string): Promise<CallAttempt | null>;
   list(organizationId: string, filter?: ListCallAttemptsFilter): Promise<CallAttempt[]>;
@@ -83,15 +89,21 @@ export interface CallAttemptRepository {
   countInRange(
     organizationId: string,
     range: { from: Date; to: Date },
-    filter?: { statuses?: CallStatus[] },
+    filter?: { statuses?: CallStatus[] } & CallAgentScopeFilter,
   ): Promise<number>;
   averageDurationInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: CallAgentScopeFilter,
   ): Promise<number | null>;
   countByAgentInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: CallAgentScopeFilter,
   ): Promise<CallsByAgentEntry[]>;
-  listRecent(organizationId: string, limit: number): Promise<CallAttempt[]>;
+  listRecent(
+    organizationId: string,
+    limit: number,
+    filter?: CallAgentScopeFilter,
+  ): Promise<CallAttempt[]>;
 }

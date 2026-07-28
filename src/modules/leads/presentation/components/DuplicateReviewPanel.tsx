@@ -5,7 +5,10 @@ import type {
   DuplicateDetectionSummary,
   DuplicateResolutionMode,
 } from "../../application/use-cases/detectImportDuplicates";
-import { buildDuplicateReportCsv } from "../../application/use-cases/detectImportDuplicates";
+import {
+  buildDuplicateReportCsv,
+  IN_FILE_DUPLICATE_STAGE_ID,
+} from "../../application/use-cases/detectImportDuplicates";
 
 function formatRelativeUpdate(iso: string | null): string {
   if (!iso) return "—";
@@ -123,7 +126,10 @@ export function DuplicateReviewPanel({
 
   function selectAllVisible() {
     const next = new Set(selectedStageIds);
-    for (const group of filteredGroups) next.add(group.stageId);
+    for (const group of filteredGroups) {
+      if (group.stageId === IN_FILE_DUPLICATE_STAGE_ID) continue;
+      next.add(group.stageId);
+    }
     onSelectedStageIdsChange([...next]);
   }
 
@@ -162,15 +168,21 @@ export function DuplicateReviewPanel({
         </button>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
         <div className="rounded-lg border border-border p-3">
           <dt className="text-muted">Excel Rows</dt>
           <dd className="text-lg font-semibold tabular-nums">{summary.totalRows}</dd>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <dt className="text-muted">Already Existing</dt>
+          <dt className="text-muted">Already in CRM</dt>
           <dd className="text-lg font-semibold text-danger tabular-nums">
             {summary.alreadyExisting}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <dt className="text-muted">Duplicate in Excel</dt>
+          <dd className="text-lg font-semibold tabular-nums">
+            {summary.inFileDuplicateCount}
           </dd>
         </div>
         <div className="rounded-lg border border-border p-3">
@@ -226,6 +238,7 @@ export function DuplicateReviewPanel({
         <ul className="divide-y divide-border">
           {filteredGroups.map((group) => {
             const isOpen = Boolean(expanded[group.stageId]);
+            const isInFileGroup = group.stageId === IN_FILE_DUPLICATE_STAGE_ID;
             return (
               <li key={group.stageId} className="px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -235,7 +248,7 @@ export function DuplicateReviewPanel({
                       className="mt-1"
                       checked={selectedSet.has(group.stageId)}
                       onChange={() => toggleStage(group.stageId)}
-                      disabled={!needsStatuses && group.count === 0}
+                      disabled={isInFileGroup || (!needsStatuses && group.count === 0)}
                     />
                     <span className="min-w-0">
                       <span className="font-medium">
@@ -243,8 +256,9 @@ export function DuplicateReviewPanel({
                         <span className="text-muted font-normal">({group.count})</span>
                       </span>
                       <span className="text-muted mt-1 block text-xs">
-                        {group.count} lead{group.count === 1 ? "" : "s"} · Last updated{" "}
-                        {formatRelativeUpdate(group.latestUpdatedAt)}
+                        {isInFileGroup
+                          ? `${group.count} repeated row${group.count === 1 ? "" : "s"} inside this Excel file`
+                          : `${group.count} lead${group.count === 1 ? "" : "s"} already in CRM · Last updated ${formatRelativeUpdate(group.latestUpdatedAt)}`}
                       </span>
                     </span>
                   </label>
@@ -271,7 +285,9 @@ export function DuplicateReviewPanel({
                           <th className="px-3 py-2 font-medium">Name</th>
                           <th className="px-3 py-2 font-medium">Phone</th>
                           <th className="px-3 py-2 font-medium">Match</th>
-                          <th className="px-3 py-2 font-medium">Last modified</th>
+                          <th className="px-3 py-2 font-medium">
+                            {isInFileGroup ? "Note" : "Last modified"}
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -282,7 +298,9 @@ export function DuplicateReviewPanel({
                             <td className="px-3 py-2">{row.phone || "—"}</td>
                             <td className="px-3 py-2">{row.matchReason || "—"}</td>
                             <td className="px-3 py-2">
-                              {formatRelativeUpdate(row.existingUpdatedAt)}
+                              {isInFileGroup
+                                ? "Same phone/email earlier in this file"
+                                : formatRelativeUpdate(row.existingUpdatedAt)}
                             </td>
                           </tr>
                         ))}
@@ -348,7 +366,7 @@ export function DuplicateReviewPanel({
               `${baseName}-all-duplicates.csv`,
             )
           }
-          disabled={summary.alreadyExisting === 0}
+          disabled={summary.alreadyExisting === 0 && summary.inFileDuplicateCount === 0}
         >
           Download All Duplicates
         </button>
@@ -363,7 +381,7 @@ export function DuplicateReviewPanel({
               );
             downloadCsv(parts.join("\n\n"), `${baseName}-status-wise-duplicates.csv`);
           }}
-          disabled={summary.alreadyExisting === 0}
+          disabled={summary.alreadyExisting === 0 && summary.inFileDuplicateCount === 0}
         >
           Download Status Wise
         </button>

@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { requirePermission } from "@/infra/auth/session";
+import { redirect } from "next/navigation";
+import { requireAuth } from "@/infra/auth/session";
+import { hasPermission } from "@/modules/rbac";
 import { getTelephonyDashboard } from "@/modules/telephony";
+import { agentHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { BarList } from "@/shared/ui/Charts";
@@ -8,38 +11,48 @@ import { Button } from "@/shared/ui/Button";
 import { Badge, statusTone } from "@/shared/ui/Badge";
 import { TabNav } from "@/shared/ui/Tabs";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { telephonyTabItems } from "./_lib/telephonyTabs";
 
 export default async function TelephonyDashboardPage() {
-  const { authContext } = await requirePermission("telephony.dashboard.view");
-  const dashboard = await getTelephonyDashboard(authContext.organizationId);
+  const { authContext } = await requireAuth();
+  if (!hasPermission(authContext, "telephony.dashboard.view")) {
+    if (hasPermission(authContext, "call.view")) {
+      redirect("/telephony/calls");
+    }
+    redirect("/unauthorized");
+  }
+
+  const agentScope = agentHierarchyFilter(authContext);
+  const dashboard = await getTelephonyDashboard(
+    authContext.organizationId,
+    new Date(),
+    agentScope,
+  );
 
   const averageDurationLabel =
     dashboard.averageCallDurationSeconds !== null
       ? `${Math.floor(dashboard.averageCallDurationSeconds / 60)}m ${dashboard.averageCallDurationSeconds % 60}s`
       : "—";
 
+  const isSelfScoped = Boolean(agentScope.agentUserId);
+
   return (
     <PageSection>
       <PageHeader
-        title="Telephony"
-        description="Operational overview of today’s call activity."
+        title="Call Logs"
+        description={
+          isSelfScoped
+            ? "Your call activity for today. Day-to-day calling happens from the Campaign Dashboard."
+            : "Historical call activity. Day-to-day calling happens from the Campaign Dashboard."
+        }
         actions={
           <Link href="/telephony/calls">
-            <Button>All calls</Button>
+            <Button>{isSelfScoped ? "My calls" : "All calls"}</Button>
           </Link>
         }
       />
 
-      <TabNav
-        activeHref="/telephony"
-        items={[
-          { href: "/telephony", label: "Overview" },
-          { href: "/telephony/calls", label: "Calls" },
-          { href: "/telephony/missed-calls", label: "Missed" },
-          { href: "/telephony/agent-sessions", label: "Agents" },
-          { href: "/telephony/outcomes", label: "Outcomes" },
-        ]}
-      />
+      <TabNav activeHref="/telephony" items={telephonyTabItems(authContext)} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Calls today" value={dashboard.callsToday} />
@@ -49,22 +62,24 @@ export default async function TelephonyDashboardPage() {
       </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Calls by agent" />
-          <CardBody>
-            <BarList
-              data={dashboard.callsByAgent.map((entry) => ({
-                key: entry.agentUserId ?? "unassigned",
-                label: entry.agentName,
-                value: entry.count,
-              }))}
-            />
-          </CardBody>
-        </Card>
+        {!isSelfScoped ? (
+          <Card>
+            <CardHeader title="Calls by agent" />
+            <CardBody>
+              <BarList
+                data={dashboard.callsByAgent.map((entry) => ({
+                  key: entry.agentUserId ?? "unassigned",
+                  label: entry.agentName,
+                  value: entry.count,
+                }))}
+              />
+            </CardBody>
+          </Card>
+        ) : null}
 
-        <Card>
+        <Card className={isSelfScoped ? "lg:col-span-2" : undefined}>
           <CardHeader
-            title="Recent calls"
+            title={isSelfScoped ? "My recent calls" : "Recent calls"}
             actions={
               <Link href="/telephony/calls">
                 <Button variant="ghost" size="sm">

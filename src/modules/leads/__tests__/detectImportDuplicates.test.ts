@@ -27,6 +27,33 @@ describe("classifyImportDuplicates", () => {
     { id: "stage-lost", name: "Lost", sortOrder: 9, isActive: true },
   ];
 
+  it("keeps the first phone in the file and marks later rows as duplicates", () => {
+    const result = classifyImportDuplicates({
+      matchMode: "phone",
+      existingLeads: [],
+      stages,
+      rows: [
+        { rowNumber: 1, name: "First", phone: "9876543210", email: "" },
+        { rowNumber: 2, name: "Second", phone: "9876543210", email: "" },
+        { rowNumber: 3, name: "Third", phone: "+91 98765 43210", email: "" },
+        { rowNumber: 4, name: "Other", phone: "9000000000", email: "" },
+      ],
+    });
+    expect(result.newLeadCount).toBe(2);
+    expect(result.exactDuplicates).toHaveLength(2);
+    expect(result.alreadyExisting).toBe(0);
+    expect(result.inFileDuplicateCount).toBe(2);
+    expect(result.exactDuplicates.every((row) => row.origin === "file")).toBe(true);
+    expect(result.exactDuplicates.every((row) => row.matchReason === "Phone (duplicate in file)")).toBe(
+      true,
+    );
+    expect(result.newLeads[0]?.rowNumber).toBe(1);
+    expect(result.newLeads[1]?.rowNumber).toBe(4);
+    const inFileGroup = result.statusGroups.find((group) => group.stageName === "Duplicate in Excel");
+    expect(inFileGroup?.count).toBe(2);
+    expect(result.statusGroups.some((group) => /unknown/i.test(group.stageName))).toBe(false);
+  });
+
   it("classifies exact phone matches", () => {
     const result = classifyImportDuplicates({
       matchMode: "phone",
@@ -40,9 +67,36 @@ describe("classifyImportDuplicates", () => {
     expect(result.exactDuplicates).toHaveLength(1);
     expect(result.newLeads).toHaveLength(1);
     expect(result.exactDuplicates[0]?.matchReason).toBe("Phone");
+    expect(result.exactDuplicates[0]?.origin).toBe("crm");
     expect(result.alreadyExisting).toBe(1);
+    expect(result.inFileDuplicateCount).toBe(0);
     expect(result.newLeadCount).toBe(1);
     expect(result.matchLabel).toBe("Phone Number");
+  });
+
+  it("separates CRM duplicates from in-file duplicates in counts and status groups", () => {
+    const result = classifyImportDuplicates({
+      matchMode: "phone",
+      existingLeads: existing,
+      stages,
+      rows: [
+        { rowNumber: 1, name: "Rahul", phone: "9876543210", email: "" },
+        { rowNumber: 2, name: "Copy in CRM phone", phone: "9876543210", email: "" },
+        { rowNumber: 3, name: "New", phone: "9000000001", email: "" },
+        { rowNumber: 4, name: "New again", phone: "9000000001", email: "" },
+      ],
+    });
+    // Rows 1–2 match CRM; row 4 repeats row 3 inside the file only.
+    expect(result.alreadyExisting).toBe(2);
+    expect(result.inFileDuplicateCount).toBe(1);
+    expect(result.newLeadCount).toBe(1);
+    expect(result.crmDuplicates).toHaveLength(2);
+    expect(result.inFileDuplicates).toHaveLength(1);
+    expect(result.inFileDuplicates[0]?.rowNumber).toBe(4);
+    const ringing = result.statusGroups.find((group) => group.stageId === "stage-ringing");
+    const inFile = result.statusGroups.find((group) => group.stageName === "Duplicate in Excel");
+    expect(ringing?.count).toBe(2);
+    expect(inFile?.count).toBe(1);
   });
 
   it("groups duplicates by CRM lead status dynamically", () => {

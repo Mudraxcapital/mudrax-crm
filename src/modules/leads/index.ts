@@ -16,9 +16,11 @@ import { makeUpdateLead } from "./application/use-cases/updateLead";
 import { makeChangeLeadStage } from "./application/use-cases/changeLeadStage";
 import { makeAssignLead } from "./application/use-cases/assignLead";
 import {
+  makeCountLeadCustomers,
   makeCountLeads,
   makeGetLead,
   makeGetLeadsByIds,
+  makeListDistinctCustomerIds,
   makeListLeads,
   makeListLeadsByCustomer,
 } from "./application/use-cases/getLead";
@@ -54,6 +56,7 @@ import {
   classifyImportDuplicates,
   DUPLICATE_MATCH_LABELS,
   groupDuplicatesByStage,
+  IN_FILE_DUPLICATE_STAGE_ID,
 } from "./application/use-cases/detectImportDuplicates";
 import { previewLeadDistribution } from "./application/use-cases/previewLeadDistribution";
 import {
@@ -117,6 +120,7 @@ export {
   LeadFieldNotFoundError,
   LeadFieldKeyConflictError,
   LeadFieldNameConflictError,
+  LeadFieldStaleEditError,
   ProtectedLeadFieldError,
   LeadFieldValidationError,
 } from "./domain/errors/LeadFieldErrors";
@@ -207,6 +211,7 @@ export type {
   DuplicateDetectionSummary,
   DuplicateClassification,
   DuplicateStatusGroup,
+  DuplicateOrigin,
 } from "./application/use-cases/detectImportDuplicates";
 export type {
   ImportDistributionStrategy,
@@ -218,6 +223,7 @@ export {
   classifyImportDuplicates,
   groupDuplicatesByStage,
   DUPLICATE_MATCH_LABELS,
+  IN_FILE_DUPLICATE_STAGE_ID,
   previewLeadDistribution,
 };
 export {
@@ -269,6 +275,8 @@ export const listLeadsByCustomer = makeListLeadsByCustomer(
   leadFieldRepository,
 );
 export const countLeads = makeCountLeads(leadRepository);
+export const countLeadCustomers = makeCountLeadCustomers(leadRepository);
+export const listDistinctCustomerIds = makeListDistinctCustomerIds(leadRepository);
 export const listLeadAssignmentHistory = makeListLeadAssignmentHistory(leadRepository);
 export const listLeadAuditLog = makeListLeadAuditLog(leadRepository);
 export const listRecentLeadActivity = makeListRecentLeadActivity(leadRepository);
@@ -333,6 +341,8 @@ export const repointLeadsCustomer = makeRepointLeadsCustomer(leadRepository);
 export const leadCatalogs = {
   listStages: (organizationId: string) => leadCatalogRepository.listStages(organizationId),
   listSources: (organizationId: string) => leadCatalogRepository.listSources(organizationId),
+  findDefaultSource: (organizationId: string) =>
+    leadCatalogRepository.findDefaultSource(organizationId),
   listLostReasons: (organizationId: string) =>
     leadCatalogRepository.listLostReasons(organizationId),
 };

@@ -10,6 +10,7 @@ import {
   DocumentCategoryNotFoundError,
   DocumentTypeNotFoundError,
   DuplicateDocumentTypeNameError,
+  getDocumentType,
   updateDocumentType,
   updateDocumentTypeSchema,
 } from "@/modules/documents";
@@ -20,7 +21,7 @@ export async function updateDocumentTypeAction(
   _previousState: DocumentsFormState | undefined,
   formData: FormData,
 ): Promise<DocumentsFormState> {
-  const { session } = await requirePermission("document.category.manage");
+  const { session, authContext } = await requirePermission("document.category.manage");
 
   const parsed = updateDocumentTypeSchema.safeParse({
     documentCategoryId: formData.get("documentCategoryId") || undefined,
@@ -33,6 +34,10 @@ export async function updateDocumentTypeAction(
   }
 
   try {
+    const existing = await getDocumentType(documentTypeId);
+    if (existing.organizationId !== authContext.organizationId) {
+      return { error: "Document type not found or access denied." };
+    }
     await updateDocumentType({
       id: documentTypeId,
       input: parsed.data,

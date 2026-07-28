@@ -2,6 +2,10 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { FIXED_USER_ROLES, USER_STATUSES } from "../../domain/entities/User";
+import {
+  DIRECT_ADMIN_REASSIGN_LABEL,
+  REASSIGN_CALLERS_TO_DIRECT_ADMIN,
+} from "../constants/callerReassignment";
 import type { UserDto } from "../../application/dto/UserDto";
 import type { UserFormState } from "../controllers/updateUser.action";
 import type { HierarchyOption } from "./UserForm";
@@ -17,6 +21,7 @@ export function EditUserForm({
   leadAssigneeOptions = [],
   allowAdminRole,
   allowedRoles,
+  allowGrantCallerLifecycle = false,
   isSelf = false,
   callerCount = 0,
   teamLeadCount = 0,
@@ -29,6 +34,7 @@ export function EditUserForm({
   leadAssigneeOptions?: { id: string; fullName: string; roleName: string | null }[];
   allowAdminRole: boolean;
   allowedRoles?: readonly string[];
+  allowGrantCallerLifecycle?: boolean;
   isSelf?: boolean;
   callerCount?: number;
   teamLeadCount?: number;
@@ -72,6 +78,7 @@ export function EditUserForm({
             id="fullName"
             name="fullName"
             required
+            maxLength={200}
             defaultValue={user.fullName}
             className={inputClass}
           />
@@ -197,6 +204,23 @@ export function EditUserForm({
         </Field>
       ) : null}
 
+      {!isSelf && allowGrantCallerLifecycle && role === "Team Lead" ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="canManageCallerAccounts"
+            defaultChecked={user.canManageCallerAccounts}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Caller account management</span>
+            <span className="text-muted block text-xs">
+              Allow this Team Lead to delete, disable, or suspend their assigned Callers.
+            </span>
+          </span>
+        </label>
+      ) : null}
+
       {demotingTeamLead ? (
         <Field label="Reassign Callers to *" htmlFor="reassignCallersToTeamLeadId">
           <select
@@ -207,6 +231,11 @@ export function EditUserForm({
             defaultValue=""
           >
             <option value="">Select Team Lead…</option>
+            {allowAdminRole ? (
+              <option value={REASSIGN_CALLERS_TO_DIRECT_ADMIN}>
+                {DIRECT_ADMIN_REASSIGN_LABEL}
+              </option>
+            ) : null}
             {teamLeads
               .filter((lead) => lead.id !== user.id)
               .map((lead) => (

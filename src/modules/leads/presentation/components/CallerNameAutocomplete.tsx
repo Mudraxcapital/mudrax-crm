@@ -44,8 +44,8 @@ export function CallerNameAutocomplete({
           setQuery(event.target.value);
           setSelectedId("");
         }}
-        placeholder="Caller name…"
-        aria-label="Caller name"
+        placeholder="Agent name…"
+        aria-label="Assigned agent name"
         autoComplete="off"
         list="caller-name-suggestions"
       />

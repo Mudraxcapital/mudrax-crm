@@ -59,6 +59,12 @@ const paths: Record<NavIcon, ReactNode> = {
       <path d="M7.5 8v4.5l2-1.2" />
     </>
   ),
+  "lead-center": (
+    <>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M5 6.5h6M5 9.5h4" />
+    </>
+  ),
   telephony: (
     <>
       <path d="M4.5 2.5h2l1 3-1.5 1.2a8 8 0 004.3 4.3L11.5 9.5l3 1v2a1.5 1.5 0 01-1.5 1.5A10.5 10.5 0 013 4A1.5 1.5 0 014.5 2.5z" />
@@ -97,6 +103,14 @@ const paths: Record<NavIcon, ReactNode> = {
     <>
       <circle cx="8" cy="8" r="2" />
       <path d="M8 2.5v1.5M8 12v1.5M2.5 8H4M12 8h1.5M4 4l1 1M11 11l1 1M4 12l1-1M11 5l1-1" />
+    </>
+  ),
+  integrations: (
+    <>
+      <circle cx="5" cy="5" r="2" />
+      <circle cx="11" cy="5" r="2" />
+      <circle cx="8" cy="11" r="2" />
+      <path d="M6.5 6.2L7.2 9.2M9.5 6.2L8.8 9.2M7 5h2" />
     </>
   ),
   admin: (

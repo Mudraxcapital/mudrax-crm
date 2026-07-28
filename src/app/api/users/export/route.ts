@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission, hasRole } from "@/modules/rbac";
 import { AdminRoleProtectedError, exportUsers } from "@/modules/users";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.view")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

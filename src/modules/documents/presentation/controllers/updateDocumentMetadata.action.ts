@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
 import {
   DocumentNotFoundError,
+  getDocument,
   InvalidDocumentTypeReferenceError,
   updateDocumentMetadata,
   updateDocumentMetadataSchema,
@@ -19,7 +20,7 @@ export async function updateDocumentMetadataAction(
   _previousState: DocumentsFormState | undefined,
   formData: FormData,
 ): Promise<DocumentsFormState> {
-  const { session } = await requirePermission("document.upload");
+  const { session, authContext } = await requirePermission("document.upload");
 
   const parsed = updateDocumentMetadataSchema.safeParse({
     documentTypeId: formData.get("documentTypeId") || undefined,
@@ -30,6 +31,10 @@ export async function updateDocumentMetadataAction(
   }
 
   try {
+    const existing = await getDocument(documentId);
+    if (existing.organizationId !== authContext.organizationId) {
+      return { error: "Document not found or access denied." };
+    }
     await updateDocumentMetadata({
       id: documentId,
       input: parsed.data,

@@ -30,6 +30,7 @@ export async function uploadProfilePhotoAction(
     const bytes = Buffer.from(await file.arrayBuffer());
     await updateProfilePhoto({
       userId,
+      organizationId: authContext.organizationId,
       file: {
         bytes,
         contentType: file.type || "image/jpeg",
@@ -61,6 +62,7 @@ export async function removeProfilePhotoAction(userId: string): Promise<ProfileP
   try {
     await updateProfilePhoto({
       userId,
+      organizationId: authContext.organizationId,
       file: null,
       remove: true,
       actorRoles: authContext.roles.map((role) => role.name),

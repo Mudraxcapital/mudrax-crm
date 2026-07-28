@@ -24,7 +24,7 @@ export default async function CallerMyCampaignsPage() {
   return (
     <PageSection>
       <PageHeader
-        title="My Campaigns"
+        title="Campaigns"
         description="Campaigns you are an active member of. Switch from the dashboard selector anytime."
       />
 
@@ -53,7 +53,7 @@ export default async function CallerMyCampaignsPage() {
                   leads assigned to you
                 </p>
                 <div className="flex gap-2">
-                  <Link href={`/?campaignId=${campaign.id}`}>
+                  <Link href={`/campaigns/${campaign.id}/dashboard`}>
                     <Button variant="secondary" size="sm">
                       Dashboard
                     </Button>

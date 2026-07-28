@@ -21,6 +21,7 @@ export function makeUpdateProfilePhoto(
 ) {
   return async function updateProfilePhoto(input: {
     userId: string;
+    organizationId: string;
     file: { bytes: Buffer; contentType: string; fileName: string } | null;
     remove?: boolean;
     actorRoles: string[];
@@ -75,7 +76,7 @@ export function makeUpdateProfilePhoto(
           : "jpg";
     const relativeKey = `profile-photos/${input.userId}-${Date.now()}.${ext}`;
     const stored = await storage.store({
-      organizationId: "mudrax",
+      organizationId: input.organizationId,
       relativeKey,
       content: input.file.bytes,
       mimeType: input.file.contentType,

@@ -21,7 +21,7 @@ export async function updateOwnProfileAction(
   _state: ProfileFormState | undefined,
   formData: FormData,
 ): Promise<ProfileFormState> {
-  const { session, authContext } = await requireAuth();
+  const { session } = await requireAuth();
   const parsed = updateOwnProfileSchema.safeParse({
     fullName: formData.get("fullName"),
     phone: formData.get("phone"),
@@ -61,6 +61,7 @@ export async function uploadOwnProfilePhotoAction(
     const bytes = Buffer.from(await file.arrayBuffer());
     await updateProfilePhoto({
       userId: session.user.id,
+      organizationId: authContext.organizationId,
       file: {
         bytes,
         contentType: file.type || "image/jpeg",
@@ -84,14 +85,16 @@ export async function uploadOwnProfilePhotoAction(
 
   revalidatePath("/profile");
   revalidatePath("/caller/profile");
+  revalidatePath("/users");
   return { success: "Profile photo updated." };
 }
 
-export async function removeOwnProfilePhotoAction(): Promise<void> {
+export async function removeOwnProfilePhotoAction(): Promise<ProfileFormState> {
   const { session, authContext } = await requireAuth();
   try {
     await updateProfilePhoto({
       userId: session.user.id,
+      organizationId: authContext.organizationId,
       file: null,
       remove: true,
       selfService: true,
@@ -105,10 +108,12 @@ export async function removeOwnProfilePhotoAction(): Promise<void> {
       error instanceof UserNotFoundError ||
       error instanceof InvalidUserHierarchyError
     ) {
-      return;
+      return { error: error.message };
     }
     throw error;
   }
   revalidatePath("/profile");
   revalidatePath("/caller/profile");
+  revalidatePath("/users");
+  return { success: "Profile photo removed." };
 }

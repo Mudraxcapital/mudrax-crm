@@ -41,7 +41,30 @@ export class PrismaLeadCatalogRepository implements LeadCatalogRepository {
       where: { organizationId },
       orderBy: { name: "asc" },
     });
-    return rows.map(toLeadSource);
+    const sources = rows.map(toLeadSource);
+    const dataIndex = sources.findIndex(
+      (source) => source.name.trim().toLowerCase() === "data",
+    );
+    if (dataIndex <= 0) return sources;
+    const [dataSource] = sources.splice(dataIndex, 1);
+    return dataSource ? [dataSource, ...sources] : sources;
+  }
+
+  async findDefaultSource(organizationId: string): Promise<LeadSource | null> {
+    const dataSource = await this.prisma.leadSource.findFirst({
+      where: {
+        organizationId,
+        isActive: true,
+        name: { equals: "Data", mode: "insensitive" },
+      },
+    });
+    if (dataSource) return toLeadSource(dataSource);
+
+    const fallback = await this.prisma.leadSource.findFirst({
+      where: { organizationId, isActive: true },
+      orderBy: { name: "asc" },
+    });
+    return fallback ? toLeadSource(fallback) : null;
   }
 
   async findLostReasonById(id: string): Promise<LostReason | null> {

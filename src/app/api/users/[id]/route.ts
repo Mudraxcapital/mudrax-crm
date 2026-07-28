@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser, type ApiAuthResult } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
   CannotDeleteSelfError,
+  canDeleteUserAccounts,
   deleteUser,
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
@@ -16,7 +17,9 @@ import {
   UserNotFoundError,
 } from "@/modules/users";
 
-function accessFrom(current: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
+type Authed = Extract<ApiAuthResult, { ok: true }>["current"];
+
+function accessFrom(current: Authed) {
   return {
     hierarchy: current.authContext.hierarchy,
     actorRoles: current.authContext.roles.map((role) => role.name),
@@ -25,11 +28,12 @@ function accessFrom(current: NonNullable<Awaited<ReturnType<typeof getCurrentUse
 }
 
 export async function GET(
-  _request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current || !hasPermission(current.authContext, "user.view")) {
+  request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+  if (!hasPermission(current.authContext, "user.view")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -50,10 +54,11 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current || !hasPermission(current.authContext, "user.manage")) {
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+  if (!hasPermission(current.authContext, "user.manage")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -97,10 +102,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current || !hasPermission(current.authContext, "user.delete")) {
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+  if (!canDeleteUserAccounts(current.authContext)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

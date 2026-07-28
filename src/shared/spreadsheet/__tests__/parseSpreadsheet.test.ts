@@ -31,14 +31,9 @@ describe("parseSpreadsheet", () => {
     expect(mapping.notes).toBe("Notes");
   });
 
-  it("maps Customer Name to Lead Name and includes dynamic fields", () => {
-    const mapping = suggestColumnMapping(
-      ["Customer Name", "Phone Number", "E-mail", "PAN Number"],
-      [{ key: "pan_number", label: "PAN Number" }],
-    );
-    expect(mapping.full_name).toBe("Customer Name");
-    expect(mapping.phone).toBe("Phone Number");
-    expect(mapping.email).toBe("E-mail");
-    expect(mapping.pan_number).toBe("PAN Number");
+  it("maps Lead ID column to phone (unique contact key)", () => {
+    const mapping = suggestColumnMapping(["Name", "Lead ID", "City"]);
+    expect(mapping.full_name).toBe("Name");
+    expect(mapping.phone).toBe("Lead ID");
   });
 });

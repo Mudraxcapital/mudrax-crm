@@ -118,7 +118,8 @@ export function makeUserAuthUseCases(repository: UserRepository) {
      * Compatibility signature — `organizationId` is ignored (single-company).
      * Call sites across CRM/Campaigns keep compiling unchanged.
      */
-    async listUserSummaries(_organizationId?: string): Promise<UserSummary[]> {
+    async listUserSummaries(organizationId?: string): Promise<UserSummary[]> {
+      void organizationId;
       return repository.listSummaries();
     },
   };

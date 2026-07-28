@@ -29,6 +29,7 @@ export interface UserDto {
   roleName: string | null;
   assignedTeamLeadName: string | null;
   reportingManagerName: string | null;
+  canManageCallerAccounts: boolean;
   /** Optional — only populated when explicitly requested (admin diagnostics). */
   permissions?: string[];
 }
@@ -115,6 +116,7 @@ export function toUserDto(
     roleName: extras.roleName,
     assignedTeamLeadName: extras.assignedTeamLeadName ?? null,
     reportingManagerName: extras.reportingManagerName ?? null,
+    canManageCallerAccounts: user.canManageCallerAccounts,
     ...(extras.permissions ? { permissions: extras.permissions } : {}),
   };
 }

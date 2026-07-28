@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
+import { hasPermission } from "@/modules/rbac";
 import {
   callerLeaderboardQuerySchema,
   getCallerLeaderboard,
@@ -13,7 +14,7 @@ import { Card, CardBody, CardHeader, StatCard } from "@/shared/ui/Card";
 import { TabNav } from "@/shared/ui/Tabs";
 import { Button } from "@/shared/ui/Button";
 
-const REPORT_TABS = [
+const BASE_REPORT_TABS = [
   { href: "/reports", label: "Overview" },
   { href: "/reports/leads", label: "Leads" },
   { href: "/reports/customers", label: "Customers" },
@@ -22,8 +23,6 @@ const REPORT_TABS = [
   { href: "/reports/caller-leaderboard", label: "Caller Leaderboard" },
   { href: "/reports/documents", label: "Documents" },
   { href: "/reports/notifications", label: "Notifications" },
-  { href: "/reports/saved", label: "Saved" },
-  { href: "/reports/dashboards", label: "Dashboards" },
 ];
 
 const HIGHLIGHT_ICONS: Record<string, string> = {
@@ -43,6 +42,15 @@ export default async function CallerLeaderboardPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { authContext } = await requirePermission("report.view");
+  const canManage = hasPermission(authContext, "report.manage");
+  const canManageDashboards = hasPermission(authContext, "dashboard.manage");
+  const reportTabs = [
+    ...BASE_REPORT_TABS,
+    ...(canManage ? [{ href: "/reports/saved", label: "Saved" }] : []),
+    ...(canManageDashboards
+      ? [{ href: "/reports/dashboards", label: "Dashboards" }]
+      : []),
+  ];
   const query = await searchParams;
 
   const parsed = callerLeaderboardQuerySchema.safeParse({
@@ -53,12 +61,15 @@ export default async function CallerLeaderboardPage({
     teamLeadId: optionalParam(query.teamLeadId),
     callerId: optionalParam(query.callerId),
     stageId: optionalParam(query.stageId),
-    sortBy: optionalParam(query.sortBy) ?? "most_calls",
+    sortBy: optionalParam(query.sortBy) ?? "most_connections",
   });
 
   const filters = parsed.success
     ? parsed.data
-    : callerLeaderboardQuerySchema.parse({ preset: "today", sortBy: "most_calls" });
+    : callerLeaderboardQuerySchema.parse({
+        preset: "today",
+        sortBy: "most_connections",
+      });
 
   const visibleIds = authContext.hierarchy.visibleUserIds;
   const book = authContext.hierarchy.ownerManagerId
@@ -66,7 +77,9 @@ export default async function CallerLeaderboardPage({
     : undefined;
 
   const [leaderboard, campaigns, stages, users] = await Promise.all([
-    getCallerLeaderboard(authContext.organizationId, filters),
+    getCallerLeaderboard(authContext.organizationId, filters, new Date(), {
+      visibleUserIds: visibleIds,
+    }),
     listCampaigns(authContext.organizationId, book),
     leadCatalogs.listStages(authContext.organizationId),
     listUsers({
@@ -93,7 +106,7 @@ export default async function CallerLeaderboardPage({
         }
       />
 
-      <TabNav activeHref="/reports/caller-leaderboard" items={REPORT_TABS} />
+      <TabNav activeHref="/reports/caller-leaderboard" items={reportTabs} />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {leaderboard.highlights.map((card) => (
@@ -121,6 +134,7 @@ export default async function CallerLeaderboardPage({
                 <option value="yesterday">Yesterday</option>
                 <option value="this_week">This Week</option>
                 <option value="this_month">This Month</option>
+                <option value="this_year">This Year</option>
                 <option value="custom">Custom Date</option>
               </select>
             </label>
@@ -155,10 +169,12 @@ export default async function CallerLeaderboardPage({
                 defaultValue={filters.sortBy}
                 className="mx-input mt-1 w-full"
               >
-                <option value="most_calls">Most Calls</option>
                 <option value="most_connections">Most Connections</option>
+                <option value="most_calls">Most Calls</option>
                 <option value="highest_conversion">Highest Conversion</option>
                 <option value="longest_talk_time">Longest Talk Time</option>
+                <option value="most_follow_ups_completed">Follow Ups Completed</option>
+                <option value="most_won_leads">Won Leads</option>
                 <option value="fastest_follow_ups">Fastest Follow Ups</option>
               </select>
             </label>

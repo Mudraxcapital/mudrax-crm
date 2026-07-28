@@ -22,19 +22,20 @@ export function makeListCallerCallHistory() {
     const memberships = await listCampaignsForMember(query.callerUserId);
     const campaignNameById = new Map(memberships.map((c) => [c.id, c.name]));
 
+    const pageLimit = Math.min(query.limit ?? 200, 300);
     const [calls, leads, followUps] = await Promise.all([
       listCallAttempts(query.organizationId, {
         agentUserId: query.callerUserId,
-        limit: query.limit ?? 200,
+        limit: pageLimit,
       }),
       listLeads(query.organizationId, {
         assignedToUserIds: [query.callerUserId],
         campaignId: query.campaignId ?? undefined,
-        limit: 10_000,
+        limit: 500,
       }),
       listFollowUps(query.organizationId, {
         assignedToUserIds: [query.callerUserId],
-        limit: 5_000,
+        limit: 300,
       }).catch(() => []),
     ]);
 

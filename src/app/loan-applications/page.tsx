@@ -8,16 +8,30 @@ import { listLoanProducts } from "@/modules/loan-products";
 import { LoanApplicationForm } from "@/modules/loan-applications/presentation/components/LoanApplicationForm";
 import { createLoanApplicationAction } from "@/modules/loan-applications/presentation/controllers/createLoanApplication.action";
 import { nameFromMap } from "@/shared/ui/displayName";
+import {
+  filterLoanAppsByVisibility,
+  resolveCustomerListOptions,
+  resolveVisibleOwnerIds,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function LoanApplicationsPage() {
   const { authContext } = await requirePermission("loan_application.view");
   const canCreate = hasPermission(authContext, "loan_application.create");
-  const [apps, products, customers, leads] = await Promise.all([
+  const visibility = await resolveVisibleOwnerIds(authContext);
+  const customerOptions = await resolveCustomerListOptions(authContext, { limit: 10_000 });
+  const leadFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.view",
+    actorUserId: authContext.userId,
+  });
+
+  const [allApps, products, customers, leads] = await Promise.all([
     listLoanApplications(authContext.organizationId),
     listLoanProducts(authContext.organizationId, { status: "ACTIVE" }),
-    listCustomers(authContext.organizationId),
-    listLeads(authContext.organizationId),
+    listCustomers(authContext.organizationId, customerOptions),
+    listLeads(authContext.organizationId, { ...leadFilter, limit: 10_000 }),
   ]);
+  const apps = filterLoanAppsByVisibility(allApps, visibility);
   const customerNameById = new Map(customers.map((customer) => [customer.id, customer.fullName]));
 
   return (

@@ -13,6 +13,7 @@ export {
 } from "./styles";
 export { Button } from "./Button";
 export type { ButtonProps, ButtonVariant, ButtonSize } from "./Button";
+export { FilePickButton } from "./FilePickButton";
 export { Input, Textarea, Select, Field } from "./Input";
 export { Badge, statusTone } from "./Badge";
 export type { BadgeTone } from "./Badge";

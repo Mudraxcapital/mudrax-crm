@@ -9,9 +9,15 @@ import {
   validatePasswordPolicy,
 } from "@/modules/auth/domain/policies/passwordPolicy";
 import { FIXED_USER_ROLES, USER_STATUSES } from "../../domain/entities/User";
+import { REASSIGN_CALLERS_TO_DIRECT_ADMIN } from "../../presentation/constants/callerReassignment";
 
 const roleSchema = z.enum(FIXED_USER_ROLES);
 const statusSchema = z.enum(USER_STATUSES);
+
+const reassignCallersTargetSchema = z
+  .string()
+  .uuid()
+  .or(z.literal(REASSIGN_CALLERS_TO_DIRECT_ADMIN));
 
 const passwordField = z
   .string()
@@ -35,6 +41,7 @@ export const createUserSchema = z.object({
   // Empty = Direct Admin Caller (Admin-only); Managers/TLs enforced in hierarchy policy.
   assignedTeamLeadId: z.string().uuid().optional().or(z.literal("")),
   reportingManagerId: z.string().uuid().optional().or(z.literal("")),
+  canManageCallerAccounts: z.boolean().optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -48,11 +55,12 @@ export const updateUserSchema = z.object({
   assignedTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
   reportingManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
   /** Required when demoting a Team Lead who still has Callers. */
-  reassignCallersToTeamLeadId: z.string().uuid().nullable().optional().or(z.literal("")),
+  reassignCallersToTeamLeadId: reassignCallersTargetSchema.nullable().optional().or(z.literal("")),
   /** Required when demoting a Manager who still has Team Leads. */
   reassignTeamLeadsToManagerId: z.string().uuid().nullable().optional().or(z.literal("")),
   /** Required when changing role for a user who still owns assigned Leads. */
   reassignLeadsToUserId: z.string().uuid().nullable().optional().or(z.literal("")),
+  canManageCallerAccounts: z.boolean().optional(),
 });
 
 /** Self-service profile — name / phone only (no role, status, hierarchy). */
@@ -92,7 +100,7 @@ export type ChangeOwnPasswordInput = z.infer<typeof changeOwnPasswordSchema>;
 
 export const bulkUserIdsSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1, "Select at least one user."),
-  reassignCallersToTeamLeadId: z.string().uuid().optional().or(z.literal("")),
+  reassignCallersToTeamLeadId: reassignCallersTargetSchema.optional().or(z.literal("")),
   reassignTeamLeadsToManagerId: z.string().uuid().optional().or(z.literal("")),
   reassignLeadsToUserId: z.string().uuid().optional().or(z.literal("")),
 });

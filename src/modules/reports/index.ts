@@ -127,7 +127,9 @@ export {
   type CallerLeaderboardQuery,
   type CallerLeaderboardPreset,
   type CallerLeaderboardSort,
+  type CallerLeaderboardScope,
 } from "./application/validators/callerLeaderboardSchemas";
+export { resolveLeaderboardRange } from "./application/services/leaderboardRange";
 
 const dashboardRepository = new PrismaDashboardRepository(prisma);
 const templateRepository = new PrismaReportTemplateRepository(prisma);

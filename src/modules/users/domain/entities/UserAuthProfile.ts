@@ -34,6 +34,7 @@ export interface UserScopeContext {
   currentDepartmentId: string | null;
   assignedTeamLeadId: string | null;
   reportingManagerId: string | null;
+  canManageCallerAccounts: boolean;
 }
 
 /** Hierarchy edges needed to resolve Manager → Team Lead → Caller ownership. */

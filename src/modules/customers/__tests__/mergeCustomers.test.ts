@@ -72,5 +72,65 @@ describe("mergeCustomers / detectDuplicates", () => {
     const result = await detectDuplicates(orgId);
     expect(result.created.length).toBeGreaterThanOrEqual(1);
     expect(result.created[0]?.matchType).toBe("PROBABILISTIC_PHONE");
+    expect(result.created[0]?.matchScore).toBe(0.8);
+  });
+
+  it("scores 1 only when both phone and email match", async () => {
+    const repo = new FakeCustomerRepository();
+    const createCustomer = makeCreateCustomer(repo);
+    const detectDuplicates = makeDetectDuplicates(repo);
+
+    await createCustomer({
+      organizationId: orgId,
+      input: createCustomerSchema.parse({
+        fullName: "Same Person A",
+        identifiers: [
+          { type: "PHONE", value: "+911111111111" },
+          { type: "EMAIL", value: "same@example.com" },
+        ],
+      }),
+      actor,
+    });
+    await createCustomer({
+      organizationId: orgId,
+      input: createCustomerSchema.parse({
+        fullName: "Same Person B",
+        identifiers: [
+          { type: "PHONE", value: "+911111111111" },
+          { type: "EMAIL", value: "same@example.com" },
+        ],
+      }),
+      actor,
+    });
+
+    const result = await detectDuplicates(orgId);
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0]?.matchScore).toBe(1);
+  });
+
+  it("does not treat similar names alone as duplicates", async () => {
+    const repo = new FakeCustomerRepository();
+    const createCustomer = makeCreateCustomer(repo);
+    const detectDuplicates = makeDetectDuplicates(repo);
+
+    await createCustomer({
+      organizationId: orgId,
+      input: createCustomerSchema.parse({
+        fullName: "Rahul Sharma",
+        identifiers: [{ type: "PHONE", value: "+911111111111" }],
+      }),
+      actor,
+    });
+    await createCustomer({
+      organizationId: orgId,
+      input: createCustomerSchema.parse({
+        fullName: "Rahul Sharma",
+        identifiers: [{ type: "PHONE", value: "+922222222222" }],
+      }),
+      actor,
+    });
+
+    const result = await detectDuplicates(orgId);
+    expect(result.created).toHaveLength(0);
   });
 });

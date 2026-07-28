@@ -11,11 +11,13 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/infra/auth/session";
 import {
   CallAttemptNotFoundError,
+  getCallAttempt,
   InvalidCallOutcomeReferenceError,
   InvalidCallStatusTransitionError,
   updateCallAttemptStatus,
   updateCallAttemptStatusSchema,
 } from "@/modules/telephony";
+import { canAccessCall } from "@/shared/auth/assertCanAccessCall";
 import type { TelephonyFormState } from "./initiateClickToCall.action";
 
 export async function updateCallAttemptStatusAction(
@@ -23,7 +25,7 @@ export async function updateCallAttemptStatusAction(
   _previousState: TelephonyFormState | undefined,
   formData: FormData,
 ): Promise<TelephonyFormState> {
-  const { session } = await requirePermission("call.update");
+  const { session, authContext } = await requirePermission("call.update");
 
   const parsed = updateCallAttemptStatusSchema.safeParse({
     status: formData.get("status"),
@@ -35,7 +37,14 @@ export async function updateCallAttemptStatusAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  let leadId: string | null = null;
   try {
+    const existing = await getCallAttempt(id);
+    if (!canAccessCall(authContext, existing, { permissionCode: "call.update" })) {
+      return { error: "Call not found or access denied." };
+    }
+    leadId = existing.leadId;
+
     await updateCallAttemptStatus({
       id,
       input: parsed.data,
@@ -55,5 +64,13 @@ export async function updateCallAttemptStatusAction(
   revalidatePath(`/telephony/calls/${id}`);
   revalidatePath("/telephony/calls");
   revalidatePath("/telephony");
+  revalidatePath("/");
+  revalidatePath("/caller/leads");
+  revalidatePath("/caller/history");
+  revalidatePath("/campaigns");
+  if (leadId) {
+    revalidatePath(`/caller/leads/${leadId}`);
+    revalidatePath(`/leads/${leadId}`);
+  }
   return {};
 }

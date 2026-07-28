@@ -6,11 +6,20 @@
 // ============================================================================
 
 import { countCustomers, listCustomers } from "@/modules/customers";
-import { CAMPAIGN_STATUSES, getCampaignStatistics, listCampaigns } from "@/modules/campaigns";
+import { getCampaignStatistics, listCampaigns } from "@/modules/campaigns";
 import { getDocumentsDashboard, listDocuments } from "@/modules/documents";
-import { countLeads, getLeadsBySource, getLeadsByStage, listLeads } from "@/modules/leads";
+import {
+  countLeads,
+  countLeadsByCampaign,
+  getLeadsBySource,
+  getLeadsByStage,
+  listDistinctCustomerIds,
+  listLeads,
+} from "@/modules/leads";
+import { countFollowUps, OPEN_FOLLOW_UP_STATUSES } from "@/modules/follow-ups";
 import { getNotificationsDashboard, listNotifications } from "@/modules/notifications";
 import { getTelephonyDashboard, listCallAttempts } from "@/modules/telephony";
+import { listUsers } from "@/modules/users";
 import type { ReportFilter } from "../../domain/entities/ReportFilter";
 import type { ReportType } from "../../domain/entities/ReportType";
 import { InvalidReportTypeError } from "../../domain/errors/ReportErrors";
@@ -20,6 +29,15 @@ import type {
   ReportRow,
   SourceDataPort,
 } from "../../application/ports/SourceDataPort";
+import {
+  buildConversionFunnel,
+  buildLeadTrend,
+  buildSourceConversions,
+  buildTopPerformingUsers,
+  countInLastDays,
+  isSameUtcDay,
+  resolveTrendGranularity,
+} from "./analyticsAggregates";
 
 function inDateRange(iso: string, filter: ReportFilter): boolean {
   const value = new Date(iso).getTime();
@@ -40,59 +58,130 @@ function matchesUserScope(userId: string | null | undefined, filter: ReportFilte
   return userId === filter.userId;
 }
 
+function agentScopeFromFilter(filter?: ReportFilter): {
+  agentUserId?: string;
+  agentUserIds?: string[];
+} {
+  if (filter?.userId) return { agentUserId: filter.userId };
+  if (filter?.agentUserIds?.length) return { agentUserIds: filter.agentUserIds };
+  return {};
+}
+
+function isHierarchyScoped(filter?: ReportFilter): boolean {
+  return Boolean(
+    filter?.ownerManagerId ||
+      filter?.ownerTeamLeadId ||
+      filter?.agentUserIds?.length ||
+      filter?.userId,
+  );
+}
+
 export class SourceModulesDataAdapter implements SourceDataPort {
   async getAnalyticsKpis(organizationId: string, filter?: ReportFilter): Promise<AnalyticsKpis> {
     const ownerManagerId = filter?.ownerManagerId ?? undefined;
+    // Lead ownership columns only — do NOT AND agentUserIds as assignees or
+    // unassigned / team-owned leads disappear from Reports.
     const leadScope = {
       ownerManagerId,
       ownerTeamLeadId: filter?.ownerTeamLeadId ?? undefined,
+      assignedToUserIds: filter?.userId ? [filter.userId] : undefined,
     };
+    const agentScope = agentScopeFromFilter(filter);
+    const followUpScope = filter?.userId
+      ? { assignedToUserIds: [filter.userId] }
+      : filter?.agentUserIds?.length
+        ? { assignedToUserIds: filter.agentUserIds }
+        : {};
+    const scoped = isHierarchyScoped(filter);
+    const now = new Date();
+    const dateFrom = filter?.dateFrom ? new Date(filter.dateFrom) : null;
+    const dateTo = filter?.dateTo ? new Date(filter.dateTo) : now;
+    const safeDateFrom =
+      dateFrom && !Number.isNaN(dateFrom.getTime()) ? dateFrom : null;
+    const safeDateTo = !Number.isNaN(dateTo.getTime()) ? dateTo : now;
+    const granularity = resolveTrendGranularity(safeDateFrom, safeDateTo);
+
     const [
       totalCustomers,
       totalLeads,
       leadsByStage,
       leadsBySource,
       campaigns,
+      campaignLeadCounts,
       telephony,
       documentsDashboard,
       notifications,
+      followUpsCompleted,
+      followUpsPendingCounts,
+      leads,
+      users,
     ] = await Promise.all([
-      countCustomers(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
+      filter?.ownerTeamLeadId
+        ? listDistinctCustomerIds(organizationId, {
+            ownerManagerId,
+            teamLeadCustomerScope: {
+              teamLeadId: filter.ownerTeamLeadId,
+              callerUserIds: filter.agentUserIds?.length
+                ? filter.agentUserIds
+                : [filter.ownerTeamLeadId],
+            },
+          }).then((ids) => ids.length)
+        : countCustomers(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
       countLeads(organizationId, leadScope),
       getLeadsByStage(organizationId, leadScope),
       getLeadsBySource(organizationId, leadScope),
       listCampaigns(organizationId, ownerManagerId ? { ownerManagerId } : undefined),
-      getTelephonyDashboard(organizationId),
-      getDocumentsDashboard(organizationId),
-      getNotificationsDashboard(organizationId),
+      countLeadsByCampaign(organizationId, leadScope),
+      getTelephonyDashboard(organizationId, now, agentScope),
+      scoped
+        ? Promise.resolve({
+            totalDocuments: 0,
+            pendingVerification: 0,
+          })
+        : getDocumentsDashboard(organizationId),
+      scoped
+        ? Promise.resolve({ sent: 0, failed: 0 })
+        : getNotificationsDashboard(organizationId),
+      countFollowUps(organizationId, { status: "COMPLETED", ...followUpScope }),
+      Promise.all(
+        OPEN_FOLLOW_UP_STATUSES.map((status) =>
+          countFollowUps(organizationId, { status, ...followUpScope }),
+        ),
+      ),
+      listLeads(organizationId, { ...leadScope, limit: 5_000 }),
+      listUsers({
+        limit: 5_000,
+        userIds: filter?.agentUserIds?.length ? filter.agentUserIds : undefined,
+      }),
     ]);
 
-    const campaignPerformance =
-      campaigns.length > 0
-        ? await Promise.all(
-            campaigns.slice(0, 20).map(async (campaign) => {
-              const stats = await getCampaignStatistics(campaign.id);
-              return {
-                key: campaign.id,
-                label: campaign.name,
-                count: stats.totalLeadsAllocated,
-              };
-            }),
-          )
-        : CAMPAIGN_STATUSES.map((status) => ({
-            key: status,
-            label: status,
-            count: campaigns.filter((campaign) => campaign.status === status).length,
-          })).filter((entry) => entry.count > 0);
+    const campaignNameById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
+    const campaignPerformance = campaignLeadCounts
+      .map((entry) => ({
+        key: entry.campaignId,
+        label: campaignNameById.get(entry.campaignId) ?? entry.campaignId.slice(0, 8),
+        count: entry.count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+
+    const leadsByStatus = leadsByStage.map((entry) => ({
+      key: entry.stageId,
+      label: `${entry.stageName} (${entry.bucket})`,
+      count: entry.count,
+    }));
+
+    const userNames = new Map(users.map((user) => [user.id, user.fullName]));
+    const followUpsPending = followUpsPendingCounts.reduce((sum, count) => sum + count, 0);
+
+    const todayCreated = leads.filter((lead) => isSameUtcDay(lead.createdAt, now)).length;
+    const todayConversions = leads.filter((lead) => isSameUtcDay(lead.wonAt, now)).length;
+    const todayConversionRate = todayCreated === 0 ? 0 : todayConversions / todayCreated;
 
     return {
       totalCustomers,
       totalLeads,
-      leadsByStatus: leadsByStage.map((entry) => ({
-        key: entry.stageId,
-        label: `${entry.stageName} (${entry.bucket})`,
-        count: entry.count,
-      })),
+      leadsByStatus,
       leadsBySource: leadsBySource.map((entry) => ({
         key: entry.sourceId,
         label: entry.sourceName,
@@ -106,6 +195,20 @@ export class SourceModulesDataAdapter implements SourceDataPort {
       pendingDocumentVerification: documentsDashboard.pendingVerification,
       notificationsSent: notifications.sent,
       failedNotifications: notifications.failed,
+      conversionFunnel: buildConversionFunnel(leadsByStatus),
+      leadTrend: buildLeadTrend(leads, safeDateFrom, safeDateTo, granularity),
+      leadTrendGranularity: granularity,
+      topPerformingUsers: buildTopPerformingUsers(leads, userNames),
+      topCampaigns: campaignPerformance.slice(0, 10),
+      followUpCompletion: [
+        { key: "completed", label: "Completed", count: followUpsCompleted },
+        { key: "pending", label: "Pending", count: followUpsPending },
+      ],
+      sourceConversions: buildSourceConversions(leads),
+      todayConversions,
+      todayConversionRate,
+      weekLeadCount: countInLastDays(leads, "createdAt", 7, now),
+      weekConversions: countInLastDays(leads, "wonAt", 7, now),
     };
   }
 
@@ -133,10 +236,24 @@ export class SourceModulesDataAdapter implements SourceDataPort {
   }
 
   private async customerReport(organizationId: string, filter: ReportFilter): Promise<ReportResult> {
-    const customers = await listCustomers(organizationId, {
-      limit: 500,
-      ownerManagerId: filter.ownerManagerId ?? undefined,
-    });
+    const customers = filter.ownerTeamLeadId
+      ? await listDistinctCustomerIds(organizationId, {
+          ownerManagerId: filter.ownerManagerId ?? undefined,
+          teamLeadCustomerScope: {
+            teamLeadId: filter.ownerTeamLeadId,
+            callerUserIds: filter.agentUserIds?.length
+              ? filter.agentUserIds
+              : [filter.ownerTeamLeadId],
+          },
+        }).then(async (ids) =>
+          ids.length > 0
+            ? listCustomers(organizationId, { customerIds: ids, limit: 500 })
+            : [],
+        )
+      : await listCustomers(organizationId, {
+          limit: 500,
+          ownerManagerId: filter.ownerManagerId ?? undefined,
+        });
     const columns = ["id", "fullName", "status", "identityConfidence", "createdAt"];
     const rows: ReportRow[] = customers
       .filter((customer) => inDateRange(customer.createdAt, filter))
@@ -152,11 +269,8 @@ export class SourceModulesDataAdapter implements SourceDataPort {
 
   private async leadReport(organizationId: string, filter: ReportFilter): Promise<ReportResult> {
     const leads = await listLeads(organizationId, {
-      assignedToUserIds: filter.userId
-        ? [filter.userId]
-        : filter.agentUserIds?.length
-          ? filter.agentUserIds
-          : undefined,
+      // Prefer ownership scope; assignee only when an explicit user filter is set.
+      assignedToUserIds: filter.userId ? [filter.userId] : undefined,
       ownerManagerId: filter.ownerManagerId ?? undefined,
       ownerTeamLeadId: filter.ownerTeamLeadId ?? undefined,
       limit: 500,

@@ -90,6 +90,15 @@ export async function seedRbac(
     });
   }
 
+  // Team Lead no longer holds user.delete — granted Team Leads use canManageCallerAccounts.
+  const userDeletePermissionId = permissionIds["user.delete"];
+  const teamLeadRoleId = roleIds["Team Lead"];
+  if (userDeletePermissionId && teamLeadRoleId) {
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: teamLeadRoleId, permissionId: userDeletePermissionId },
+    });
+  }
+
   // Remove obsolete Organization / custom-role product permissions left by earlier seeds.
   const obsoleteCodes = [
     "organization.view",
@@ -100,6 +109,8 @@ export async function seedRbac(
     "escalation_rule.manage",
     "role.manage",
     "role_permission.manage",
+    // No use-case / API / UI — dead grant that previously exposed a non-existent surface.
+    "lead.call_feedback.record",
   ];
   const obsolete = await prisma.permission.findMany({
     where: { code: { in: obsoleteCodes } },

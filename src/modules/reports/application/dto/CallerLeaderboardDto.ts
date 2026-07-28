@@ -13,20 +13,34 @@ export interface CallerLeaderboardRowDto {
   userId: string;
   employeeName: string;
   profilePhotoUrl: string | null;
+  roleName: string | null;
+  status: string | null;
+  email: string | null;
   teamLeadName: string | null;
   teamLeadId: string | null;
+  reportingManagerId: string | null;
   campaignNames: string[];
   primaryCampaignName: string | null;
 
   totalCalls: number;
+  incomingCalls: number;
+  outgoingCalls: number;
   connectedCalls: number;
+  attemptedCalls: number;
   notConnectedCalls: number;
+  missedCalls: number;
   /** Dynamic Call Outcome catalog counts (key = outcome id). */
   outcomeMetrics: NamedMetricDto[];
   /** Dynamic Lead Stage catalog counts for currently assigned leads (key = stage id). */
   stageMetrics: NamedMetricDto[];
+  /** Lost-reason catalog counts for lost leads (key = reason id). */
+  lossReasonMetrics: NamedMetricDto[];
   interestedLeads: number;
   followUps: number;
+  followUpsCompleted: number;
+  followUpsPending: number;
+  /** Unique customers dialed via call attempts in the selected date range (not assigned-lead count). */
+  customersContacted: number;
   conversions: number;
   wonLeads: number;
   lostLeads: number;

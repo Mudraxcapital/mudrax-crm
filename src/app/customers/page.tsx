@@ -4,7 +4,7 @@ import { hasPermission } from "@/modules/rbac";
 import { countCustomers, listCustomers } from "@/modules/customers";
 import { CustomerForm } from "@/modules/customers/presentation/components/CustomerForm";
 import { createCustomerAction } from "@/modules/customers/presentation/controllers/createCustomer.action";
-import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { resolveCustomerListOptions } from "@/shared/auth/applyHierarchyListFilter";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
 import { CreatePanel } from "../_components/CreatePanel";
@@ -13,12 +13,14 @@ import { CustomersTable } from "./_components/CustomersTable";
 export default async function CustomersPage() {
   const { authContext } = await requirePermission("customer.view");
   const canCreate = hasPermission(authContext, "customer.create");
-  const canMerge = hasPermission(authContext, "customer.merge");
-  const book = managerBookFilter(authContext);
+  const canViewDuplicates =
+    hasPermission(authContext, "customer.duplicate.view") ||
+    hasPermission(authContext, "customer.merge");
+  const listOptions = await resolveCustomerListOptions(authContext, { limit: 10_000 });
 
   const [customers, totalCount] = await Promise.all([
-    listCustomers(authContext.organizationId, { limit: 10_000, ...book }),
-    countCustomers(authContext.organizationId, book),
+    listCustomers(authContext.organizationId, listOptions),
+    countCustomers(authContext.organizationId, listOptions),
   ]);
 
   return (
@@ -29,7 +31,7 @@ export default async function CustomersPage() {
         breadcrumbs={[{ label: "CRM", href: "/crm" }, { label: "Customers" }]}
         actions={
           <>
-            {canMerge ? (
+            {canViewDuplicates ? (
               <Link href="/customers/duplicates">
                 <Button variant="secondary">Duplicates</Button>
               </Link>

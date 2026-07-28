@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   CallOutcomeNotFoundError,
@@ -20,11 +20,10 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request, { params }: RouteParams) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "call.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -32,6 +31,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const { id } = await params;
   try {
     const outcome = await getCallOutcome(id);
+    if (outcome.organizationId !== current.authContext.organizationId) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
     return NextResponse.json({ data: outcome });
   } catch (error) {
     if (error instanceof CallOutcomeNotFoundError) {
@@ -42,10 +44,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "call.outcome.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -61,6 +62,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
+    const existing = await getCallOutcome(id);
+    if (existing.organizationId !== current.authContext.organizationId) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
     const outcome = await updateCallOutcome({
       id,
       input: parsed.data,

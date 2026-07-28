@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission, isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
 import { globalSearch } from "@/app/_lib/globalSearch";
+import {
+  managerBookFilter,
+  resolveCustomerListOptions,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
 
   // Customers / non-staff identities must not search the internal CRM.
   if (!isInternalStaff(current.authContext)) {
@@ -21,6 +25,15 @@ export async function GET(request: Request) {
   }
 
   const callerOnly = isCallerWorkspaceUser(current.authContext);
+  const customerOptions = await resolveCustomerListOptions(current.authContext, {
+    search: q,
+    limit: 50,
+  });
+  const leadFilter = visibleLeadsFilter(current.authContext, {
+    permissionCode: "lead.view",
+    actorUserId: current.session.user.id,
+  });
+  const campaignBook = managerBookFilter(current.authContext);
 
   const hits = await globalSearch(current.authContext.organizationId, q, {
     includeCustomers: !callerOnly && hasPermission(current.authContext, "customer.view"),
@@ -31,6 +44,10 @@ export async function GET(request: Request) {
       !callerOnly && hasPermission(current.authContext, "loan_application.view"),
     assignedToUserId: callerOnly ? current.session.user.id : undefined,
     leadHrefPrefix: callerOnly ? "/caller/leads" : "/leads",
+    customerListOptions: customerOptions,
+    leadListFilter: leadFilter,
+    campaignListFilter: campaignBook,
+    authContext: current.authContext,
     limit: 25,
   });
 

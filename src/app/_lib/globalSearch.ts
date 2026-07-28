@@ -11,6 +11,14 @@ import { listActiveLeadFields, listLeads } from "@/modules/leads";
 import { listCampaigns } from "@/modules/campaigns";
 import { listDocuments } from "@/modules/documents";
 import { listLoanApplications } from "@/modules/loan-applications";
+import type { ListCustomersOptions } from "@/modules/customers/domain/repositories/CustomerRepository";
+import type { OwnershipQueryFilter } from "@/modules/rbac";
+import {
+  filterDocumentsByOwnerVisibility,
+  filterLoanAppsByVisibility,
+  resolveVisibleOwnerIds,
+} from "@/shared/auth/applyHierarchyListFilter";
+import type { AuthorizationContext } from "@/modules/rbac";
 
 export type GlobalSearchEntity =
   | "customer"
@@ -38,6 +46,11 @@ export interface GlobalSearchOptions {
   assignedToUserId?: string;
   /** Lead detail path prefix — `/caller/leads` for Caller Workspace. */
   leadHrefPrefix?: string;
+  customerListOptions?: ListCustomersOptions;
+  leadListFilter?: OwnershipQueryFilter;
+  campaignListFilter?: { ownerManagerId?: string };
+  /** When provided, documents/loans are hierarchy-filtered. */
+  authContext?: AuthorizationContext;
   limit?: number;
 }
 
@@ -57,6 +70,10 @@ export async function globalSearch(
     includeCampaigns = true,
     assignedToUserId,
     leadHrefPrefix = "/leads",
+    customerListOptions,
+    leadListFilter,
+    campaignListFilter,
+    authContext,
     limit = 25,
   } = options;
 
@@ -67,24 +84,43 @@ export async function globalSearch(
         .filter((key) => key !== "full_name" && key !== "phone" && key !== "email")
     : [];
 
-  const [customers, leads, campaigns, documents, loanApps] = await Promise.all([
+  const visibility = authContext ? await resolveVisibleOwnerIds(authContext) : null;
+
+  const [customers, leads, campaigns, documentsRaw, loanAppsRaw] = await Promise.all([
     includeCustomers
-      ? listCustomers(organizationId, { search: q, limit: 50 })
+      ? listCustomers(organizationId, {
+          search: q,
+          limit: 50,
+          ...customerListOptions,
+        })
       : Promise.resolve([]),
     includeLeads
       ? listLeads(organizationId, {
           search: q,
           limit: 50,
           searchableCustomKeys,
-          assignedToUserIds: assignedToUserId ? [assignedToUserId] : undefined,
+          assignedToUserIds: assignedToUserId
+            ? [assignedToUserId]
+            : leadListFilter?.assignedToUserIds,
+          ownerManagerId: leadListFilter?.ownerManagerId,
+          ownerTeamLeadId: leadListFilter?.ownerTeamLeadId,
         })
       : Promise.resolve([]),
-    includeCampaigns ? listCampaigns(organizationId) : Promise.resolve([]),
+    includeCampaigns
+      ? listCampaigns(organizationId, campaignListFilter)
+      : Promise.resolve([]),
     includeDocuments ? listDocuments(organizationId, { limit: 50 }) : Promise.resolve([]),
     includeLoanApplications
       ? listLoanApplications(organizationId, { limit: 50 })
       : Promise.resolve([]),
   ]);
+
+  const documents = visibility
+    ? filterDocumentsByOwnerVisibility(documentsRaw, visibility)
+    : documentsRaw;
+  const loanApps = visibility
+    ? filterLoanAppsByVisibility(loanAppsRaw, visibility)
+    : loanAppsRaw;
 
   const hits: GlobalSearchHit[] = [];
 
@@ -137,7 +173,7 @@ export async function globalSearch(
       id: item.id,
       title: item.documentTypeName ?? "Document",
       subtitle: `Document · ${item.status}`,
-      href: `/documents/${item.id}`,
+      href: `/documents/library/${item.id}`,
       score,
     });
   }

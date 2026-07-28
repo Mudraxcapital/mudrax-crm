@@ -10,6 +10,7 @@ import {
   LeadFieldKeyConflictError,
   LeadFieldNameConflictError,
   LeadFieldNotFoundError,
+  LeadFieldStaleEditError,
   ProtectedLeadFieldError,
   reorderLeadFieldsSchema,
   reorderLeadFields,
@@ -134,6 +135,7 @@ export async function updateLeadFieldAction(
       : undefined,
     selectOptions: parseOptions(formData.get("selectOptions")),
     validationRules: parseValidationRules(formData),
+    expectedUpdatedAt: (formData.get("expectedUpdatedAt") as string) || undefined,
   });
 
   if (!parsed.success) {
@@ -151,6 +153,8 @@ export async function updateLeadFieldAction(
     if (
       error instanceof LeadFieldNotFoundError ||
       error instanceof ProtectedLeadFieldError ||
+      error instanceof LeadFieldNameConflictError ||
+      error instanceof LeadFieldStaleEditError ||
       error instanceof Error
     ) {
       return { error: error.message };
@@ -163,7 +167,7 @@ export async function updateLeadFieldAction(
   return { success: "Field updated." };
 }
 
-export async function hideLeadFieldAction(id: string): Promise<void> {
+export async function hideLeadFieldAction(id: string): Promise<LeadFieldFormState> {
   const { session, authContext } = await requirePermission("custom_field.manage");
   try {
     await hideLeadField({
@@ -172,25 +176,36 @@ export async function hideLeadFieldAction(id: string): Promise<void> {
       actor: { actorType: "USER", actorId: session.user.id },
     });
   } catch (error) {
-    if (error instanceof ProtectedLeadFieldError || error instanceof LeadFieldNotFoundError) {
-      // Protected / missing fields are ignored for form-post UX (UI already gates core fields).
-      return;
+    if (error instanceof ProtectedLeadFieldError) {
+      return { error: error.message };
+    }
+    if (error instanceof LeadFieldNotFoundError) {
+      return { error: "Field not found." };
     }
     throw error;
   }
   revalidatePath("/crm/field-settings");
   revalidatePath("/leads");
+  return { success: "Field hidden." };
 }
 
-export async function showLeadFieldAction(id: string): Promise<void> {
+export async function showLeadFieldAction(id: string): Promise<LeadFieldFormState> {
   const { session, authContext } = await requirePermission("custom_field.manage");
-  await showLeadField({
-    id,
-    organizationId: authContext.organizationId,
-    actor: { actorType: "USER", actorId: session.user.id },
-  });
+  try {
+    await showLeadField({
+      id,
+      organizationId: authContext.organizationId,
+      actor: { actorType: "USER", actorId: session.user.id },
+    });
+  } catch (error) {
+    if (error instanceof LeadFieldNotFoundError) {
+      return { error: "Field not found." };
+    }
+    throw error;
+  }
   revalidatePath("/crm/field-settings");
   revalidatePath("/leads");
+  return { success: "Field restored." };
 }
 
 export async function archiveLeadFieldAction(id: string): Promise<void> {

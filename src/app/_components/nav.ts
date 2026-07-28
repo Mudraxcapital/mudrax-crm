@@ -25,6 +25,7 @@ export type NavIcon =
   | "calendar"
   | "activity"
   | "campaigns"
+  | "lead-center"
   | "telephony"
   | "documents"
   | "notifications"
@@ -32,6 +33,7 @@ export type NavIcon =
   | "loans"
   | "org"
   | "settings"
+  | "integrations"
   | "admin"
   | "profile"
   | "history"
@@ -48,6 +50,18 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/", label: "Dashboard", icon: "home", match: "exact" },
       { href: "/campaigns", label: "Campaigns", icon: "campaigns", permissions: ["campaign.view"] },
+      {
+        href: "/lead-center",
+        label: "Lead Center",
+        icon: "lead-center",
+        permissions: ["lead_center.view"],
+      },
+      {
+        href: "/leaderboard",
+        label: "Leaderboard",
+        icon: "performance",
+        permissions: ["report.view"],
+      },
       { href: "/reports", label: "Reports", icon: "reports", permissions: ["report.view"] },
     ],
   },
@@ -145,6 +159,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Lead Settings",
         icon: "settings",
         permissions: ["custom_field.manage"],
+      },
+      {
+        href: "/integrations",
+        label: "Integrations",
+        icon: "integrations",
+        permissions: ["integration.view", "integration.manage"],
       },
       { href: "/profile", label: "Profile", icon: "profile" },
     ],

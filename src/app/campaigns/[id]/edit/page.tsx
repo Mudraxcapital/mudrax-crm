@@ -4,16 +4,21 @@ import { requirePermission } from "@/infra/auth/session";
 import { CampaignNotFoundError, getCampaign } from "@/modules/campaigns";
 import { EditCampaignForm } from "@/modules/campaigns/presentation/components/EditCampaignForm";
 import { updateCampaignAction } from "@/modules/campaigns/presentation/controllers/updateCampaign.action";
+import {
+  assertCanAccessCampaignRecord,
+  CampaignAccessDeniedError,
+} from "@/shared/auth/assertCanAccessCampaign";
 
 export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
-  await requirePermission("campaign.manage");
+  const { authContext } = await requirePermission("campaign.manage");
   const { id } = await params;
 
   let campaign;
   try {
     campaign = await getCampaign(id);
+    assertCanAccessCampaignRecord(authContext, campaign);
   } catch (error) {
-    if (error instanceof CampaignNotFoundError) {
+    if (error instanceof CampaignNotFoundError || error instanceof CampaignAccessDeniedError) {
       notFound();
     }
     throw error;

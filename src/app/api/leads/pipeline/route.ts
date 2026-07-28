@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { getKanbanBoard } from "@/modules/leads";
 import { visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "lead.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -1,23 +1,37 @@
 import Link from "next/link";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
-import { listCustomers } from "@/modules/customers";
-import { listLeads } from "@/modules/leads";
 import { listDocuments, listDocumentTypes } from "@/modules/documents";
 import { UploadDocumentForm } from "@/modules/documents/presentation/components/UploadDocumentForm";
 import { uploadDocumentAction } from "@/modules/documents/presentation/controllers/uploadDocument.action";
 import { nameFromMap } from "@/shared/ui/displayName";
+import {
+  filterDocumentsByOwnerVisibility,
+  resolveCustomerListOptions,
+  resolveVisibleOwnerIds,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
+import { listCustomers } from "@/modules/customers";
+import { listLeads } from "@/modules/leads";
 
 export default async function DocumentsLibraryPage() {
   const { authContext } = await requirePermission("document.view");
   const canUpload = hasPermission(authContext, "document.upload");
 
-  const [documents, documentTypes, customers, leads] = await Promise.all([
+  const visibility = await resolveVisibleOwnerIds(authContext);
+  const customerOptions = await resolveCustomerListOptions(authContext, { limit: 10_000 });
+  const leadFilter = visibleLeadsFilter(authContext, {
+    permissionCode: "lead.view",
+    actorUserId: authContext.userId,
+  });
+
+  const [allDocuments, documentTypes, customers, leads] = await Promise.all([
     listDocuments(authContext.organizationId),
     listDocumentTypes(authContext.organizationId),
-    listCustomers(authContext.organizationId),
-    listLeads(authContext.organizationId),
+    listCustomers(authContext.organizationId, customerOptions),
+    listLeads(authContext.organizationId, { ...leadFilter, limit: 10_000 }),
   ]);
+  const documents = filterDocumentsByOwnerVisibility(allDocuments, visibility);
   const ownerNameById = new Map<string, string>([
     ...customers.map((customer) => [customer.id, customer.fullName] as const),
     ...leads.map((lead) => [lead.id, lead.fullNameSnapshot] as const),
@@ -88,26 +102,22 @@ export default async function DocumentsLibraryPage() {
 
       {canUpload ? (
         <section className="mx-card p-5">
-          <h2 className="text-sm font-medium">Upload Document</h2>
-          <div className="mt-4">
-            <UploadDocumentForm
-              action={uploadDocumentAction}
-              documentTypes={documentTypes
-                .filter((type) => type.isActive)
-                .map((type) => ({
-                  id: type.id,
-                  label: type.categoryName ? `${type.categoryName} / ${type.name}` : type.name,
-                }))}
-              customers={customers.map((customer) => ({
-                id: customer.id,
-                label: customer.fullName,
-              }))}
-              leads={leads.map((lead) => ({
-                id: lead.id,
-                label: lead.fullNameSnapshot,
-              }))}
-            />
-          </div>
+          <h2 className="mb-4 text-sm font-medium">Upload Document</h2>
+          <UploadDocumentForm
+            action={uploadDocumentAction}
+            documentTypes={documentTypes.map((type) => ({
+              id: type.id,
+              label: type.name,
+            }))}
+            customers={customers.map((customer) => ({
+              id: customer.id,
+              label: customer.fullName,
+            }))}
+            leads={leads.map((lead) => ({
+              id: lead.id,
+              label: lead.fullNameSnapshot,
+            }))}
+          />
         </section>
       ) : null}
     </div>

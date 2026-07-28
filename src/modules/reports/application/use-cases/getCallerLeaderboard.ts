@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { listCampaigns, listCampaignMembers } from "@/modules/campaigns";
-import { listFollowUps } from "@/modules/follow-ups";
+import { listFollowUps, OPEN_FOLLOW_UP_STATUSES } from "@/modules/follow-ups";
 import { leadCatalogs, listLeads } from "@/modules/leads";
 import {
   listCallAttempts,
@@ -24,6 +24,7 @@ import type {
 } from "../dto/CallerLeaderboardDto";
 import type {
   CallerLeaderboardQuery,
+  CallerLeaderboardScope,
   CallerLeaderboardSort,
 } from "../validators/callerLeaderboardSchemas";
 import { resolveLeaderboardRange } from "../services/leaderboardRange";
@@ -42,7 +43,38 @@ function average(values: number[]): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function formatHighlightValue(sortKey: CallerLeaderboardHighlightDto["key"], row: CallerLeaderboardRowDto): string {
+/**
+ * Talk seconds for a call. Prefer stored duration; otherwise estimate from
+ * answeredAt → endedAt, or answeredAt → next call start (dialer workflow where
+ * agents mark Connected and never Complete).
+ */
+function resolveTalkSeconds(
+  call: CallAttemptDto,
+  nextCallInitiatedAt: string | null,
+): number | null {
+  if (typeof call.durationSeconds === "number" && call.durationSeconds >= 0) {
+    return call.durationSeconds;
+  }
+  if (!call.answeredAt) return null;
+  const startMs = new Date(call.answeredAt).getTime();
+  if (Number.isNaN(startMs)) return null;
+
+  let endMs: number | null = null;
+  if (call.endedAt) {
+    endMs = new Date(call.endedAt).getTime();
+  } else if (nextCallInitiatedAt) {
+    endMs = new Date(nextCallInitiatedAt).getTime();
+  }
+  if (endMs == null || Number.isNaN(endMs) || endMs < startMs) return null;
+
+  // Cap runaway gaps (e.g. answered yesterday, next call today) at 2 hours.
+  return Math.min(Math.round((endMs - startMs) / 1000), 2 * 60 * 60);
+}
+
+function formatHighlightValue(
+  sortKey: CallerLeaderboardHighlightDto["key"],
+  row: CallerLeaderboardRowDto,
+): string {
   switch (sortKey) {
     case "top_caller":
       return `${row.totalCalls} calls`;
@@ -67,7 +99,10 @@ function formatDuration(totalSeconds: number): string {
   return `${rem}s`;
 }
 
-function sortRows(rows: CallerLeaderboardRowDto[], sortBy: CallerLeaderboardSort): CallerLeaderboardRowDto[] {
+function sortRows(
+  rows: CallerLeaderboardRowDto[],
+  sortBy: CallerLeaderboardSort,
+): CallerLeaderboardRowDto[] {
   const sorted = [...rows];
   sorted.sort((a, b) => {
     switch (sortBy) {
@@ -84,6 +119,10 @@ function sortRows(rows: CallerLeaderboardRowDto[], sortBy: CallerLeaderboardSort
         const bTime = b.averageFollowUpTimeSeconds ?? Number.POSITIVE_INFINITY;
         return aTime - bTime || b.followUps - a.followUps;
       }
+      case "most_follow_ups_completed":
+        return b.followUpsCompleted - a.followUpsCompleted || b.followUps - a.followUps;
+      case "most_won_leads":
+        return b.wonLeads - a.wonLeads || b.conversionRate - a.conversionRate;
       default: {
         const _exhaustive: never = sortBy;
         return _exhaustive;
@@ -168,32 +207,78 @@ export function makeGetCallerLeaderboard() {
     organizationId: string,
     query: CallerLeaderboardQuery,
     now: Date = new Date(),
+    scope?: CallerLeaderboardScope,
   ): Promise<CallerLeaderboardDto> {
     const range = resolveLeaderboardRange(query.preset, query.dateFrom, query.dateTo, now);
+    const scopeIds =
+      scope?.visibleUserIds && scope.visibleUserIds.length > 0
+        ? scope.visibleUserIds
+        : undefined;
 
-    const [users, stages, outcomes, calls, leads, followUps, campaigns] = await Promise.all([
-      listUsers({
-        status: "ACTIVE",
-        teamLeadId: query.teamLeadId,
-        limit: 5_000,
-      }),
-      leadCatalogs.listStages(organizationId),
-      listCallOutcomes(organizationId),
-      listCallAttempts(organizationId, {
-        initiatedFrom: range.from,
-        initiatedTo: range.to,
-        limit: 100_000,
-        agentUserId: query.callerId,
-      }),
-      listLeads(organizationId, {
-        limit: 100_000,
-        campaignId: query.campaignId,
-        currentStageId: query.stageId,
-        assignedToUserIds: query.callerId ? [query.callerId] : undefined,
-      }),
-      listFollowUps(organizationId, { limit: 100_000 }),
-      listCampaigns(organizationId),
-    ]);
+    if (query.callerId && scopeIds && !scopeIds.includes(query.callerId)) {
+      return {
+        dateFrom: range.from.toISOString(),
+        dateTo: range.to.toISOString(),
+        preset: query.preset,
+        sortBy: query.sortBy,
+        outcomeColumns: [],
+        stageColumns: [],
+        highlights: buildHighlights([]),
+        rows: [],
+      };
+    }
+
+    if (query.teamLeadId && scopeIds && !scopeIds.includes(query.teamLeadId)) {
+      return {
+        dateFrom: range.from.toISOString(),
+        dateTo: range.to.toISOString(),
+        preset: query.preset,
+        sortBy: query.sortBy,
+        outcomeColumns: [],
+        stageColumns: [],
+        highlights: buildHighlights([]),
+        rows: [],
+      };
+    }
+
+    const agentUserIds = query.callerId
+      ? [query.callerId]
+      : scopeIds;
+
+    const leadAssigneeIds = query.callerId
+      ? [query.callerId]
+      : scopeIds;
+
+    const [users, stages, lostReasons, outcomes, calls, leads, followUps, campaigns] =
+      await Promise.all([
+        listUsers({
+          status: "ACTIVE",
+          teamLeadId: query.teamLeadId,
+          userIds: scopeIds,
+          limit: 5_000,
+        }),
+        leadCatalogs.listStages(organizationId),
+        leadCatalogs.listLostReasons(organizationId),
+        listCallOutcomes(organizationId),
+        listCallAttempts(organizationId, {
+          initiatedFrom: range.from,
+          initiatedTo: range.to,
+          limit: 100_000,
+          agentUserId: query.callerId,
+          agentUserIds: query.callerId ? undefined : agentUserIds,
+        }),
+        listLeads(organizationId, {
+          limit: 100_000,
+          campaignId: query.campaignId,
+          currentStageId: query.stageId,
+          assignedToUserIds: leadAssigneeIds,
+        }),
+        listFollowUps(organizationId, {
+          limit: 100_000,
+          assignedToUserIds: leadAssigneeIds,
+        }),
+        listCampaigns(organizationId),
+      ]);
 
     const activeOutcomes = outcomes
       .filter((outcome) => outcome.isActive)
@@ -203,6 +288,10 @@ export function makeGetCallerLeaderboard() {
       .filter((stage) => stage.isActive)
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    const activeLostReasons = lostReasons
+      .filter((reason) => reason.isActive)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     let filteredUsers = users;
     if (query.callerId) {
@@ -211,10 +300,20 @@ export function makeGetCallerLeaderboard() {
 
     const campaignNameById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
     const membershipByUser = new Map<string, string[]>();
+
+    // Avoid N+1 across every campaign — only resolve membership when filtering,
+    // or for campaigns that appear on scoped leads.
+    const campaignsToResolve = query.campaignId
+      ? campaigns.filter((campaign) => campaign.id === query.campaignId)
+      : campaigns.filter((campaign) =>
+          leads.some((lead) => lead.campaignId === campaign.id),
+        );
+
     await Promise.all(
-      campaigns.map(async (campaign) => {
+      campaignsToResolve.map(async (campaign) => {
         const members = await listCampaignMembers(campaign.id);
         for (const member of members.filter((item) => item.isActive)) {
+          if (scopeIds && !scopeIds.includes(member.userId)) continue;
           const names = membershipByUser.get(member.userId) ?? [];
           names.push(campaign.name);
           membershipByUser.set(member.userId, names);
@@ -232,9 +331,8 @@ export function makeGetCallerLeaderboard() {
     const callsByAgent = new Map<string, CallAttemptDto[]>();
     for (const call of calls) {
       if (!call.agentUserId) continue;
+      if (scopeIds && !scopeIds.includes(call.agentUserId)) continue;
       if (query.campaignId) {
-        // Prefer campaign filter via lead linkage when present.
-        // Calls without leadId still count for the agent if they are a campaign member.
         const memberNames = membershipByUser.get(call.agentUserId) ?? [];
         const campaignName = campaignNameById.get(query.campaignId);
         if (campaignName && !memberNames.includes(campaignName)) continue;
@@ -247,6 +345,7 @@ export function makeGetCallerLeaderboard() {
     const leadsByAssignee = new Map<string, typeof leads>();
     for (const lead of leads) {
       if (!lead.currentAssigneeUserId) continue;
+      if (scopeIds && !scopeIds.includes(lead.currentAssigneeUserId)) continue;
       const list = leadsByAssignee.get(lead.currentAssigneeUserId) ?? [];
       list.push(lead);
       leadsByAssignee.set(lead.currentAssigneeUserId, list);
@@ -254,10 +353,13 @@ export function makeGetCallerLeaderboard() {
 
     const followUpsByAssignee = new Map<string, typeof followUps>();
     for (const followUp of followUps) {
+      if (scopeIds && !scopeIds.includes(followUp.currentAssigneeUserId)) continue;
       const list = followUpsByAssignee.get(followUp.currentAssigneeUserId) ?? [];
       list.push(followUp);
       followUpsByAssignee.set(followUp.currentAssigneeUserId, list);
     }
+
+    const openFollowUpStatuses = new Set<string>(OPEN_FOLLOW_UP_STATUSES);
 
     const rows: CallerLeaderboardRowDto[] = filteredUsers.map((user) => {
       const agentCalls = callsByAgent.get(user.id) ?? [];
@@ -265,13 +367,27 @@ export function makeGetCallerLeaderboard() {
       const agentFollowUps = followUpsByAssignee.get(user.id) ?? [];
 
       const connectedCalls = agentCalls.filter((call) => CONNECTED_STATUSES.has(call.status)).length;
-      const notConnectedCalls = agentCalls.filter((call) =>
-        MISSED_STATUSES.has(call.status),
-      ).length;
-      const durations = agentCalls
-        .map((call) => call.durationSeconds)
-        .filter((value): value is number => typeof value === "number" && value >= 0);
-      const totalTalkTimeSeconds = durations.reduce((sum, value) => sum + value, 0);
+      const missedCalls = agentCalls.filter((call) => MISSED_STATUSES.has(call.status)).length;
+      const notConnectedCalls = missedCalls;
+      const incomingCalls = agentCalls.filter((call) => call.direction === "INBOUND").length;
+      const outgoingCalls = agentCalls.filter((call) => call.direction === "OUTBOUND").length;
+      // Non-connected dials (includes still-RINGING attempts never dispositioned).
+      const attemptedCalls = agentCalls.filter((call) => !CONNECTED_STATUSES.has(call.status)).length;
+
+      const callsChronological = [...agentCalls].sort(
+        (a, b) => new Date(a.initiatedAt).getTime() - new Date(b.initiatedAt).getTime(),
+      );
+      const talkSamples: number[] = [];
+      for (let index = 0; index < callsChronological.length; index += 1) {
+        const call = callsChronological[index]!;
+        if (!CONNECTED_STATUSES.has(call.status) && call.durationSeconds == null) {
+          continue;
+        }
+        const next = callsChronological[index + 1] ?? null;
+        const talk = resolveTalkSeconds(call, next?.initiatedAt ?? null);
+        if (talk != null) talkSamples.push(talk);
+      }
+      const totalTalkTimeSeconds = talkSamples.reduce((sum, value) => sum + value, 0);
       const initiatedTimes = agentCalls
         .map((call) => new Date(call.initiatedAt).getTime())
         .filter((value) => !Number.isNaN(value))
@@ -293,6 +409,9 @@ export function makeGetCallerLeaderboard() {
         });
 
       const completedFollowUps = agentFollowUps.filter((item) => item.status === "COMPLETED");
+      const pendingFollowUps = agentFollowUps.filter((item) =>
+        openFollowUpStatuses.has(item.status),
+      );
       const followUpDurations = completedFollowUps
         .filter((item) => item.completedAt && item.scheduledFor)
         .map((item) => {
@@ -313,6 +432,12 @@ export function makeGetCallerLeaderboard() {
         value: agentLeads.filter((lead) => lead.currentStageId === stage.id).length,
       }));
 
+      const lossReasonMetrics: NamedMetricDto[] = activeLostReasons.map((reason) => ({
+        key: reason.id,
+        label: reason.name,
+        value: agentLeads.filter((lead) => lead.lostReasonId === reason.id).length,
+      }));
+
       const wonLeads = agentLeads.filter((lead) => lead.currentStageBucket === "CLOSED" && lead.wonAt)
         .length;
       const lostLeads = agentLeads.filter(
@@ -329,6 +454,18 @@ export function makeGetCallerLeaderboard() {
       const conversionRate =
         agentLeads.length > 0 ? wonLeads / agentLeads.length : agentCalls.length > 0 ? 0 : 0;
 
+      // Unique customers dialed in the selected date range (calls are already
+      // filtered by initiatedFrom/initiatedTo). Do NOT count assigned leads —
+      // assignment ≠ contact.
+      const contactedKeys = new Set<string>();
+      for (const call of agentCalls) {
+        if (call.customerId) {
+          contactedKeys.add(`customer:${call.customerId}`);
+        } else if (call.leadId) {
+          contactedKeys.add(`lead:${call.leadId}`);
+        }
+      }
+
       const workingHours = Math.max(workingDurationSeconds / 3600, 1 / 60);
       const campaignNames = membershipByUser.get(user.id) ?? [];
 
@@ -337,17 +474,29 @@ export function makeGetCallerLeaderboard() {
         userId: user.id,
         employeeName: user.fullName,
         profilePhotoUrl: user.profilePhotoUrl,
+        roleName: user.roleName,
+        status: user.status,
+        email: user.email,
         teamLeadName: user.assignedTeamLeadName,
         teamLeadId: user.assignedTeamLeadId,
+        reportingManagerId: user.reportingManagerId,
         campaignNames,
         primaryCampaignName: campaignNames[0] ?? null,
         totalCalls: agentCalls.length,
+        incomingCalls,
+        outgoingCalls,
         connectedCalls,
+        attemptedCalls,
         notConnectedCalls,
+        missedCalls,
         outcomeMetrics,
         stageMetrics,
+        lossReasonMetrics,
         interestedLeads,
         followUps: Math.max(agentFollowUps.length, followUpStageLeads),
+        followUpsCompleted: completedFollowUps.length,
+        followUpsPending: pendingFollowUps.length,
+        customersContacted: contactedKeys.size,
         conversions: wonLeads,
         wonLeads,
         lostLeads,
@@ -355,9 +504,9 @@ export function makeGetCallerLeaderboard() {
         lastCallAt: lastCallMs != null ? new Date(lastCallMs).toISOString() : null,
         workingDurationSeconds,
         totalTalkTimeSeconds,
-        averageTalkTimeSeconds: average(durations),
-        longestCallSeconds: durations.length > 0 ? Math.max(...durations) : null,
-        shortestCallSeconds: durations.length > 0 ? Math.min(...durations) : null,
+        averageTalkTimeSeconds: average(talkSamples),
+        longestCallSeconds: talkSamples.length > 0 ? Math.max(...talkSamples) : null,
+        shortestCallSeconds: talkSamples.length > 0 ? Math.min(...talkSamples) : null,
         idleTimeSeconds,
         callsPerHour: agentCalls.length / workingHours,
         averageResponseTimeSeconds: average(responseTimes),
@@ -368,11 +517,25 @@ export function makeGetCallerLeaderboard() {
       };
     });
 
-    // Keep callers who had activity or assigned leads in scope.
+    // Keep employees who had activity or assigned leads in scope.
     const activeRows = rows.filter(
-      (row) => row.totalCalls > 0 || row.pendingLeads > 0 || row.leadsClosed > 0,
+      (row) =>
+        row.totalCalls > 0 ||
+        row.pendingLeads > 0 ||
+        row.leadsClosed > 0 ||
+        row.followUps > 0,
     );
-    const ranked = sortRows(activeRows, query.sortBy);
+
+    // Prefer ranking Callers; include Admins/Team Leads/Managers when they have direct activity.
+    const rankedPool = activeRows.filter(
+      (row) =>
+        row.roleName === "Caller" ||
+        row.roleName === "Team Lead" ||
+        row.roleName === "Manager" ||
+        row.roleName === "Admin" ||
+        !row.roleName,
+    );
+    const ranked = sortRows(rankedPool.length > 0 ? rankedPool : activeRows, query.sortBy);
 
     return {
       dateFrom: range.from.toISOString(),

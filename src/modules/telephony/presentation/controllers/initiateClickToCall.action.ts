@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { isCallerWorkspaceUser } from "@/modules/rbac";
+import { getLead, LeadNotFoundError } from "@/modules/leads";
 import {
   initiateClickToCall,
   initiateClickToCallSchema,
@@ -17,9 +18,30 @@ import {
   InvalidCustomerReferenceError,
   InvalidLeadReferenceError,
 } from "@/modules/telephony";
+import {
+  assertCanAccessLead,
+  LeadAccessDeniedError,
+} from "@/shared/auth/assertCanAccessLead";
 
 export interface TelephonyFormState {
   error?: string;
+  /** Set when the call was created and the UI should stay on the current page. */
+  callId?: string;
+}
+
+/**
+ * Allowlist for post-call return paths so agents stay in Campaign Dashboard
+ * (or caller lead workspace) instead of being forced into /telephony.
+ */
+function resolveSafeReturnPath(raw: FormDataEntryValue | null): string | null {
+  if (typeof raw !== "string" || !raw.startsWith("/") || raw.startsWith("//")) {
+    return null;
+  }
+  if (raw.includes("://") || raw.includes("\\")) return null;
+  const pathOnly = raw.split("?")[0]?.split("#")[0] ?? "";
+  if (/^\/campaigns\/[^/]+\/dashboard$/.test(pathOnly)) return raw;
+  if (/^\/caller\/leads\/[^/]+$/.test(pathOnly)) return raw;
+  return null;
 }
 
 export async function initiateClickToCallAction(
@@ -28,6 +50,7 @@ export async function initiateClickToCallAction(
 ): Promise<TelephonyFormState> {
   const { session, authContext } = await requirePermission("call.initiate");
   const callerWorkspace = isCallerWorkspaceUser(authContext);
+  const returnPath = resolveSafeReturnPath(formData.get("returnPath"));
 
   const parsed = initiateClickToCallSchema.safeParse({
     leadId: formData.get("leadId") || undefined,
@@ -46,6 +69,15 @@ export async function initiateClickToCallAction(
 
   let callId: string;
   try {
+    // Callers (SELF) may only initiate calls for leads assigned to them.
+    if (parsed.data.leadId) {
+      const lead = await getLead(parsed.data.leadId);
+      assertCanAccessLead(authContext, lead, {
+        permissionCode: "lead.view",
+        actorUserId: session.user.id,
+      });
+    }
+
     const call = await initiateClickToCall({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -56,7 +88,9 @@ export async function initiateClickToCallAction(
     if (
       error instanceof InvalidLeadReferenceError ||
       error instanceof InvalidCustomerReferenceError ||
-      error instanceof InvalidAgentReferenceError
+      error instanceof InvalidAgentReferenceError ||
+      error instanceof LeadNotFoundError ||
+      error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };
     }
@@ -64,6 +98,20 @@ export async function initiateClickToCallAction(
   }
 
   const leadId = parsed.data.leadId;
+
+  // Campaign Dashboard / in-place workspace: create Call Attempt, stay put.
+  if (returnPath) {
+    const pathOnly = returnPath.split("?")[0]?.split("#")[0] ?? returnPath;
+    revalidatePath(pathOnly);
+    if (leadId) {
+      revalidatePath(`/leads/${leadId}`);
+      revalidatePath(`/caller/leads/${leadId}`);
+    }
+    revalidatePath("/telephony/calls");
+    revalidatePath("/caller/history");
+    return { callId };
+  }
+
   if (callerWorkspace) {
     revalidatePath("/");
     revalidatePath("/caller/history");

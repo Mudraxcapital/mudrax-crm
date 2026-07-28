@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission, resolveOwnerManagerId } from "@/modules/rbac";
 import {
   createCustomer,
@@ -15,31 +15,26 @@ import {
   DuplicateCustomerIdentifierError,
   listCustomers,
 } from "@/modules/customers";
-import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { resolveCustomerListOptions } from "@/shared/auth/applyHierarchyListFilter";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "customer.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const search = new URL(request.url).searchParams.get("search") ?? undefined;
-  const book = managerBookFilter(current.authContext);
-  const customers = await listCustomers(current.authContext.organizationId, {
-    search,
-    ...book,
-  });
+  const listOptions = await resolveCustomerListOptions(current.authContext, { search });
+  const customers = await listCustomers(current.authContext.organizationId, listOptions);
   return NextResponse.json({ data: customers });
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "customer.create")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

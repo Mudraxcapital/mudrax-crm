@@ -4,14 +4,14 @@
 // Polls session validity so Disable / Suspend force-logs the user out without
 // waiting for a full navigation. Mounted in the authenticated AppShell.
 // Uses an in-app Dialog — never native window.alert / browser popups.
-// Clears the session via the same POST Server Action as /clear-session.
+// Completes logout via full navigation to /clear-session (POST Server Action
+// there), avoiding Server Action flight errors inside this dialog.
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
 import { isSessionClearReason, type SessionClearReason } from "../../domain/sessionClearReason";
-import { clearStaleSessionAction } from "../controllers/clearStaleSession.action";
 
 const POLL_MS = 8_000;
 
@@ -41,7 +41,6 @@ function messageForReason(reason: SessionEndReason): { title: string; descriptio
 
 export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
   const forcingOut = useRef(false);
-  const formRef = useRef<HTMLFormElement>(null);
   const [reason, setReason] = useState<SessionEndReason | null>(null);
 
   const leave = useCallback((next: SessionEndReason) => {
@@ -51,8 +50,14 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
   }, []);
 
   const confirmLeave = useCallback(() => {
-    formRef.current?.requestSubmit();
-  }, []);
+    if (!reason) return;
+    if (reason === "unauthenticated") {
+      window.location.assign("/login");
+      return;
+    }
+    const params = new URLSearchParams({ reason });
+    window.location.assign(`/clear-session?${params.toString()}`);
+  }, [reason]);
 
   useEffect(() => {
     if (!enabled || reason) return;
@@ -66,6 +71,9 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
           cache: "no-store",
         });
         if (response.ok) return;
+
+        // Only force logout on explicit auth denials — not transient 5xx/HTML errors.
+        if (response.status !== 401 && response.status !== 403) return;
 
         const body = (await response.json().catch(() => ({}))) as { reason?: string };
         const next: SessionEndReason = isSessionClearReason(body.reason)
@@ -100,28 +108,20 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
   if (!reason) return null;
 
   const copy = messageForReason(reason);
-  const clearReason: SessionClearReason = isSessionClearReason(reason)
-    ? reason
-    : "session_revoked";
 
   return (
-    <>
-      <form ref={formRef} action={clearStaleSessionAction} className="hidden" aria-hidden>
-        <input type="hidden" name="reason" value={clearReason} />
-      </form>
-      <Dialog
-        open
-        onClose={confirmLeave}
-        title={copy.title}
-        description={copy.description}
-        size="sm"
-      >
-        <div className="flex justify-end">
-          <Button type="button" onClick={confirmLeave}>
-            Continue to sign in
-          </Button>
-        </div>
-      </Dialog>
-    </>
+    <Dialog
+      open
+      onClose={confirmLeave}
+      title={copy.title}
+      description={copy.description}
+      size="sm"
+    >
+      <div className="flex justify-end">
+        <Button type="button" onClick={confirmLeave}>
+          Continue to sign in
+        </Button>
+      </div>
+    </Dialog>
   );
 }

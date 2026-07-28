@@ -1,6 +1,6 @@
 // ============================================================================
-// Self-service password change — any authenticated employee, own account only.
-// Requires current password. Never used for Admin "Reset Password".
+// Self-service password change — Admin and Manager only.
+// Team Leads and Callers use administrator-assigned credentials.
 // ============================================================================
 
 import type { PasswordHasher } from "@/modules/auth/application/ports/PasswordHasher";
@@ -10,10 +10,13 @@ import {
   InvalidUserHierarchyError,
   UserNotFoundError,
 } from "../../domain/errors/UserErrors";
+import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
+import { roleMaySelfServiceChangePassword } from "../services/selfServicePasswordPolicy";
 
 export function makeChangeOwnPassword(
   repository: UserRepository,
   passwordHasher: PasswordHasher,
+  roles: RoleAssignmentPort,
 ) {
   return async function changeOwnPassword(input: {
     userId: string;
@@ -23,6 +26,13 @@ export function makeChangeOwnPassword(
   }): Promise<void> {
     const user = await repository.findById(input.userId);
     if (!user) throw new UserNotFoundError(input.userId);
+
+    const roleName = await roles.getPrimaryRoleName(input.userId);
+    if (!roleMaySelfServiceChangePassword(roleName)) {
+      throw new InvalidUserHierarchyError(
+        "Team Leads and Callers cannot change their password. Ask an Admin to reset it in User Management.",
+      );
+    }
 
     const profile = await repository.findAuthProfileByEmail(user.email);
     if (!profile) throw new UserNotFoundError(input.userId);
@@ -43,8 +53,6 @@ export function makeChangeOwnPassword(
       throw new InvalidUserHierarchyError(policyError);
     }
 
-    // Same hash as current would also be rejected by the plaintext check above;
-    // still verify so a future hasher change cannot silently reuse the hash.
     const sameHash = await passwordHasher.verify(input.newPassword, profile.passwordHash);
     if (sameHash) {
       throw new InvalidUserHierarchyError(

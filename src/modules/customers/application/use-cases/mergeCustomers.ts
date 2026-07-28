@@ -61,6 +61,10 @@ export function makeMergeCustomers(repository: CustomerRepository) {
       }
     }
 
+    if (!actor.actorId) {
+      throw new CustomerMergeError("Merge requires an authenticated actor.");
+    }
+
     // All related Customer FK repoints (Leads, Loans, Documents, Calls,
     // Notifications, …) run inside repository.mergeWithAudit's transaction.
     const result = await repository.mergeWithAudit(
@@ -68,7 +72,7 @@ export function makeMergeCustomers(repository: CustomerRepository) {
         survivingCustomerId: input.survivingCustomerId,
         mergedAwayCustomerId: input.mergedAwayCustomerId,
         duplicateCandidateId: input.duplicateCandidateId ?? null,
-        mergedByUserId: actor.actorId ?? input.survivingCustomerId,
+        mergedByUserId: actor.actorId,
         reason: input.reason ?? null,
       },
       actor,

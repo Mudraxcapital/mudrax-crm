@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   deleteSavedReport,
@@ -8,14 +8,11 @@ import {
   SavedReportNotFoundError,
 } from "@/modules/reports";
 
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "report.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -28,14 +25,11 @@ export async function GET(
   return NextResponse.json({ data: saved });
 }
 
-export async function DELETE(
-  _request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function DELETE(request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "report.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -57,14 +51,11 @@ export async function DELETE(
   }
 }
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function POST(request: Request,
+  context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!hasPermission(current.authContext, "report.view")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

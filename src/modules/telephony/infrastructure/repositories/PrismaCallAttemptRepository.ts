@@ -10,6 +10,7 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
+  CallAgentScopeFilter,
   CallAttemptRepository,
   CallsByAgentEntry,
   CreateCallAttemptData,
@@ -208,16 +209,27 @@ export class PrismaCallAttemptRepository implements CallAttemptRepository {
     return rows.map(toTelephonyAuditRecord);
   }
 
+  private agentScopeWhere(filter?: CallAgentScopeFilter): Prisma.CallAttemptWhereInput {
+    if (filter?.agentUserIds?.length) {
+      return { agentUserId: { in: filter.agentUserIds } };
+    }
+    if (filter?.agentUserId) {
+      return { agentUserId: filter.agentUserId };
+    }
+    return {};
+  }
+
   async countInRange(
     organizationId: string,
     range: { from: Date; to: Date },
-    filter?: { statuses?: CallAttempt["status"][] },
+    filter?: { statuses?: CallAttempt["status"][] } & CallAgentScopeFilter,
   ): Promise<number> {
     return this.prisma.callAttempt.count({
       where: {
         organizationId,
         initiatedAt: { gte: range.from, lte: range.to },
         ...(filter?.statuses ? { status: { in: filter.statuses } } : {}),
+        ...this.agentScopeWhere(filter),
       },
     });
   }
@@ -225,12 +237,14 @@ export class PrismaCallAttemptRepository implements CallAttemptRepository {
   async averageDurationInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: CallAgentScopeFilter,
   ): Promise<number | null> {
     const result = await this.prisma.callAttempt.aggregate({
       where: {
         organizationId,
         initiatedAt: { gte: range.from, lte: range.to },
         durationSeconds: { not: null },
+        ...this.agentScopeWhere(filter),
       },
       _avg: { durationSeconds: true },
     });
@@ -240,10 +254,15 @@ export class PrismaCallAttemptRepository implements CallAttemptRepository {
   async countByAgentInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: CallAgentScopeFilter,
   ): Promise<CallsByAgentEntry[]> {
     const groups = await this.prisma.callAttempt.groupBy({
       by: ["agentUserId"],
-      where: { organizationId, initiatedAt: { gte: range.from, lte: range.to } },
+      where: {
+        organizationId,
+        initiatedAt: { gte: range.from, lte: range.to },
+        ...this.agentScopeWhere(filter),
+      },
       _count: { _all: true },
     });
     return groups
@@ -251,9 +270,13 @@ export class PrismaCallAttemptRepository implements CallAttemptRepository {
       .sort((a, b) => b.count - a.count);
   }
 
-  async listRecent(organizationId: string, limit: number): Promise<CallAttempt[]> {
+  async listRecent(
+    organizationId: string,
+    limit: number,
+    filter?: CallAgentScopeFilter,
+  ): Promise<CallAttempt[]> {
     const rows = await this.prisma.callAttempt.findMany({
-      where: { organizationId },
+      where: { organizationId, ...this.agentScopeWhere(filter) },
       orderBy: { initiatedAt: "desc" },
       take: limit,
     });

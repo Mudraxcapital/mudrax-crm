@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
@@ -13,7 +13,9 @@ import {
 } from "@/modules/users";
 
 export async function GET(request: Request) {
-  const current = await getCurrentUser();
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.view")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -38,7 +40,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.manage")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

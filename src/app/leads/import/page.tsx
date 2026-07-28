@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
+import { hasPermission, isAssignableAgentRole, isCallerWorkspaceUser } from "@/modules/rbac";
 import { listCampaigns, listCampaignMembers, getCampaignStatistics } from "@/modules/campaigns";
 import {
   leadCatalogs,
@@ -14,7 +14,11 @@ import { listUsers } from "@/modules/users";
 import { LeadImportForm } from "@/modules/leads/presentation/components/LeadImportForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { TabNav } from "@/shared/ui/Tabs";
-import { managerBookFilter, visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
+import {
+  leadHierarchyFilter,
+  managerBookFilter,
+  visibleLeadsFilter,
+} from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function LeadImportPage() {
   const { session, authContext } = await requirePermission("lead.import");
@@ -25,6 +29,7 @@ export default async function LeadImportPage() {
   const canCreateCampaign = hasPermission(authContext, "campaign.manage");
   const canViewLeads = hasPermission(authContext, "lead.view");
   const book = managerBookFilter(authContext);
+  const ownershipFilter = leadHierarchyFilter(authContext);
   const hierarchyFilter = visibleLeadsFilter(authContext, {
     permissionCode: "lead.import",
     actorUserId: session.user.id,
@@ -33,7 +38,10 @@ export default async function LeadImportPage() {
 
   const [sources, batches, campaigns, users, allLeads, activeFields] = await Promise.all([
     leadCatalogs.listSources(authContext.organizationId),
-    listImportBatches(authContext.organizationId, book),
+    listImportBatches(authContext.organizationId, {
+      ...book,
+      ownerTeamLeadId: ownershipFilter.ownerTeamLeadId,
+    }),
     listCampaigns(authContext.organizationId, book),
     listUsers({ status: "ACTIVE", limit: 5_000 }),
     // Hierarchy-scoped snapshot for agent workload preview only (not org-wide).
@@ -68,22 +76,33 @@ export default async function LeadImportPage() {
   );
 
   const visibleIds = authContext.hierarchy.visibleUserIds;
-  const callers = users
-    .filter((user) => user.roleName === "Caller")
+  const teamLeadById = new Map(
+    users
+      .filter((user) => user.roleName === "Team Lead")
+      .map((user) => [user.id, user] as const),
+  );
+  const assignableUsers = users
+    .filter((user) => isAssignableAgentRole(user.roleName))
     .filter((user) => !visibleIds || visibleIds.includes(user.id));
 
-  const agents = callers.map((user) => {
+  const agents = assignableUsers.map((user) => {
     const assigned = allLeads.filter((lead) => lead.currentAssigneeUserId === user.id);
     const openLeads = assigned.filter((lead) => lead.currentStageBucket !== "CLOSED").length;
     const completedLeads = assigned.filter((lead) => lead.currentStageBucket === "CLOSED").length;
+    // Callers inherit Manager via their Team Lead for supervisor scoping.
+    const reportingManagerId =
+      user.roleName === "Caller" && user.assignedTeamLeadId
+        ? (teamLeadById.get(user.assignedTeamLeadId)?.reportingManagerId ?? null)
+        : user.reportingManagerId;
     return {
       id: user.id,
       fullName: user.fullName,
+      roleName: user.roleName as "Admin" | "Manager" | "Team Lead" | "Caller",
       openLeads,
       completedLeads,
       availability: "AVAILABLE" as const,
       assignedTeamLeadId: user.assignedTeamLeadId,
-      reportingManagerId: user.reportingManagerId,
+      reportingManagerId,
     };
   });
 
@@ -108,7 +127,7 @@ export default async function LeadImportPage() {
     <PageSection>
       <PageHeader
         title="Add Leads from Excel"
-        description="Upload, map fields, resolve duplicates, assign campaign & callers, then distribute."
+        description="Upload, map fields, resolve duplicates, assign campaign & agents, then distribute."
         breadcrumbs={[
           { label: "Leads", href: "/leads" },
           { label: "Add from Excel" },

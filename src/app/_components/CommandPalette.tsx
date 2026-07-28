@@ -95,6 +95,30 @@ const QUICK_ACTIONS = [
     adminOnly: true,
   },
   {
+    id: "qa-lead-center",
+    title: "Lead Center",
+    subtitle: "Inbound lead staging",
+    href: "/lead-center",
+    permissions: ["lead_center.view"],
+    adminOnly: true,
+  },
+  {
+    id: "qa-leaderboard",
+    title: "Leaderboard",
+    subtitle: "Caller performance rankings",
+    href: "/leaderboard",
+    permissions: ["report.view"],
+    adminOnly: true,
+  },
+  {
+    id: "qa-integrations",
+    title: "Integrations",
+    subtitle: "Connector configuration",
+    href: "/integrations",
+    permissions: ["integration.view", "integration.manage"],
+    adminOnly: true,
+  },
+  {
     id: "qa-search",
     title: "Advanced Lead Search",
     subtitle: "Quick action",
@@ -114,6 +138,12 @@ const CALLER_QUICK_ACTIONS = [
     title: "My Performance",
     subtitle: "Caller workspace",
     href: "/caller/performance",
+  },
+  {
+    id: "cqa-leaderboard",
+    title: "Leaderboard",
+    subtitle: "Caller workspace",
+    href: "/leaderboard",
   },
   {
     id: "cqa-notif",

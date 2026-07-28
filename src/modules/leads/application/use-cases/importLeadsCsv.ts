@@ -82,7 +82,15 @@ function defaultMapping(
       pick("fullName", "name", "full_name", "full name", "customer name", "lead name") ??
       headers[0] ??
       "name",
-    phone: pick("phone", "phoneSnapshot", "mobile", "mobile number"),
+    phone: pick(
+      "phone",
+      "phoneSnapshot",
+      "mobile",
+      "mobile number",
+      "lead id",
+      "leadid",
+      "lead_id",
+    ),
     email: pick("email", "emailSnapshot", "email address"),
     city: pick("city"),
     state: pick("state", "province"),
@@ -119,6 +127,41 @@ function resolveAgentId(
   const byName = agents.find((agent) => agent.fullName?.toLowerCase() === key);
   if (byName && byName.status === "ACTIVE") return byName.id;
   return null;
+}
+
+/** Ownership for a newly created Lead — prefer assignee hierarchy when present. */
+async function ownershipForAssignee(
+  userLookup: UserLookupPort,
+  agentId: string | null | undefined,
+  fallback: { ownerManagerId: string | null; ownerTeamLeadId: string | null },
+): Promise<{ ownerManagerId: string | null; ownerTeamLeadId: string | null }> {
+  if (!agentId) return fallback;
+  const user = await userLookup.findById(agentId);
+  if (!user?.roleName) return fallback;
+
+  if (user.roleName === "Caller" && !user.assignedTeamLeadId) {
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+  if (user.roleName === "Team Lead") {
+    return {
+      ownerManagerId: user.reportingManagerId ?? null,
+      ownerTeamLeadId: user.id,
+    };
+  }
+  if (user.roleName === "Caller" && user.assignedTeamLeadId) {
+    const teamLead = await userLookup.findById(user.assignedTeamLeadId);
+    return {
+      ownerManagerId: teamLead?.reportingManagerId ?? null,
+      ownerTeamLeadId: user.assignedTeamLeadId,
+    };
+  }
+  if (user.roleName === "Manager") {
+    return { ownerManagerId: user.id, ownerTeamLeadId: null };
+  }
+  if (user.roleName === "Admin") {
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+  return fallback;
 }
 
 function resolveDuplicateMode(input: ImportLeadsCsvInput): DuplicateResolutionMode {
@@ -250,7 +293,7 @@ export function makeImportLeadsCsv(
           phoneSnapshot: lead.phoneSnapshot,
           emailSnapshot: lead.emailSnapshot,
           currentStageId: lead.currentStageId,
-          currentStageName: stage?.name ?? "Unknown",
+          currentStageName: stage?.name ?? "Unassigned status",
           stageBucket: stage?.bucket ?? "ACTIVE",
           stageSortOrder: stage?.sortOrder ?? 0,
           updatedAt: lead.updatedAt,
@@ -637,13 +680,23 @@ export function makeImportLeadsCsv(
             }
           }
 
+          const distAgent = assigneeByImportableIndex.get(index);
+          const fileAgent = resolveAgentId(agentRaw, activeAgents);
+          const agentId = distAgent ?? fileAgent;
+          if (agentId) assignedAgentIds.add(agentId);
+
+          const leadOwnership = await ownershipForAssignee(userLookup, agentId, {
+            ownerManagerId,
+            ownerTeamLeadId,
+          });
+
           const customer = await customerLookup.resolveOrCreate!({
             organizationId,
             fullName,
             phone: phone || null,
             email: email || null,
             actorUserId: actor.actorId ?? organizationId,
-            ownerManagerId,
+            ownerManagerId: leadOwnership.ownerManagerId,
           });
 
           const resolvedSourceId =
@@ -657,11 +710,6 @@ export function makeImportLeadsCsv(
             input.campaignId ??
             null;
 
-          const distAgent = assigneeByImportableIndex.get(index);
-          const fileAgent = resolveAgentId(agentRaw, activeAgents);
-          const agentId = distAgent ?? fileAgent;
-          if (agentId) assignedAgentIds.add(agentId);
-
           const lead = await leadRepository.createWithAudit(
             {
               organizationId,
@@ -669,8 +717,8 @@ export function makeImportLeadsCsv(
               leadSourceId: resolvedSourceId,
               currentStageId: defaultStage.id,
               campaignId: resolvedCampaignId,
-              ownerManagerId,
-              ownerTeamLeadId,
+              ownerManagerId: leadOwnership.ownerManagerId,
+              ownerTeamLeadId: leadOwnership.ownerTeamLeadId,
               fullNameSnapshot: systemUpdates.fullNameSnapshot ?? fullName,
               phoneSnapshot: systemUpdates.phoneSnapshot || phone || null,
               emailSnapshot: systemUpdates.emailSnapshot || email || null,
@@ -796,7 +844,12 @@ export function makeImportLeadsCsv(
 export function makeListImportBatches(importRepository: ImportBatchRepository) {
   return async function listImportBatches(
     organizationId: string,
-    options?: { campaignId?: string; ownerManagerId?: string; limit?: number },
+    options?: {
+      campaignId?: string;
+      ownerManagerId?: string;
+      ownerTeamLeadId?: string;
+      limit?: number;
+    },
   ): Promise<ImportBatchDto[]> {
     const batches = await importRepository.list(organizationId, options?.limit ?? 50);
     let filtered = batches;
@@ -805,6 +858,9 @@ export function makeListImportBatches(importRepository: ImportBatchRepository) {
     }
     if (options?.ownerManagerId) {
       filtered = filtered.filter((batch) => batch.ownerManagerId === options.ownerManagerId);
+    }
+    if (options?.ownerTeamLeadId) {
+      filtered = filtered.filter((batch) => batch.ownerTeamLeadId === options.ownerTeamLeadId);
     }
     return filtered.map(toImportBatchDto);
   };
@@ -861,7 +917,7 @@ export function makePreviewImportDuplicates(
           phoneSnapshot: lead.phoneSnapshot,
           emailSnapshot: lead.emailSnapshot,
           currentStageId: lead.currentStageId,
-          currentStageName: stage?.name ?? "Unknown",
+          currentStageName: stage?.name ?? "Unassigned status",
           stageBucket: stage?.bucket ?? "ACTIVE",
           stageSortOrder: stage?.sortOrder ?? 0,
           updatedAt: lead.updatedAt,

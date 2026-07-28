@@ -10,6 +10,12 @@ export type DuplicateMatchMode = "phone" | "email" | "phone_name" | "phone_or_em
 
 export type DuplicateCategory = "new" | "possible" | "exact";
 
+/** Where the duplicate was found: CRM/campaign DB vs another row in the same Excel file. */
+export type DuplicateOrigin = "crm" | "file";
+
+/** Synthetic status-group id for within-file duplicates (not a CRM Lead Stage). */
+export const IN_FILE_DUPLICATE_STAGE_ID = "__in_file__";
+
 /**
  * Import strategies for duplicate rows.
  * - skip_duplicates: import only new leads (recommended)
@@ -50,6 +56,8 @@ export interface ExistingLeadCandidate {
 export interface DuplicateClassification {
   rowNumber: number;
   category: DuplicateCategory;
+  /** crm = matches a lead already in CRM/campaign; file = repeat row inside this Excel. */
+  origin: DuplicateOrigin | null;
   matchReason: string | null;
   existingLeadId: string | null;
   existingCustomerId: string | null;
@@ -74,14 +82,24 @@ export interface DuplicateDetectionSummary {
   matchMode: DuplicateMatchMode;
   matchLabel: string;
   totalRows: number;
+  /** Rows that already exist in CRM / campaign DB (not Excel-only repeats). */
   alreadyExisting: number;
+  /** Rows that repeat an earlier phone/email inside the same Excel file. */
+  inFileDuplicateCount: number;
   newLeadCount: number;
   newLeads: DuplicateClassification[];
   possibleDuplicates: DuplicateClassification[];
   exactDuplicates: DuplicateClassification[];
-  /** All duplicate rows (exact + possible), for downloads. */
+  /** CRM duplicates only. */
+  crmDuplicates: DuplicateClassification[];
+  /** Within-file duplicates only. */
+  inFileDuplicates: DuplicateClassification[];
+  /** All duplicate rows (CRM + file), for downloads. */
   allDuplicates: DuplicateClassification[];
-  /** Dynamic groups from CRM Lead Stage catalog (includes zero-count stages). */
+  /**
+   * CRM Lead Stage groups (includes zero-count stages), plus a trailing
+   * "Duplicate in Excel" group when the file has internal repeats.
+   */
   statusGroups: DuplicateStatusGroup[];
 }
 
@@ -148,6 +166,9 @@ export function classifyImportDuplicates(input: {
   const newLeads: DuplicateClassification[] = [];
   const possibleDuplicates: DuplicateClassification[] = [];
   const exactDuplicates: DuplicateClassification[] = [];
+  // Phone is the Lead identity — keep the first row in this file, skip the rest.
+  const seenPhonesInFile = new Set<string>();
+  const seenEmailsInFile = new Set<string>();
 
   for (const row of input.rows) {
     const phone = normalizePhone(row.phone);
@@ -214,9 +235,37 @@ export function classifyImportDuplicates(input: {
       }
     }
 
+    // Within-file duplicates: first occurrence wins; later rows are ignored on skip.
+    // These are NOT "already existing" in CRM — they only collide inside this Excel.
+    let origin: DuplicateOrigin | null = category === "new" ? null : "crm";
+    if (category === "new") {
+      const phoneKeyUsed =
+        input.matchMode === "phone" ||
+        input.matchMode === "phone_or_email" ||
+        input.matchMode === "phone_name";
+      const emailKeyUsed =
+        input.matchMode === "email" || input.matchMode === "phone_or_email";
+
+      if (phoneKeyUsed && phone && seenPhonesInFile.has(phone)) {
+        category = "exact";
+        matchReason = "Phone (duplicate in file)";
+        origin = "file";
+        match = null;
+      } else if (emailKeyUsed && email && seenEmailsInFile.has(email)) {
+        category = "exact";
+        matchReason = "Email (duplicate in file)";
+        origin = "file";
+        match = null;
+      }
+    }
+
+    if (phone) seenPhonesInFile.add(phone);
+    if (email) seenEmailsInFile.add(email);
+
     const entry: DuplicateClassification = {
       rowNumber: row.rowNumber,
       category,
+      origin,
       matchReason,
       existingLeadId: match?.id ?? null,
       existingCustomerId: match?.customerId ?? null,
@@ -234,24 +283,30 @@ export function classifyImportDuplicates(input: {
   }
 
   const allDuplicates = [...exactDuplicates, ...possibleDuplicates];
-  const statusGroups = groupDuplicatesByStage(allDuplicates, input.stages ?? []);
+  const crmDuplicates = allDuplicates.filter((row) => row.origin === "crm");
+  const inFileDuplicates = allDuplicates.filter((row) => row.origin === "file");
+  const statusGroups = groupDuplicatesByStage(crmDuplicates, inFileDuplicates, input.stages ?? []);
 
   return {
     matchMode: input.matchMode,
     matchLabel: DUPLICATE_MATCH_LABELS[input.matchMode],
     totalRows: input.rows.length,
-    alreadyExisting: allDuplicates.length,
+    alreadyExisting: crmDuplicates.length,
+    inFileDuplicateCount: inFileDuplicates.length,
     newLeadCount: newLeads.length,
     newLeads,
     possibleDuplicates,
     exactDuplicates,
+    crmDuplicates,
+    inFileDuplicates,
     allDuplicates,
     statusGroups,
   };
 }
 
 export function groupDuplicatesByStage(
-  duplicates: DuplicateClassification[],
+  crmDuplicates: DuplicateClassification[],
+  inFileDuplicates: DuplicateClassification[],
   stages: Array<{ id: string; name: string; sortOrder: number; isActive: boolean }>,
 ): DuplicateStatusGroup[] {
   const activeStages = stages
@@ -260,16 +315,13 @@ export function groupDuplicatesByStage(
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
   const byStage = new Map<string, DuplicateClassification[]>();
-  const unknown: DuplicateClassification[] = [];
 
-  for (const row of duplicates) {
-    if (!row.existingStageId) {
-      unknown.push(row);
-      continue;
-    }
-    const list = byStage.get(row.existingStageId) ?? [];
+  for (const row of crmDuplicates) {
+    // CRM matches always carry a stage id; fall back to name-keyed bucket if missing.
+    const stageId = row.existingStageId ?? `__missing__:${row.existingStageName ?? "unassigned"}`;
+    const list = byStage.get(stageId) ?? [];
     list.push(row);
-    byStage.set(row.existingStageId, list);
+    byStage.set(stageId, list);
   }
 
   const groups: DuplicateStatusGroup[] = activeStages.map((stage) => {
@@ -284,27 +336,31 @@ export function groupDuplicatesByStage(
     };
   });
 
-  // Include stages that appear on duplicates but are inactive / missing from catalog.
+  // Include stages that appear on CRM duplicates but are inactive / missing from catalog.
   for (const [stageId, rows] of byStage) {
     if (groups.some((group) => group.stageId === stageId)) continue;
+    const named =
+      rows[0]?.existingStageName?.trim() ||
+      (stageId.startsWith("__missing__:") ? stageId.slice("__missing__:".length) : "");
     groups.push({
       stageId,
-      stageName: rows[0]?.existingStageName ?? "Unknown status",
-      sortOrder: Number.MAX_SAFE_INTEGER,
+      stageName: named && named.toLowerCase() !== "unknown" ? named : "Unassigned status",
+      sortOrder: Number.MAX_SAFE_INTEGER - 1,
       count: rows.length,
       latestUpdatedAt: latestIso(rows.map((row) => row.existingUpdatedAt)),
       duplicates: rows,
     });
   }
 
-  if (unknown.length > 0) {
+  // Within-file duplicates are never "Unknown" CRM status — show them explicitly.
+  if (inFileDuplicates.length > 0) {
     groups.push({
-      stageId: "__unknown__",
-      stageName: "Unknown status",
+      stageId: IN_FILE_DUPLICATE_STAGE_ID,
+      stageName: "Duplicate in Excel",
       sortOrder: Number.MAX_SAFE_INTEGER,
-      count: unknown.length,
-      latestUpdatedAt: latestIso(unknown.map((row) => row.existingUpdatedAt)),
-      duplicates: unknown,
+      count: inFileDuplicates.length,
+      latestUpdatedAt: null,
+      duplicates: inFileDuplicates,
     });
   }
 

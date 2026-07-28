@@ -74,7 +74,7 @@ const LEADS: LeadSeed[] = [
     customerKey: "vikram-singh",
     phone: "+919876543214",
     email: "vikram.singh@example.com",
-    source: "Bank Partner Referral",
+    source: "Data",
     stage: "Documentation In Progress",
     tags: ["High Ticket Size"],
     note: "Salary slips and Form 16 for last 2 years requested.",

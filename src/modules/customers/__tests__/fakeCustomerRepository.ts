@@ -90,6 +90,10 @@ export class FakeCustomerRepository implements CustomerRepository {
     if (options?.ownerManagerId) {
       results = results.filter((customer) => customer.ownerManagerId === options.ownerManagerId);
     }
+    if (options?.customerIds) {
+      const allowed = new Set(options.customerIds);
+      results = results.filter((customer) => allowed.has(customer.id));
+    }
     if (options?.search) {
       const search = options.search.toLowerCase();
       results = results.filter((customer) => customer.fullName.toLowerCase().includes(search));
@@ -110,11 +114,13 @@ export class FakeCustomerRepository implements CustomerRepository {
 
   async count(
     organizationId: string,
-    options?: Pick<ListCustomersOptions, "ownerManagerId">,
+    options?: Pick<ListCustomersOptions, "ownerManagerId" | "customerIds">,
   ): Promise<number> {
+    if (options?.customerIds?.length === 0) return 0;
     return [...this.customers.values()].filter((c) => {
       if (c.organizationId !== organizationId || c.status === "MERGED") return false;
       if (options?.ownerManagerId && c.ownerManagerId !== options.ownerManagerId) return false;
+      if (options?.customerIds && !options.customerIds.includes(c.id)) return false;
       return true;
     }).length;
   }

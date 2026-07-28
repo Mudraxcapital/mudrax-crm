@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { assertOwnsManagerData, hasPermission } from "@/modules/rbac";
+import { hasPermission } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer, listCustomers } from "@/modules/customers";
 import { listActiveLeadFields, listLeadsByCustomer } from "@/modules/leads";
 import { listLoanApplications } from "@/modules/loan-applications";
@@ -12,7 +12,8 @@ import { listNotifications } from "@/modules/notifications";
 import { listFollowUps } from "@/modules/follow-ups";
 import { listCustomerTimeline } from "@/modules/activity-timeline";
 import { MergeCustomersForm } from "@/modules/customers/presentation/components/MergeCustomersForm";
-import { managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { canAccessCustomer } from "@/shared/auth/assertCanAccessCustomer";
+import { resolveCustomerListOptions } from "@/shared/auth/applyHierarchyListFilter";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { authContext } = await requirePermission("customer.view");
@@ -28,7 +29,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     throw error;
   }
 
-  if (!assertOwnsManagerData(authContext.hierarchy, customer.ownerManagerId)) {
+  if (!(await canAccessCustomer(authContext, customer))) {
     notFound();
   }
 
@@ -39,13 +40,16 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   const canUpdate = hasPermission(authContext, "customer.update");
   const canMerge = hasPermission(authContext, "customer.merge");
+  const canViewDuplicates =
+    hasPermission(authContext, "customer.duplicate.view") ||
+    hasPermission(authContext, "customer.merge");
   const canViewLoans = hasPermission(authContext, "loan_application.view");
   const canViewDocs = hasPermission(authContext, "document.view");
   const canViewCalls = hasPermission(authContext, "call.view");
   const canViewNotifications = hasPermission(authContext, "notification.view");
   const canViewFollowUps = hasPermission(authContext, "follow_up.view");
 
-  const book = managerBookFilter(authContext);
+  const listOptions = await resolveCustomerListOptions(authContext);
   const leads = await listLeadsByCustomer(id);
   const leadIds = leads.map((lead) => lead.id);
 
@@ -76,7 +80,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       : Promise.resolve([]),
     listCustomerTimeline(id, authContext.organizationId, 40),
     listActiveLeadFields(authContext.organizationId),
-    canMerge ? listCustomers(authContext.organizationId, book) : Promise.resolve([]),
+    canMerge ? listCustomers(authContext.organizationId, listOptions) : Promise.resolve([]),
   ]);
   const visibleLeadFieldKeys = new Set(
     leadFields
@@ -105,7 +109,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canMerge ? (
+          {canViewDuplicates ? (
             <Link href="/customers/duplicates" className="mx-btn mx-btn-secondary mx-btn-sm">
               Duplicates
             </Link>

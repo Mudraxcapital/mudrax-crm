@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { assertOwnsManagerData } from "@/modules/rbac";
 import { CustomerNotFoundError, getCustomer } from "@/modules/customers";
 import { EditCustomerForm } from "@/modules/customers/presentation/components/EditCustomerForm";
 import { updateCustomerAction } from "@/modules/customers/presentation/controllers/updateCustomer.action";
+import { canAccessCustomer } from "@/shared/auth/assertCanAccessCustomer";
 
 export default async function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { authContext } = await requirePermission("customer.update");
@@ -20,7 +20,7 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
     throw error;
   }
 
-  if (!assertOwnsManagerData(authContext.hierarchy, customer.ownerManagerId)) {
+  if (!(await canAccessCustomer(authContext, customer))) {
     notFound();
   }
 

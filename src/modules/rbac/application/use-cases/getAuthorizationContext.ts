@@ -41,6 +41,7 @@ export function makeGetAuthorizationContext(repository: RbacRepository) {
         departmentId: scopeContext.currentDepartmentId,
       },
       hierarchy,
+      canManageCallerAccounts: scopeContext.canManageCallerAccounts,
     };
   };
 }

@@ -97,6 +97,9 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
             user={user}
             action={boundUpdate}
             allowAdminRole={allowAdminRole}
+            allowGrantCallerLifecycle={
+              allowAdminRole || authContext.hierarchy.primaryRole === "Manager"
+            }
             allowedRoles={allowedRoles}
             isSelf={isSelf}
             callerCount={callersUnderUser.length}

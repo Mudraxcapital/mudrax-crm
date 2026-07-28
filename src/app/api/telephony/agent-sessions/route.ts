@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   AgentSessionAlreadyActiveError,
@@ -16,24 +16,31 @@ import {
   startAgentSessionSchema,
 } from "@/modules/telephony";
 
-export async function GET() {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: Request) {
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "agent_session.manage")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const sessions = await listAgentSessions(current.authContext.organizationId);
-  return NextResponse.json({ data: sessions });
+  const hierarchy = current.authContext.hierarchy;
+  const scoped =
+    hierarchy.unrestricted || hierarchy.primaryRole === "Admin"
+      ? sessions
+      : sessions.filter((session) =>
+          (hierarchy.visibleUserIds ?? [current.session.user.id]).includes(session.userId),
+        );
+  return NextResponse.json({ data: scoped });
 }
 
 export async function POST(request: Request) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "agent_session.self")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

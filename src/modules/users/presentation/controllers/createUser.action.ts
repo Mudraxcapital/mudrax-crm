@@ -38,6 +38,7 @@ export async function createUserAction(
     profilePhotoUrl: formString(formData, "profilePhotoUrl"),
     assignedTeamLeadId: formString(formData, "assignedTeamLeadId"),
     reportingManagerId: formString(formData, "reportingManagerId"),
+    canManageCallerAccounts: formData.get("canManageCallerAccounts") === "on",
   });
 
   if (!parsed.success) {

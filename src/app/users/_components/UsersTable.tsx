@@ -7,7 +7,12 @@ import { DataTable, type DataColumn } from "@/shared/ui/DataTable";
 import { Badge, accountStatusLabel, accountStatusTone } from "@/shared/ui/Badge";
 import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
-import type { UserStatus } from "@/modules/users";
+import type { UserStatus } from "@/modules/users/domain/entities/User";
+import {
+  DIRECT_ADMIN_REASSIGN_LABEL,
+  REASSIGN_CALLERS_TO_DIRECT_ADMIN,
+} from "@/modules/users/presentation/constants/callerReassignment";
+import { profilePhotoSrc } from "@/modules/users/presentation/lib/profilePhotoUrl";
 import {
   bulkDeleteUsersAction,
   bulkDisableUsersAction,
@@ -15,6 +20,7 @@ import {
   bulkSuspendUsersAction,
   changeUserStatusAction,
   deleteUserAction,
+  getUserDeleteCountsAction,
   resetPasswordAction,
 } from "@/modules/users/presentation/controllers/userActions.action";
 
@@ -33,6 +39,7 @@ export interface UserRow {
   reportingManagerName: string | null;
   lastLoginAt: string | null;
   profilePhotoUrl: string | null;
+  leadCount: number;
 }
 
 type StatusDialogMode = "INACTIVE" | "SUSPENDED" | "ACTIVE";
@@ -60,7 +67,9 @@ export function UsersTable({
   currentUserId,
   canManage,
   canDelete,
+  canChangeStatus,
   canReset,
+  allowDirectAdminReassign,
   roleFilterOptions,
   teamLeadOptions,
   managerOptions,
@@ -70,7 +79,9 @@ export function UsersTable({
   currentUserId: string;
   canManage: boolean;
   canDelete: boolean;
+  canChangeStatus: boolean;
   canReset: boolean;
+  allowDirectAdminReassign: boolean;
   roleFilterOptions: string[];
   teamLeadOptions: { id: string; fullName: string }[];
   managerOptions: { id: string; fullName: string }[];
@@ -97,11 +108,49 @@ export function UsersTable({
   } | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [deleteDialog, setDeleteDialog] = useState<UserRow | null>(null);
+  const [deleteLeadCount, setDeleteLeadCount] = useState(0);
+  const [deleteFollowUpCount, setDeleteFollowUpCount] = useState(0);
+  const [deleteCampaignCount, setDeleteCampaignCount] = useState(0);
   const [reassignTo, setReassignTo] = useState("");
   const [reassignManagerTo, setReassignManagerTo] = useState("");
   const [reassignLeadsTo, setReassignLeadsTo] = useState("");
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDetails, setBulkDetails] = useState<string[] | null>(null);
+
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selected.includes(row.id)),
+    [rows, selected],
+  );
+
+  const bulkNeedsCallerReassign = useMemo(
+    () =>
+      selectedRows.some(
+        (row) =>
+          row.roleName === "Team Lead" &&
+          rows.some((candidate) => candidate.assignedTeamLeadId === row.id),
+      ),
+    [rows, selectedRows],
+  );
+
+  const bulkNeedsManagerReassign = useMemo(
+    () =>
+      selectedRows.some(
+        (row) =>
+          row.roleName === "Manager" &&
+          rows.some((candidate) => candidate.reportingManagerId === row.id),
+      ),
+    [rows, selectedRows],
+  );
+
+  const bulkNeedsLeadReassign = useMemo(
+    () => selectedRows.some((row) => row.leadCount > 0),
+    [selectedRows],
+  );
+
+  const bulkSelectedLeadCount = useMemo(
+    () => selectedRows.reduce((sum, row) => sum + row.leadCount, 0),
+    [selectedRows],
+  );
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -174,11 +223,7 @@ export function UsersTable({
       header: "Profile",
       accessor: (r) => r.fullName,
       cell: (r) => {
-        const src = r.profilePhotoUrl
-          ? r.profilePhotoUrl.startsWith("storage:")
-            ? `/api/users/${r.id}/photo`
-            : r.profilePhotoUrl
-          : null;
+        const src = profilePhotoSrc(r.id, r.profilePhotoUrl);
         return src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={src} alt="" className="size-8 rounded-full object-cover" />
@@ -268,7 +313,7 @@ export function UsersTable({
               Reset Password
             </button>
           ) : null}
-          {canManage && r.id !== currentUserId && r.status === "INACTIVE" ? (
+          {canChangeStatus && r.id !== currentUserId && r.status === "INACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -281,7 +326,7 @@ export function UsersTable({
               Enable
             </button>
           ) : null}
-          {canManage && r.id !== currentUserId && r.status === "SUSPENDED" ? (
+          {canChangeStatus && r.id !== currentUserId && r.status === "SUSPENDED" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -294,7 +339,7 @@ export function UsersTable({
               Unsuspend
             </button>
           ) : null}
-          {canManage && r.id !== currentUserId && r.status === "ACTIVE" ? (
+          {canChangeStatus && r.id !== currentUserId && r.status === "ACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -307,7 +352,7 @@ export function UsersTable({
               Disable
             </button>
           ) : null}
-          {canManage && r.id !== currentUserId && r.status === "ACTIVE" ? (
+          {canChangeStatus && r.id !== currentUserId && r.status === "ACTIVE" ? (
             <button
               type="button"
               className="mx-btn mx-btn-ghost mx-btn-sm"
@@ -330,7 +375,16 @@ export function UsersTable({
                 setReassignTo("");
                 setReassignManagerTo("");
                 setReassignLeadsTo("");
+                setDeleteLeadCount(r.leadCount);
+                setDeleteFollowUpCount(0);
+                setDeleteCampaignCount(0);
                 setDeleteDialog(r);
+                startTransition(async () => {
+                  const counts = await getUserDeleteCountsAction(r.id);
+                  setDeleteLeadCount(counts.leadCount);
+                  setDeleteFollowUpCount(counts.followUpCount);
+                  setDeleteCampaignCount(counts.campaignCount);
+                });
               }}
             >
               Delete
@@ -452,12 +506,12 @@ export function UsersTable({
         emptyTitle="No employees found"
         emptyDescription="Adjust search or filters, or create a new employee."
         onRowOpen={(row) => router.push(`/users/${row.id}`)}
-        selectable={canManage || canDelete}
+        selectable={canManage || canDelete || canChangeStatus}
         onSelectionChange={setSelected}
         toolbar={
-          canManage || canDelete ? (
+          canChangeStatus || canDelete ? (
             <div className="flex flex-wrap gap-2">
-              {canManage ? (
+              {canChangeStatus ? (
                 <>
                   <Button
                     variant="secondary"
@@ -583,8 +637,25 @@ export function UsersTable({
       >
         {deleteDialog ? (
           <div className="flex flex-col gap-3">
-            {deleteDialog.roleName === "Team Lead" &&
-            rows.some((row) => row.assignedTeamLeadId === deleteDialog.id) ? (
+            {(() => {
+              const needsCallerReassign =
+                deleteDialog.roleName === "Team Lead" &&
+                rows.some((row) => row.assignedTeamLeadId === deleteDialog.id);
+              const needsManagerReassign =
+                deleteDialog.roleName === "Manager" &&
+                (rows.some((row) => row.reportingManagerId === deleteDialog.id) ||
+                  deleteCampaignCount > 0);
+              const needsLeadReassign = deleteLeadCount > 0 || deleteFollowUpCount > 0;
+              const workloadLabel = [
+                deleteLeadCount > 0 ? `${deleteLeadCount} Lead(s)` : null,
+                deleteFollowUpCount > 0 ? `${deleteFollowUpCount} Follow-up(s)` : null,
+              ]
+                .filter(Boolean)
+                .join(" and ");
+
+              return (
+                <>
+            {needsCallerReassign ? (
               <label className="flex flex-col gap-1.5">
                 <span className="mx-label">Reassign Callers to *</span>
                 <select
@@ -593,6 +664,11 @@ export function UsersTable({
                   onChange={(event) => setReassignTo(event.target.value)}
                 >
                   <option value="">Select Team Lead…</option>
+                  {allowDirectAdminReassign ? (
+                    <option value={REASSIGN_CALLERS_TO_DIRECT_ADMIN}>
+                      {DIRECT_ADMIN_REASSIGN_LABEL}
+                    </option>
+                  ) : null}
                   {teamLeadOptions
                     .filter((lead) => lead.id !== deleteDialog.id)
                     .map((lead) => (
@@ -603,10 +679,12 @@ export function UsersTable({
                 </select>
               </label>
             ) : null}
-            {deleteDialog.roleName === "Manager" &&
-            rows.some((row) => row.reportingManagerId === deleteDialog.id) ? (
+            {needsManagerReassign ? (
               <label className="flex flex-col gap-1.5">
-                <span className="mx-label">Reassign Team Leads to *</span>
+                <span className="mx-label">
+                  Reassign Team Leads / Campaigns to *
+                  {deleteCampaignCount > 0 ? ` (${deleteCampaignCount} campaign(s))` : ""}
+                </span>
                 <select
                   className="mx-input"
                   value={reassignManagerTo}
@@ -623,14 +701,15 @@ export function UsersTable({
                 </select>
               </label>
             ) : null}
+            {needsLeadReassign ? (
             <label className="flex flex-col gap-1.5">
-              <span className="mx-label">Reassign assigned Leads to</span>
+              <span className="mx-label">Reassign {workloadLabel} to *</span>
               <select
                 className="mx-input"
                 value={reassignLeadsTo}
                 onChange={(event) => setReassignLeadsTo(event.target.value)}
               >
-                <option value="">Select employee (required if they own Leads)…</option>
+                <option value="">Select employee…</option>
                 {leadAssigneeOptions
                   .filter((user) => user.id !== deleteDialog.id)
                   .map((user) => (
@@ -641,6 +720,7 @@ export function UsersTable({
                   ))}
               </select>
             </label>
+            ) : null}
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setDeleteDialog(null)}>
                 Cancel
@@ -649,21 +729,12 @@ export function UsersTable({
                 variant="danger"
                 disabled={
                   pending ||
-                  (deleteDialog.roleName === "Team Lead" &&
-                    rows.some((row) => row.assignedTeamLeadId === deleteDialog.id) &&
-                    !reassignTo) ||
-                  (deleteDialog.roleName === "Manager" &&
-                    rows.some((row) => row.reportingManagerId === deleteDialog.id) &&
-                    !reassignManagerTo)
+                  (needsCallerReassign && !reassignTo) ||
+                  (needsManagerReassign && !reassignManagerTo) ||
+                  (needsLeadReassign && !reassignLeadsTo)
                 }
                 onClick={() => {
                   const target = deleteDialog;
-                  const needsCallerReassign =
-                    target.roleName === "Team Lead" &&
-                    rows.some((row) => row.assignedTeamLeadId === target.id);
-                  const needsManagerReassign =
-                    target.roleName === "Manager" &&
-                    rows.some((row) => row.reportingManagerId === target.id);
                   setDeleteDialog(null);
                   startTransition(async () => {
                     const result = await deleteUserAction(target.id, {
@@ -671,7 +742,7 @@ export function UsersTable({
                       reassignTeamLeadsToManagerId: needsManagerReassign
                         ? reassignManagerTo
                         : null,
-                      reassignLeadsToUserId: reassignLeadsTo || null,
+                      reassignLeadsToUserId: needsLeadReassign ? reassignLeadsTo : null,
                     });
                     setMessage(result.error ?? result.success ?? null);
                     router.refresh();
@@ -681,6 +752,9 @@ export function UsersTable({
                 Delete
               </Button>
             </div>
+                </>
+              );
+            })()}
           </div>
         ) : null}
       </Dialog>
@@ -692,14 +766,20 @@ export function UsersTable({
         description={`Delete ${selected.length} selected employee(s). Provide reassignment targets when any selection owns Callers, Team Leads, or Leads.`}
       >
         <div className="flex flex-col gap-3">
+          {bulkNeedsCallerReassign ? (
           <label className="flex flex-col gap-1.5">
-            <span className="mx-label">Reassign Callers to (Team Leads)</span>
+            <span className="mx-label">Reassign Callers to (Team Leads) *</span>
             <select
               className="mx-input"
               value={reassignTo}
               onChange={(event) => setReassignTo(event.target.value)}
             >
               <option value="">Select Team Lead…</option>
+              {allowDirectAdminReassign ? (
+                <option value={REASSIGN_CALLERS_TO_DIRECT_ADMIN}>
+                  {DIRECT_ADMIN_REASSIGN_LABEL}
+                </option>
+              ) : null}
               {teamLeadOptions
                 .filter((lead) => !selected.includes(lead.id))
                 .map((lead) => (
@@ -709,8 +789,10 @@ export function UsersTable({
                 ))}
             </select>
           </label>
+          ) : null}
+          {bulkNeedsManagerReassign ? (
           <label className="flex flex-col gap-1.5">
-            <span className="mx-label">Reassign Team Leads to (Managers)</span>
+            <span className="mx-label">Reassign Team Leads to (Managers) *</span>
             <select
               className="mx-input"
               value={reassignManagerTo}
@@ -726,8 +808,12 @@ export function UsersTable({
                 ))}
             </select>
           </label>
+          ) : null}
+          {bulkNeedsLeadReassign ? (
           <label className="flex flex-col gap-1.5">
-            <span className="mx-label">Reassign assigned Leads to</span>
+            <span className="mx-label">
+              Reassign assigned Leads to * ({bulkSelectedLeadCount} total across selection)
+            </span>
             <select
               className="mx-input"
               value={reassignLeadsTo}
@@ -744,6 +830,7 @@ export function UsersTable({
                 ))}
             </select>
           </label>
+          ) : null}
           {bulkDetails && bulkDetails.length > 0 ? (
             <ul className="text-danger max-h-32 list-disc overflow-y-auto pl-5 text-xs">
               {bulkDetails.map((line) => (
@@ -757,7 +844,13 @@ export function UsersTable({
             </Button>
             <Button
               variant="danger"
-              disabled={pending || selected.length === 0}
+              disabled={
+                pending ||
+                selected.length === 0 ||
+                (bulkNeedsCallerReassign && !reassignTo) ||
+                (bulkNeedsManagerReassign && !reassignManagerTo) ||
+                (bulkNeedsLeadReassign && !reassignLeadsTo)
+              }
               onClick={() => {
                 startTransition(async () => {
                   const result = await bulkDeleteUsersAction({

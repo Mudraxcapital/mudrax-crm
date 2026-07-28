@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { UserDto } from "../../application/dto/UserDto";
 import {
   removeOwnProfilePhotoAction,
@@ -8,10 +9,14 @@ import {
   uploadOwnProfilePhotoAction,
   type ProfileFormState,
 } from "../controllers/profile.action";
+import { Button } from "@/shared/ui/Button";
+import { FilePickButton } from "@/shared/ui/FilePickButton";
+import { profilePhotoSrc } from "../lib/profilePhotoUrl";
 
 const initial: ProfileFormState = {};
 
 export function ProfileEditor({ user }: { user: UserDto }) {
+  const router = useRouter();
   const [profileState, profileAction, profilePending] = useActionState(
     updateOwnProfileAction,
     initial,
@@ -20,12 +25,18 @@ export function ProfileEditor({ user }: { user: UserDto }) {
     uploadOwnProfilePhotoAction,
     initial,
   );
+  const [removeState, setRemoveState] = useTransition();
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const photoSrc = user.profilePhotoUrl
-    ? user.profilePhotoUrl.startsWith("storage:")
-      ? `/api/users/${user.id}/photo`
-      : user.profilePhotoUrl
-    : null;
+  useEffect(() => {
+    if (profileState.success) router.refresh();
+  }, [profileState.success, router]);
+
+  useEffect(() => {
+    if (photoState.success) router.refresh();
+  }, [photoState.success, router]);
+
+  const photoSrc = profilePhotoSrc(user.id, user.profilePhotoUrl);
 
   const initials = user.fullName
     .split(/\s+/)
@@ -36,41 +47,62 @@ export function ProfileEditor({ user }: { user: UserDto }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-4">
         {photoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={photoSrc} alt="" className="size-14 rounded-full object-cover" />
+          <img
+            src={photoSrc}
+            alt=""
+            className="size-14 shrink-0 rounded-full object-cover"
+          />
         ) : (
-          <div className="bg-accent/15 text-accent flex size-14 items-center justify-center rounded-full text-sm font-semibold">
+          <div className="bg-accent/15 text-accent flex size-14 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
             {initials}
           </div>
         )}
-        <div className="space-y-2">
-          <form action={photoAction} className="flex flex-wrap items-center gap-2">
-            <input
-              type="file"
+        <div className="min-w-0 flex-1 space-y-2">
+          <span className="mx-label block">Profile photo</span>
+          <form action={photoAction} className="space-y-2">
+            <FilePickButton
               name="photo"
               accept="image/jpeg,image/png,image/webp"
-              className="text-xs"
               required
-            />
-            <button type="submit" className="mx-btn mx-btn-secondary mx-btn-sm" disabled={photoPending}>
-              {photoPending ? "Uploading…" : "Upload photo"}
-            </button>
+              disabled={photoPending}
+              buttonLabel="Choose photo"
+              changeLabel="Change photo"
+            >
+              <Button type="submit" variant="secondary" size="sm" disabled={photoPending}>
+                {photoPending ? "Uploading…" : "Upload photo"}
+              </Button>
+            </FilePickButton>
           </form>
           {user.profilePhotoUrl ? (
-            <form action={removeOwnProfilePhotoAction}>
-              <button type="submit" className="text-muted text-xs hover:underline">
-                Remove photo
-              </button>
-            </form>
+            <button
+              type="button"
+              className="text-muted text-xs hover:underline"
+              disabled={removeState}
+              onClick={() => {
+                setRemoveError(null);
+                setRemoveState(async () => {
+                  const result = await removeOwnProfilePhotoAction();
+                  if (result.error) {
+                    setRemoveError(result.error);
+                    return;
+                  }
+                  router.refresh();
+                });
+              }}
+            >
+              {removeState ? "Removing…" : "Remove photo"}
+            </button>
           ) : null}
+          {removeError ? <p className="text-danger text-xs">{removeError}</p> : null}
           {photoState.error ? <p className="text-danger text-xs">{photoState.error}</p> : null}
           {photoState.success ? <p className="text-success text-xs">{photoState.success}</p> : null}
         </div>
       </div>
 
-      <form action={profileAction} className="grid gap-3">
+      <form action={profileAction} className="grid gap-3 border-t border-border/60 pt-4">
         {profileState.error ? (
           <p className="text-danger text-sm">{profileState.error}</p>
         ) : null}

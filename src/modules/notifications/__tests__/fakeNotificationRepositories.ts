@@ -313,6 +313,8 @@ export class FakeNotificationRepository implements NotificationRepository {
         if (filter?.statuses && !filter.statuses.includes(n.status)) return false;
         if (filter?.status && n.status !== filter.status) return false;
         if (filter?.category && n.category !== filter.category) return false;
+        if (filter?.recipientType && n.recipientType !== filter.recipientType) return false;
+        if (filter?.recipientId && n.recipientId !== filter.recipientId) return false;
         if (filter?.templateId && n.templateId !== filter.templateId) return false;
         if (filter?.channelType) {
           const template = this.templates.get(n.templateId);

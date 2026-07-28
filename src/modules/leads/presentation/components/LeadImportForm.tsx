@@ -33,6 +33,7 @@ import {
   type MappingTemplate,
 } from "./mappingTemplates";
 import { DuplicateReviewPanel } from "./DuplicateReviewPanel";
+import { pickDefaultLeadSource } from "../../domain/pickDefaultLeadSource";
 
 type Step =
   | "upload"
@@ -73,6 +74,7 @@ const IMPORT_FIELD_TYPES = LEAD_FIELD_TYPES.filter((type) =>
 export interface ImportAgentOption {
   id: string;
   fullName: string;
+  roleName?: "Admin" | "Manager" | "Team Lead" | "Caller";
   openLeads: number;
   completedLeads: number;
   availability: "AVAILABLE" | "BUSY" | "OFFLINE";
@@ -88,7 +90,7 @@ export interface ImportSupervisorOption {
   reportingManagerId?: string | null;
 }
 
-const ALL_CALLERS_SCOPE = "__all__";
+const ALL_AGENTS_SCOPE = "__all__";
 
 export interface ImportCampaignOption {
   id: string;
@@ -126,12 +128,15 @@ export function LeadImportForm({
   const [sheetName, setSheetName] = useState<string>("");
   const [binaryBuffer, setBinaryBuffer] = useState<ArrayBuffer | null>(null);
   const [csvText, setCsvText] = useState<string | null>(null);
-  const [leadSourceId, setLeadSourceId] = useState(sources[0]?.id ?? "");
+  const [leadSourceId, setLeadSourceId] = useState(
+    () => pickDefaultLeadSource(sources)?.id ?? "",
+  );
   const [headers, setHeaders] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!leadSourceId && sources[0]?.id) {
-      setLeadSourceId(sources[0].id);
+    if (!leadSourceId) {
+      const fallbackId = pickDefaultLeadSource(sources)?.id;
+      if (fallbackId) setLeadSourceId(fallbackId);
     }
   }, [leadSourceId, sources]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -183,7 +188,7 @@ export function LeadImportForm({
   const [campaignSearch, setCampaignSearch] = useState("");
   const [newCampaign, setNewCampaign] = useState({
     name: "",
-    source: sources[0]?.name ?? "",
+    source: pickDefaultLeadSource(sources)?.name ?? "",
     description: "",
     priority: "MEDIUM",
   });
@@ -200,10 +205,10 @@ export function LeadImportForm({
   const [pending, startTransition] = useTransition();
 
   const selectedSupervisor =
-    selectedSupervisorId && selectedSupervisorId !== ALL_CALLERS_SCOPE
+    selectedSupervisorId && selectedSupervisorId !== ALL_AGENTS_SCOPE
       ? supervisors.find((item) => item.id === selectedSupervisorId)
       : undefined;
-  const isAllCallersScope = selectedSupervisorId === ALL_CALLERS_SCOPE;
+  const isAllAgentsScope = selectedSupervisorId === ALL_AGENTS_SCOPE;
 
   const previewRows = useMemo(() => rows.slice(0, 8), [rows]);
   const ignoredHeaders = useMemo(() => unusedHeaders(headers, mapping), [headers, mapping]);
@@ -248,10 +253,18 @@ export function LeadImportForm({
       return duplicateSummary.newLeadCount + selectedDupes;
     }
     if (duplicateResolution === "update_existing" || duplicateResolution === "merge") {
-      return duplicateSummary.newLeadCount + duplicateSummary.alreadyExisting;
+      return (
+        duplicateSummary.newLeadCount +
+        duplicateSummary.alreadyExisting +
+        duplicateSummary.inFileDuplicateCount
+      );
     }
     // import_all
-    return duplicateSummary.newLeadCount + duplicateSummary.alreadyExisting;
+    return (
+      duplicateSummary.newLeadCount +
+      duplicateSummary.alreadyExisting +
+      duplicateSummary.inFileDuplicateCount
+    );
   }, [duplicateResolution, duplicateSummary, rows.length, selectedStageIds]);
 
   const filteredCampaigns = useMemo(() => {
@@ -265,13 +278,23 @@ export function LeadImportForm({
   const scopedAgents = useMemo(() => {
     const online = agents.filter((agent) => agent.availability !== "OFFLINE");
     if (!requiresSupervisor) return online;
-    if (isAllCallersScope) return online;
+    if (isAllAgentsScope) return online;
     if (!selectedSupervisor) return [];
     if (selectedSupervisor.role === "Manager") {
-      return online.filter((agent) => agent.reportingManagerId === selectedSupervisor.id);
+      // Manager themselves + Team Leads / Callers under their book.
+      return online.filter(
+        (agent) =>
+          agent.id === selectedSupervisor.id ||
+          agent.reportingManagerId === selectedSupervisor.id,
+      );
     }
-    return online.filter((agent) => agent.assignedTeamLeadId === selectedSupervisor.id);
-  }, [agents, requiresSupervisor, isAllCallersScope, selectedSupervisor]);
+    // Team Lead themselves + Callers assigned to them.
+    return online.filter(
+      (agent) =>
+        agent.id === selectedSupervisor.id ||
+        agent.assignedTeamLeadId === selectedSupervisor.id,
+    );
+  }, [agents, requiresSupervisor, isAllAgentsScope, selectedSupervisor]);
 
   const activeAgents = scopedAgents;
   const selectedAgents = activeAgents.filter((agent) => selectedAgentIds.includes(agent.id));
@@ -469,7 +492,7 @@ export function LeadImportForm({
       setParseError("Name column mapping is required.");
       return;
     }
-    const resolvedLeadSourceId = leadSourceId || sources[0]?.id || "";
+    const resolvedLeadSourceId = leadSourceId || pickDefaultLeadSource(sources)?.id || "";
     if (
       !resolvedLeadSourceId ||
       !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
@@ -501,6 +524,12 @@ export function LeadImportForm({
       if (campaignMode === "new") {
         if (!canCreateCampaign) {
           setParseError("You do not have permission to create campaigns.");
+          return;
+        }
+        if (isAllAgentsScope && !ownerManagerId) {
+          setParseError(
+            "Creating a new campaign with All agents needs at least one hierarchical agent (Manager / Team Lead / Caller under a Manager), or pick an existing campaign.",
+          );
           return;
         }
         const created = await createCampaignForImportAction({
@@ -545,6 +574,7 @@ export function LeadImportForm({
             ? manualAssigneeUserId || selectedAgentIds[0]
             : undefined,
         ownerManagerId,
+        allowMixedManagers: isAllAgentsScope,
         dynamicFields: acceptedNewFields.map((field) => ({
           excelHeader: field.excelHeader,
           name: field.suggestedName,
@@ -580,24 +610,71 @@ export function LeadImportForm({
     setSelectedStageIds([]);
     setDuplicateResolution("skip_duplicates");
     setSelectedAgentIds([]);
+    setSelectedSupervisorId("");
     setBinaryBuffer(null);
     setCsvText(null);
     setUnknownFields([]);
+    setParseError(null);
+    setFileName("leads.csv");
+    setSheetNames([]);
+    setSheetName("");
   }
 
+  // Soft-navigating to /leads/import while mid-wizard keeps React state —
+  // reset to the file-attach step whenever "Add from Excel" is clicked again.
+  useEffect(() => {
+    function isImportHref(href: string | null): boolean {
+      if (!href) return false;
+      try {
+        const url = new URL(href, window.location.origin);
+        return url.pathname === "/leads/import";
+      } catch {
+        return href === "/leads/import" || href.startsWith("/leads/import?");
+      }
+    }
+
+    function onClick(event: MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a");
+      if (!anchor || !isImportHref(anchor.getAttribute("href"))) return;
+      resetWizard();
+      window.requestAnimationFrame(() => {
+        document.getElementById("lead-import-wizard")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+    // resetWizard closes over setters — intentional once-on-mount listener.
+  }, []);
+
   return (
-    <div className="flex flex-col gap-5">
+    <div id="lead-import-wizard" className="flex flex-col gap-5">
       <ol className="flex flex-wrap gap-2 text-xs">
         {STEPS.map((item) => (
-          <li
-            key={item.id}
-            className={
-              step === item.id
-                ? "rounded-md bg-accent-muted px-2.5 py-1 font-medium text-accent"
-                : "rounded-md bg-surface-sunken px-2.5 py-1 text-muted"
-            }
-          >
-            {item.label}
+          <li key={item.id}>
+            <button
+              type="button"
+              className={
+                step === item.id
+                  ? "rounded-md bg-accent-muted px-2.5 py-1 font-medium text-accent"
+                  : "rounded-md bg-surface-sunken px-2.5 py-1 text-muted hover:text-fg"
+              }
+              onClick={() => {
+                if (item.id === "upload") {
+                  resetWizard();
+                  return;
+                }
+              }}
+              disabled={item.id !== "upload" && item.id !== step}
+              aria-current={step === item.id ? "step" : undefined}
+            >
+              {item.label}
+            </button>
           </li>
         ))}
       </ol>
@@ -624,7 +701,7 @@ export function LeadImportForm({
             <label className="text-sm">
               Default Lead Source
               <select
-                value={leadSourceId || sources[0]?.id || ""}
+                value={leadSourceId || pickDefaultLeadSource(sources)?.id || ""}
                 onChange={(event) => setLeadSourceId(event.target.value)}
                 required
                 className="mx-input mt-1 w-full"
@@ -1162,7 +1239,7 @@ export function LeadImportForm({
                 }}
               >
                 <option value="">— Select Manager or Team Lead —</option>
-                <option value={ALL_CALLERS_SCOPE}>All callers</option>
+                <option value={ALL_AGENTS_SCOPE}>All agents</option>
                 {supervisors.map((supervisor) => (
                   <option key={supervisor.id} value={supervisor.id}>
                     {supervisor.role}: {supervisor.fullName}
@@ -1170,19 +1247,22 @@ export function LeadImportForm({
                 ))}
               </select>
               <p className="text-muted text-xs">
-                Pick a Manager/Team Lead, or All callers, then choose who receives the leads.
+                Pick a Manager/Team Lead to scope assignees, or All agents to choose anyone
+                (no same-manager restriction). Each lead inherits ownership from its assignee.
               </p>
             </div>
           ) : (
-            <p className="text-sm">Select one or more callers to receive these leads.</p>
+            <p className="text-sm">
+              Select one or more agents (Admins, Managers, Team Leads, or Callers) to receive these leads.
+            </p>
           )}
 
           {requiresSupervisor && !selectedSupervisorId ? (
             <p className="text-muted text-sm">
-              Select a Manager, Team Lead, or All callers to continue.
+              Select a Manager, Team Lead, or All agents to continue.
             </p>
           ) : activeAgents.length === 0 ? (
-            <p className="text-muted text-sm">No active callers found for this selection.</p>
+            <p className="text-muted text-sm">No active agents found for this selection.</p>
           ) : (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1206,10 +1286,11 @@ export function LeadImportForm({
                           type="checkbox"
                           checked={allScopedSelected}
                           onChange={toggleSelectAllAgents}
-                          aria-label="Select all callers"
+                          aria-label="Select all agents"
                         />
                       </th>
-                      <th className="px-3 py-2">Caller</th>
+                      <th className="px-3 py-2">Agent</th>
+                      <th className="px-3 py-2">Role</th>
                       <th className="px-3 py-2">Open Leads</th>
                       <th className="px-3 py-2">Completed</th>
                       <th className="px-3 py-2">Workload</th>
@@ -1229,6 +1310,7 @@ export function LeadImportForm({
                             />
                           </td>
                           <td className="px-3 py-2 font-medium">{agent.fullName}</td>
+                          <td className="px-3 py-2">{agent.roleName ?? "—"}</td>
                           <td className="px-3 py-2">{agent.openLeads}</td>
                           <td className="px-3 py-2">{agent.completedLeads}</td>
                           <td className="px-3 py-2">{workload}</td>

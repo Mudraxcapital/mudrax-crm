@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { getPermissionScope, hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
+import {
+  getPermissionScope,
+  hasPermission,
+  isAssignableAgentRole,
+  isCallerWorkspaceUser,
+} from "@/modules/rbac";
 import {
   countLeads,
   leadCatalogs,
@@ -63,15 +68,17 @@ export default async function LeadsPage({
   }
 
   const visibleIds = authContext.hierarchy.visibleUserIds;
-  const callersRaw = await listUsers({ role: "Caller", status: "ACTIVE", limit: 2_000 }).catch(() =>
-    listUserSummaries(authContext.organizationId).then((users) =>
-      users.map((user) => ({
-        id: user.id,
-        fullName: user.fullName,
-        roleName: "Caller" as string | null,
-      })),
-    ),
-  );
+  const callersRaw = await listUsers({ status: "ACTIVE", limit: 2_000 })
+    .then((users) => users.filter((user) => isAssignableAgentRole(user.roleName)))
+    .catch(() =>
+      listUserSummaries(authContext.organizationId).then((users) =>
+        users.map((user) => ({
+          id: user.id,
+          fullName: user.fullName,
+          roleName: "Caller" as string | null,
+        })),
+      ),
+    );
   const callers = visibleIds
     ? callersRaw.filter((user) => visibleIds.includes(user.id))
     : callersRaw;

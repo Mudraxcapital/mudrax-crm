@@ -46,6 +46,8 @@ export interface CustomerWithIdentifiers {
 export interface ListCustomersOptions {
   search?: string;
   ownerManagerId?: string;
+  /** Restrict to an explicit Customer id set (Team Lead hierarchy visibility). */
+  customerIds?: string[];
   limit?: number;
   offset?: number;
 }
@@ -87,7 +89,7 @@ export interface CustomerRepository {
     organizationId: string,
     options?: ListCustomersOptions,
   ): Promise<CustomerWithIdentifiers[]>;
-  count(organizationId: string, options?: Pick<ListCustomersOptions, "ownerManagerId">): Promise<number>;
+  count(organizationId: string, options?: Pick<ListCustomersOptions, "ownerManagerId" | "customerIds">): Promise<number>;
 
   /** Creates the Customer, its Identifiers, and a "created" Audit Record atomically. */
   createWithAudit(

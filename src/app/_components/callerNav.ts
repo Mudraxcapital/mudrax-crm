@@ -25,10 +25,11 @@ export const CALLER_NAV_GROUPS: CallerNavGroup[] = [
     label: "Workspace",
     items: [
       { href: "/", label: "Dashboard", icon: "home", match: "exact" },
-      { href: "/caller/campaigns", label: "My Campaigns", icon: "campaigns" },
+      { href: "/caller/campaigns", label: "Campaigns", icon: "campaigns" },
       { href: "/caller/leads", label: "My Leads", icon: "leads" },
       { href: "/caller/history", label: "Call History", icon: "history" },
       { href: "/caller/performance", label: "My Performance", icon: "performance" },
+      { href: "/leaderboard", label: "Leaderboard", icon: "performance" },
     ],
   },
   {
@@ -37,7 +38,6 @@ export const CALLER_NAV_GROUPS: CallerNavGroup[] = [
     items: [
       { href: "/caller/notifications", label: "Notifications", icon: "notifications" },
       { href: "/profile", label: "Profile", icon: "profile" },
-      { href: "/profile/security", label: "Security", icon: "settings" },
     ],
   },
 ];

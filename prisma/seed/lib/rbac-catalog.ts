@@ -201,6 +201,41 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     minRole: "Manager",
   },
 
+  // lead_center — staging area before Campaign Lead creation ------------------
+  {
+    code: "lead_center.view",
+    module: "lead_center",
+    description: "View Lead Center buckets and staged inbound leads.",
+    minRole: "Team Lead",
+  },
+  {
+    code: "lead_center.manage",
+    module: "lead_center",
+    description: "Review, tag, archive, merge, and bulk-operate staged leads in Lead Center.",
+    minRole: "Manager",
+  },
+  {
+    code: "lead_center.import",
+    module: "lead_center",
+    description:
+      "Import reviewed Lead Center leads into an existing or new Campaign (Assignment Engine).",
+    minRole: "Team Lead",
+  },
+
+  // integrations — connector configuration only (no lead display) -------------
+  {
+    code: "integration.view",
+    module: "integrations",
+    description: "View integration connectors, webhooks, and API key configuration.",
+    minRole: "Manager",
+  },
+  {
+    code: "integration.manage",
+    module: "integrations",
+    description: "Configure inbound/outbound integrations, field mappings, and webhooks.",
+    minRole: "Manager",
+  },
+
   // follow_ups -----------------------------------------------------------------
   {
     code: "follow_up.view",

@@ -41,6 +41,7 @@ export interface User {
   profilePhotoUrl: string | null;
   assignedTeamLeadId: string | null;
   reportingManagerId: string | null;
+  canManageCallerAccounts: boolean;
   currentTeamId: string | null;
   currentBranchId: string | null;
   currentDepartmentId: string | null;

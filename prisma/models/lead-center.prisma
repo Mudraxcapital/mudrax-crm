@@ -1,0 +1,194 @@
+// ============================================================================
+// lead_center — src/modules/lead-center
+//
+// Staging area for inbound leads. External connectors and CSV uploads land
+// here first; Campaign Leads (`leads.Lead`) are created only after manager
+// review + explicit campaign import. Purely additive — does not alter the
+// `leads` or `campaigns` schemas.
+// ============================================================================
+
+/// Catalog row for a Lead Center source bucket (Facebook, Google, CSV, …).
+model LeadCenterSourceBucket {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  code           String   @db.VarChar(64)
+  name           String   @db.VarChar(150)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  stagedLeads     StagedLead[]
+  ingestionBatches IngestionBatch[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("source_buckets")
+  @@schema("lead_center")
+}
+
+/// Auditable unit of one connector receive or CSV upload into Lead Center.
+model IngestionBatch {
+  id               String                @id @default(uuid()) @db.Uuid
+  organizationId   String                @db.Uuid
+  sourceBucketId   String                @db.Uuid
+  sourceCode       String                @db.VarChar(64)
+  receivedByUserId String?               @db.Uuid
+  sourceFileName   String?               @db.VarChar(255)
+  connectorRef     String?               @db.VarChar(150)
+  status           IngestionBatchStatus  @default(RECEIVED)
+  totalCount       Int                   @default(0)
+  storedCount      Int                   @default(0)
+  duplicateCount   Int                   @default(0)
+  invalidCount     Int                   @default(0)
+  ownerManagerId   String?               @db.Uuid
+  ownerTeamLeadId  String?               @db.Uuid
+  meta             Json?                 @db.JsonB
+  createdAt        DateTime              @default(now())
+  completedAt      DateTime?
+
+  sourceBucket LeadCenterSourceBucket @relation(fields: [sourceBucketId], references: [id], onDelete: Restrict)
+  stagedLeads  StagedLead[]
+
+  @@index([organizationId])
+  @@index([sourceCode])
+  @@index([status])
+  @@index([ownerManagerId])
+  @@map("ingestion_batches")
+  @@schema("lead_center")
+}
+
+enum IngestionBatchStatus {
+  RECEIVED
+  PROCESSING
+  STORED
+  FAILED
+
+  @@map("ingestion_batch_status")
+  @@schema("lead_center")
+}
+
+/// Inbound lead awaiting review / import. Not a Campaign Lead.
+model StagedLead {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  organizationId       String                 @db.Uuid
+  ingestionBatchId     String?                @db.Uuid
+  sourceBucketId       String                 @db.Uuid
+  sourceCode           String                 @db.VarChar(64)
+  fullName             String                 @db.VarChar(200)
+  phone                String?                @db.VarChar(20)
+  email                String?                @db.VarChar(320)
+  campaignNameHint     String?                @db.VarChar(200)
+  rawPayload           Json                   @db.JsonB
+  normalizedPayload    Json?                  @db.JsonB
+  status               StagedLeadStatus       @default(PENDING_REVIEW)
+  duplicateStatus      StagedDuplicateStatus  @default(UNKNOWN)
+  validationStatus     StagedValidationStatus @default(PENDING)
+  importStatus         StagedImportStatus     @default(NOT_IMPORTED)
+  matchReason          String?                @db.VarChar(200)
+  matchedLeadId        String?                @db.Uuid
+  matchedCustomerId    String?                @db.Uuid
+  validationErrors     Json?                  @db.JsonB
+  tags                 Json?                  @db.JsonB
+  branchId             String?                @db.Uuid
+  assignedManagerUserId String?               @db.Uuid
+  ownerManagerId       String?                @db.Uuid
+  ownerTeamLeadId      String?                @db.Uuid
+  importedLeadId       String?                @db.Uuid
+  importedCampaignId   String?                @db.Uuid
+  importedAt           DateTime?
+  archivedAt           DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  ingestionBatch IngestionBatch?         @relation(fields: [ingestionBatchId], references: [id], onDelete: SetNull)
+  sourceBucket   LeadCenterSourceBucket  @relation(fields: [sourceBucketId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([sourceCode])
+  @@index([status])
+  @@index([duplicateStatus])
+  @@index([validationStatus])
+  @@index([importStatus])
+  @@index([ownerManagerId])
+  @@index([ownerTeamLeadId])
+  @@index([organizationId, sourceCode, createdAt])
+  @@index([organizationId, status])
+  @@map("staged_leads")
+  @@schema("lead_center")
+}
+
+enum StagedLeadStatus {
+  PENDING_REVIEW
+  DUPLICATE_CHECK
+  VALIDATION
+  MANAGER_REVIEW
+  READY_TO_IMPORT
+  IMPORTED
+  ARCHIVED
+  DELETED
+
+  @@map("staged_lead_status")
+  @@schema("lead_center")
+}
+
+enum StagedDuplicateStatus {
+  UNKNOWN
+  NONE
+  POSSIBLE
+  EXACT
+
+  @@map("staged_duplicate_status")
+  @@schema("lead_center")
+}
+
+enum StagedValidationStatus {
+  PENDING
+  VALID
+  INVALID
+
+  @@map("staged_validation_status")
+  @@schema("lead_center")
+}
+
+enum StagedImportStatus {
+  NOT_IMPORTED
+  QUEUED
+  IMPORTED
+  FAILED
+
+  @@map("staged_import_status")
+  @@schema("lead_center")
+}
+
+/// Append-only audit for Lead Center aggregates (platform-contracts.md §4).
+model LeadCenterAuditLog {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @db.Uuid
+  occurredAt     DateTime            @default(now())
+  actorType      LeadCenterActorType
+  actorId        String?             @db.Uuid
+  action         String              @db.VarChar(200)
+  targetType     String              @db.VarChar(100)
+  targetId       String              @db.Uuid
+  correlationId  String?             @db.Uuid
+  beforeState    Json?               @db.JsonB
+  afterState     Json?               @db.JsonB
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("lead_center_audit_log")
+  @@schema("lead_center")
+}
+
+enum LeadCenterActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("lead_center_actor_type")
+  @@schema("lead_center")
+}

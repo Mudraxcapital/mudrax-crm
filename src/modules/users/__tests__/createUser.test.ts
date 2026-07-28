@@ -21,6 +21,7 @@ function user(overrides: Partial<User> = {}): User {
     profilePhotoUrl: null,
     assignedTeamLeadId: "tl1",
     reportingManagerId: null,
+    canManageCallerAccounts: false,
     currentTeamId: null,
     currentBranchId: null,
     currentDepartmentId: null,

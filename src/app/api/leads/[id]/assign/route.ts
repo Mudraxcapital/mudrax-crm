@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   assignLead,
@@ -16,16 +16,20 @@ import {
   LeadAccessDeniedError,
   requireAccessibleLead,
 } from "@/modules/leads/presentation/controllers/requireLeadAccess";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "lead.reassign")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -45,6 +49,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       permissionCode: "lead.reassign",
       actorUserId: current.session.user.id,
     });
+    assertCanAssignToUser(current.authContext, parsed.data.assignedToUserId, {
+      permissionCode: "lead.reassign",
+      actorUserId: current.session.user.id,
+    });
     const lead = await assignLead({
       id,
       input: parsed.data,
@@ -55,7 +63,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (error instanceof LeadAccessDeniedError) {
       return NextResponse.json({ error: "Lead not found." }, { status: 404 });
     }
-    if (error instanceof InvalidAssigneeReferenceError) {
+    if (
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof AssigneeNotAllowedError
+    ) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }
     throw error;

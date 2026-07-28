@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { hasPermission, hasRole } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
+  canChangeCallerAccountStatus,
+  canDeleteUserAccounts,
   countAssignedLeadsForUser,
+  countAssignedFollowUpsForUser,
+  countCampaignsForManagerUser,
   getUser,
   InvalidUserHierarchyError,
   listActiveUserSessions,
@@ -26,12 +30,14 @@ import { Button } from "@/shared/ui/Button";
 import { UserDetailActions } from "./_components/UserDetailActions";
 import { UserSessionsPanel } from "./_components/UserSessionsPanel";
 import { ProfilePhotoForm } from "./_components/ProfilePhotoForm";
+import { profilePhotoSrc } from "@/modules/users/presentation/lib/profilePhotoUrl";
 
 export default async function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { session, authContext } = await requirePermission("user.view");
   const canManage = hasPermission(authContext, "user.manage");
-  const canDelete = hasPermission(authContext, "user.delete");
+  const canDelete = canDeleteUserAccounts(authContext);
+  const canChangeStatus = canChangeCallerAccountStatus(authContext);
   const canReset = hasPermission(authContext, "user.reset_password");
   const hierarchy = authContext.hierarchy;
   const visibleIds = hierarchy.visibleUserIds;
@@ -66,6 +72,8 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     admins,
     hierarchyUsers,
     leadCount,
+    followUpCount,
+    campaignCount,
   ] = await Promise.all([
     listUserAuditLog(id, 40),
     listUserLoginSessions(id, 15),
@@ -84,6 +92,10 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
       ? listUsers({ userIds: visibleIds ?? undefined })
       : Promise.resolve([]),
     loadDeleteOptions ? countAssignedLeadsForUser(id) : Promise.resolve(0),
+    loadDeleteOptions ? countAssignedFollowUpsForUser(id) : Promise.resolve(0),
+    loadDeleteOptions && user.roleName === "Manager"
+      ? countCampaignsForManagerUser(id)
+      : Promise.resolve(0),
   ]);
 
   const scopedTeamLeads = teamLeads.filter(
@@ -102,11 +114,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-  const photoSrc = user.profilePhotoUrl
-    ? user.profilePhotoUrl.startsWith("storage:")
-      ? `/api/users/${user.id}/photo`
-      : user.profilePhotoUrl
-    : null;
+  const photoSrc = profilePhotoSrc(user.id, user.profilePhotoUrl);
 
   const failedAttempts = loginAttempts.filter((attempt) => !attempt.succeeded);
 
@@ -142,11 +150,15 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
               roleName={user.roleName}
               canManage={canManage}
               canDelete={canDelete}
+              canChangeStatus={canChangeStatus}
               canReset={canReset}
+              allowDirectAdminReassign={hasRole(authContext, "Admin")}
               isSelf={session.user.id === user.id}
               callerCount={callersUnderUser.length}
               teamLeadCount={teamLeadsUnderManager.length}
+              campaignCount={campaignCount}
               leadCount={leadCount}
+              followUpCount={followUpCount}
               teamLeadOptions={scopedTeamLeads.map((lead) => ({
                 id: lead.id,
                 fullName: lead.fullName,
@@ -213,16 +225,12 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           <CardBody className="space-y-2 text-sm">
             {user.roleName === "Caller" && !user.assignedTeamLeadId ? (
               <Row label="Reports to" value="Direct Admin" />
+            ) : user.roleName === "Caller" ? (
+              <Row label="Assigned team lead" value={user.assignedTeamLeadName ?? "—"} />
+            ) : user.roleName === "Team Lead" ? (
+              <Row label="Reporting manager" value={user.reportingManagerName ?? "—"} />
             ) : (
-              <>
-                <Row label="Reporting manager" value={user.reportingManagerName ?? "—"} />
-                <Row
-                  label="Assigned team lead"
-                  value={
-                    user.roleName === "Caller" ? (user.assignedTeamLeadName ?? "—") : "—"
-                  }
-                />
-              </>
+              <p className="text-muted text-sm">No reporting line for this role.</p>
             )}
           </CardBody>
         </Card>

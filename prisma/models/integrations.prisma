@@ -1,0 +1,134 @@
+// ============================================================================
+// integrations — src/modules/integrations
+//
+// Configuration for inbound/outbound connectors. Never stores or displays
+// leads — connectors push into Lead Center via the shared ingestion pipeline.
+// Purely additive; does not alter users / leads / campaigns schemas.
+// ============================================================================
+
+/// Enabled (or disabled) connector instance for an organization.
+model IntegrationConnection {
+  id               String                     @id @default(uuid()) @db.Uuid
+  organizationId   String                     @db.Uuid
+  catalogCode      String                     @db.VarChar(64)
+  displayName      String                     @db.VarChar(150)
+  status           IntegrationConnectionStatus @default(DISABLED)
+  leadCenterSource String?                    @db.VarChar(64)
+  /// Non-secret settings (page ids, form ids, base URLs, etc.).
+  config           Json?                      @db.JsonB
+  /// Opaque credential reference / encrypted blob placeholder — never log.
+  credentialsRef   String?                    @db.VarChar(255)
+  createdByUserId  String?                    @db.Uuid
+  updatedByUserId  String?                    @db.Uuid
+  lastSyncedAt     DateTime?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  fieldMappings FieldMapping[]
+  webhooks      WebhookEndpoint[]
+
+  @@unique([organizationId, catalogCode])
+  @@index([organizationId])
+  @@index([status])
+  @@map("connections")
+  @@schema("integrations")
+}
+
+enum IntegrationConnectionStatus {
+  DISABLED
+  ENABLED
+  ERROR
+
+  @@map("connection_status")
+  @@schema("integrations")
+}
+
+/// External field → Lead Center normalized field mapping for a connection.
+model FieldMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  connectionId   String   @db.Uuid
+  organizationId String   @db.Uuid
+  externalField  String   @db.VarChar(150)
+  internalField  String   @db.VarChar(100)
+  transform      String?  @db.VarChar(50)
+  isRequired     Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  connection IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalField])
+  @@index([organizationId])
+  @@index([connectionId])
+  @@map("field_mappings")
+  @@schema("integrations")
+}
+
+/// Inbound webhook registration (path token + secret).
+model WebhookEndpoint {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizationId  String              @db.Uuid
+  connectionId    String?             @db.Uuid
+  name            String              @db.VarChar(150)
+  /// Public path token (not the signing secret).
+  pathToken       String              @unique @db.VarChar(64)
+  /// SHA-256 hash of the signing secret.
+  secretHash      String              @db.VarChar(128)
+  secretPrefix    String              @db.VarChar(12)
+  status          WebhookEndpointStatus @default(ACTIVE)
+  leadCenterSource String?            @db.VarChar(64)
+  lastReceivedAt  DateTime?
+  receiveCount    Int                 @default(0)
+  createdByUserId String?             @db.Uuid
+  revokedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  connection IntegrationConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("webhook_endpoints")
+  @@schema("integrations")
+}
+
+enum WebhookEndpointStatus {
+  ACTIVE
+  DISABLED
+  REVOKED
+
+  @@map("webhook_endpoint_status")
+  @@schema("integrations")
+}
+
+model IntegrationsAuditLog {
+  id             String                 @id @default(uuid()) @db.Uuid
+  organizationId String                 @db.Uuid
+  occurredAt     DateTime               @default(now())
+  actorType      IntegrationsActorType
+  actorId        String?                @db.Uuid
+  action         String                 @db.VarChar(200)
+  targetType     String                 @db.VarChar(100)
+  targetId       String                 @db.Uuid
+  correlationId  String?                @db.Uuid
+  beforeState    Json?                  @db.JsonB
+  afterState     Json?                  @db.JsonB
+  recordHash         String  @db.VarChar(128)
+  previousRecordHash String? @db.VarChar(128)
+
+  @@index([organizationId])
+  @@index([targetType, targetId])
+  @@index([occurredAt])
+  @@map("integrations_audit_log")
+  @@schema("integrations")
+}
+
+enum IntegrationsActorType {
+  USER
+  SYSTEM
+  AI
+
+  @@map("integrations_actor_type")
+  @@schema("integrations")
+}

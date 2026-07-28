@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { requireAuth } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
-import { countCustomers } from "@/modules/customers";
-import { countLeads, getLeadsByStage, getLeadsBySource } from "@/modules/leads";
-import { CAMPAIGN_STATUSES, listCampaigns } from "@/modules/campaigns";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { StatCard, Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { BarList } from "@/shared/ui/Charts";
 import { Button } from "@/shared/ui/Button";
 import { Badge, statusTone } from "@/shared/ui/Badge";
-import { leadHierarchyFilter, managerBookFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { leadHierarchyFilter, managerBookFilter, teamLeadCustomerLeadFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { loadCrmDashboard } from "./_lib/loadCrmDashboard";
+import { CampaignDashboardFilter } from "./_components/CampaignDashboardFilter";
 
-export default async function CrmDashboardPage() {
+export default async function CrmDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { authContext } = await requireAuth();
+  const params = await searchParams;
 
   const canViewCustomers = hasPermission(authContext, "customer.view");
   const canViewLeads = hasPermission(authContext, "lead.view");
@@ -20,23 +24,32 @@ export default async function CrmDashboardPage() {
   const canManageFields = hasPermission(authContext, "custom_field.manage");
   const book = managerBookFilter(authContext);
   const leadFilter = leadHierarchyFilter(authContext);
+  const customerLeadFilter = teamLeadCustomerLeadFilter(authContext);
 
-  const [totalCustomers, totalLeads, leadsByStage, leadsBySource, campaigns] = await Promise.all([
-    canViewCustomers ? countCustomers(authContext.organizationId, book) : Promise.resolve(0),
-    canViewLeads ? countLeads(authContext.organizationId, leadFilter) : Promise.resolve(0),
-    canViewLeads
-      ? getLeadsByStage(authContext.organizationId, leadFilter)
-      : Promise.resolve([]),
-    canViewLeads
-      ? getLeadsBySource(authContext.organizationId, leadFilter)
-      : Promise.resolve([]),
-    canViewCampaigns ? listCampaigns(authContext.organizationId, book) : Promise.resolve([]),
-  ]);
+  const rawCampaignId =
+    typeof params.campaignId === "string" && params.campaignId.trim()
+      ? params.campaignId.trim()
+      : null;
 
-  const campaignsByStatus = CAMPAIGN_STATUSES.map((status) => ({
-    status,
-    count: campaigns.filter((campaign) => campaign.status === status).length,
-  })).filter((entry) => entry.count > 0);
+  const {
+    campaigns,
+    visibleCampaigns,
+    selectedCampaignId,
+    totalCustomers,
+    totalLeads,
+    leadsByStage,
+    leadsBySource,
+    campaignsByStatus,
+  } = await loadCrmDashboard({
+    organizationId: authContext.organizationId,
+    book,
+    leadFilter,
+    customerLeadFilter,
+    campaignId: rawCampaignId,
+    canViewCustomers,
+    canViewLeads,
+    canViewCampaigns,
+  });
 
   return (
     <PageSection>
@@ -64,11 +77,22 @@ export default async function CrmDashboardPage() {
         }
       />
 
+      {canViewCampaigns ? (
+        <CampaignDashboardFilter
+          campaigns={campaigns.map((campaign) => ({
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+          }))}
+          selectedCampaignId={selectedCampaignId}
+        />
+      ) : null}
+
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {canViewCustomers ? <StatCard label="Total Customers" value={totalCustomers} /> : null}
         {canViewLeads ? <StatCard label="Total Leads" value={totalLeads} /> : null}
         {canViewCampaigns ? (
-          <StatCard label="Campaigns" value={campaigns.length} />
+          <StatCard label="Campaigns" value={visibleCampaigns.length} />
         ) : null}
         {canViewCampaigns ? (
           <StatCard
@@ -113,7 +137,7 @@ export default async function CrmDashboardPage() {
           <Card>
             <CardHeader
               title="Campaign summary"
-              description={`${campaigns.length} total`}
+              description={`${visibleCampaigns.length} total`}
               actions={
                 <Link href="/campaigns">
                   <Button variant="ghost" size="sm">

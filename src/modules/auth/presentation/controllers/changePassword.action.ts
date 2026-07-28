@@ -9,6 +9,7 @@ import {
   changeOwnPassword,
   changeOwnPasswordSchema,
   InvalidUserHierarchyError,
+  roleMaySelfServiceChangePassword,
 } from "@/modules/users";
 
 export interface ChangePasswordState {
@@ -28,7 +29,14 @@ export async function changePasswordAction(
   _state: ChangePasswordState | undefined,
   formData: FormData,
 ): Promise<ChangePasswordState> {
-  const { session } = await requireAuth();
+  const { session, authContext } = await requireAuth();
+
+  if (!roleMaySelfServiceChangePassword(authContext.hierarchy.primaryRole)) {
+    return {
+      error:
+        "Team Leads and Callers cannot change their password. Ask an Admin to reset it in User Management.",
+    };
+  }
 
   const parsed = changeOwnPasswordSchema.safeParse({
     currentPassword: formData.get("currentPassword"),

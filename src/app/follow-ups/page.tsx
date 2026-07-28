@@ -19,7 +19,7 @@ export default async function FollowUpsPage() {
 
   const followUps = await listFollowUps(authContext.organizationId, {
     ...filter,
-    limit: 10_000,
+    limit: 200,
   });
   const leadIds = [...new Set(followUps.map((followUp) => followUp.leadId))];
   const leads = leadIds.length > 0 ? await getLeadsByIds(leadIds) : [];

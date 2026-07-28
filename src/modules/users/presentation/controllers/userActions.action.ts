@@ -1,14 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requirePermission } from "@/infra/auth/session";
-import { hasPermission } from "@/modules/rbac";
+import { redirect } from "next/navigation";
+import { requireAuth, requirePermission } from "@/infra/auth/session";
 import type { UserStatus } from "@/modules/users";
 import {
   AdminRoleProtectedError,
   bulkChangeAccountStatus,
   bulkDeleteUsers,
   bulkUserIdsSchema,
+  canChangeCallerAccountStatus,
+  canDeleteUserAccounts,
   CannotDeleteSelfError,
   changeAccountStatus,
   deleteUser,
@@ -18,12 +20,50 @@ import {
   resetUserPassword,
   UserDeleteBlockedError,
   UserNotFoundError,
+  countAssignedLeadsForUser,
+  countAssignedFollowUpsForUser,
+  countCampaignsForManagerUser,
 } from "@/modules/users";
 import { clientIp } from "../lib/clientIp";
 
 export interface ActionResult {
   error?: string;
   success?: string;
+}
+
+async function requireDeleteUserAccess() {
+  const current = await requireAuth();
+  if (!canDeleteUserAccounts(current.authContext)) {
+    redirect("/unauthorized");
+  }
+  return current;
+}
+
+async function requireCallerStatusAccess() {
+  const current = await requireAuth();
+  if (!canChangeCallerAccountStatus(current.authContext)) {
+    redirect("/unauthorized");
+  }
+  return current;
+}
+
+export async function getUserLeadCountAction(userId: string): Promise<number> {
+  await requireDeleteUserAccess();
+  return countAssignedLeadsForUser(userId);
+}
+
+export async function getUserDeleteCountsAction(userId: string): Promise<{
+  leadCount: number;
+  followUpCount: number;
+  campaignCount: number;
+}> {
+  await requireDeleteUserAccess();
+  const [leadCount, followUpCount, campaignCount] = await Promise.all([
+    countAssignedLeadsForUser(userId),
+    countAssignedFollowUpsForUser(userId),
+    countCampaignsForManagerUser(userId),
+  ]);
+  return { leadCount, followUpCount, campaignCount };
 }
 
 export async function resetPasswordAction(
@@ -78,7 +118,7 @@ export async function changeUserStatusAction(input: {
   reason?: string;
   forceLogout?: boolean;
 }): Promise<ActionResult> {
-  const { session, authContext } = await requirePermission("user.manage");
+  const { session, authContext } = await requireCallerStatusAccess();
   try {
     await changeAccountStatus({
       userId: input.userId,
@@ -158,7 +198,7 @@ export async function deleteUserAction(
     reassignLeadsToUserId?: string | null;
   } | string | null,
 ): Promise<ActionResult> {
-  const { session, authContext } = await requirePermission("user.delete");
+  const { session, authContext } = await requireDeleteUserAccess();
   // Back-compat: second arg used to be reassignCallersToTeamLeadId string.
   const opts =
     typeof options === "string" || options === null || options === undefined
@@ -192,7 +232,7 @@ export async function deleteUserAction(
 }
 
 export async function bulkDisableUsersAction(userIds: string[]): Promise<ActionResult> {
-  const { session, authContext } = await requirePermission("user.manage");
+  const { session, authContext } = await requireCallerStatusAccess();
   const parsed = bulkUserIdsSchema.safeParse({ userIds });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid selection." };
 
@@ -213,7 +253,7 @@ export async function bulkDisableUsersAction(userIds: string[]): Promise<ActionR
 }
 
 export async function bulkSuspendUsersAction(userIds: string[]): Promise<ActionResult> {
-  const { session, authContext } = await requirePermission("user.manage");
+  const { session, authContext } = await requireCallerStatusAccess();
   const parsed = bulkUserIdsSchema.safeParse({ userIds });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid selection." };
 
@@ -234,7 +274,7 @@ export async function bulkSuspendUsersAction(userIds: string[]): Promise<ActionR
 }
 
 export async function bulkEnableUsersAction(userIds: string[]): Promise<ActionResult> {
-  const { session, authContext } = await requirePermission("user.manage");
+  const { session, authContext } = await requireCallerStatusAccess();
   const parsed = bulkUserIdsSchema.safeParse({ userIds });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid selection." };
 
@@ -260,10 +300,7 @@ export async function bulkDeleteUsersAction(input: {
   reassignTeamLeadsToManagerId?: string;
   reassignLeadsToUserId?: string;
 }): Promise<ActionResult & { details?: string[] }> {
-  const current = await requirePermission("user.delete");
-  if (!hasPermission(current.authContext, "user.delete")) {
-    return { error: "Not allowed." };
-  }
+  const current = await requireDeleteUserAccess();
   const parsed = bulkUserIdsSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid selection." };
 

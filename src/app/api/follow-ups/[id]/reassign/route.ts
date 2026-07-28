@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/infra/auth/session";
+import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import {
   FollowUpNotFoundError,
@@ -15,16 +15,20 @@ import {
   reassignFollowUpSchema,
 } from "@/modules/follow-ups";
 import { requireFollowUpAccess } from "@/shared/auth/requireFollowUpAccess";
+import {
+  assertCanAssignToUser,
+  AssigneeNotAllowedError,
+} from "@/shared/auth/assertCanAssignToUser";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
-  const current = await getCurrentUser();
-  if (!current) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if (!auth.ok) return auth.response;
+  const { current } = auth;
+
   if (!hasPermission(current.authContext, "follow_up.reassign")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -44,6 +48,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       permissionCode: "lead.view",
       actorUserId: current.session.user.id,
     });
+    assertCanAssignToUser(current.authContext, parsed.data.toUserId, {
+      permissionCode: "follow_up.reassign",
+      actorUserId: current.session.user.id,
+    });
     const followUp = await reassignFollowUp({
       id,
       input: parsed.data,
@@ -54,7 +62,11 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (error instanceof FollowUpNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    if (error instanceof FollowUpNotOpenError || error instanceof InvalidAssigneeReferenceError) {
+    if (
+      error instanceof FollowUpNotOpenError ||
+      error instanceof InvalidAssigneeReferenceError ||
+      error instanceof AssigneeNotAllowedError
+    ) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }
     throw error;

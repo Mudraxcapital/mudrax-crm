@@ -6,6 +6,7 @@
 
 import { listLeads, leadCatalogs } from "@/modules/leads";
 import { listCallAttempts, listCallOutcomes } from "@/modules/telephony";
+import { getDailyLoginDuration } from "@/modules/users";
 import type {
   CallerOutcomeCountDto,
   CallerPerformanceDto,
@@ -14,6 +15,9 @@ import type {
 
 const CONNECTED = new Set(["ANSWERED", "ON_HOLD", "TRANSFERRING", "CONFERENCING", "COMPLETED"]);
 const NOT_CONNECTED = new Set(["NO_ANSWER", "BUSY", "FAILED", "ABANDONED"]);
+
+/** Per-caller day volume stays well below this; avoids org-wide 10k scans. */
+const DAY_PAGE_LIMIT = 500;
 
 function startOfToday(): Date {
   const date = new Date();
@@ -29,6 +33,7 @@ export interface GetCallerPerformanceQuery {
   organizationId: string;
   callerUserId: string;
   loginAt: string;
+  currentSessionId?: string | null;
   campaignId?: string | null;
   now?: Date;
 }
@@ -41,19 +46,24 @@ export function makeGetCallerPerformance() {
     const today = startOfToday();
     const loginAt = query.loginAt ? new Date(query.loginAt) : null;
 
-    const [calls, leads, stages, outcomes] = await Promise.all([
+    const [calls, leads, stages, outcomes, dailyLogin] = await Promise.all([
       listCallAttempts(query.organizationId, {
         agentUserId: query.callerUserId,
         initiatedFrom: today,
-        limit: 10_000,
+        limit: DAY_PAGE_LIMIT,
       }),
       listLeads(query.organizationId, {
         assignedToUserIds: [query.callerUserId],
         campaignId: query.campaignId ?? undefined,
-        limit: 10_000,
+        limit: DAY_PAGE_LIMIT,
       }),
       leadCatalogs.listStages(query.organizationId),
       listCallOutcomes(query.organizationId),
+      getDailyLoginDuration({
+        userId: query.callerUserId,
+        currentSessionId: query.currentSessionId,
+        now,
+      }),
     ]);
 
     const leadIds = new Set(leads.map((lead) => lead.id));
@@ -64,23 +74,27 @@ export function makeGetCallerPerformance() {
     const stageById = new Map(stages.map((stage) => [stage.id, stage]));
     const outcomeById = new Map(outcomes.map((outcome) => [outcome.id, outcome]));
 
-    let interested = 0;
-    let followUp = 0;
+    // One lead contributes at most once per KPI (no double-count stage + outcome).
+    const interestedLeadIds = new Set<string>();
+    const followUpLeadIds = new Set<string>();
+    const rejectedLeadIds = new Set<string>();
     let won = 0;
     let lost = 0;
-    let rejected = 0;
     let busy = 0;
     let switchedOff = 0;
     let wrongNumber = 0;
+    let interestedOrphanCalls = 0;
+    let followUpOrphanCalls = 0;
+    let rejectedOrphanCalls = 0;
 
     for (const lead of leads) {
       const stage = stageById.get(lead.currentStageId);
       const name = stage?.name ?? lead.currentStageName;
-      if (matchesName(name, [/interest/i])) interested += 1;
-      if (matchesName(name, [/follow.?up/i])) followUp += 1;
+      if (matchesName(name, [/interest/i])) interestedLeadIds.add(lead.id);
+      if (matchesName(name, [/follow.?up/i])) followUpLeadIds.add(lead.id);
       if (stage?.bucket === "CLOSED" && matchesName(name, [/won|convert/i])) won += 1;
       if (stage?.bucket === "CLOSED" && matchesName(name, [/lost/i])) lost += 1;
-      if (matchesName(name, [/reject/i])) rejected += 1;
+      if (matchesName(name, [/reject/i])) rejectedLeadIds.add(lead.id);
     }
 
     for (const call of scopedCalls) {
@@ -90,10 +104,25 @@ export function makeGetCallerPerformance() {
         : (call.callOutcomeName ?? "");
       if (matchesName(outcomeName, [/switch|power.?off|switched.?off/i])) switchedOff += 1;
       if (matchesName(outcomeName, [/wrong.?number|invalid.?number/i])) wrongNumber += 1;
-      if (matchesName(outcomeName, [/interest/i])) interested += 1;
-      if (matchesName(outcomeName, [/follow.?up|call.?back/i])) followUp += 1;
-      if (matchesName(outcomeName, [/reject|not interest/i])) rejected += 1;
+
+      const isInterested = matchesName(outcomeName, [/interest/i]);
+      const isFollowUp = matchesName(outcomeName, [/follow.?up|call.?back/i]);
+      const isRejected = matchesName(outcomeName, [/reject|not interest/i]);
+
+      if (call.leadId) {
+        if (isInterested) interestedLeadIds.add(call.leadId);
+        if (isFollowUp) followUpLeadIds.add(call.leadId);
+        if (isRejected) rejectedLeadIds.add(call.leadId);
+      } else {
+        if (isInterested) interestedOrphanCalls += 1;
+        if (isFollowUp) followUpOrphanCalls += 1;
+        if (isRejected) rejectedOrphanCalls += 1;
+      }
     }
+
+    const interested = interestedLeadIds.size + interestedOrphanCalls;
+    const followUp = followUpLeadIds.size + followUpOrphanCalls;
+    const rejected = rejectedLeadIds.size + rejectedOrphanCalls;
 
     const connected = scopedCalls.filter((call) => CONNECTED.has(call.status)).length;
     const notConnected = scopedCalls.filter((call) => NOT_CONNECTED.has(call.status)).length;
@@ -124,19 +153,23 @@ export function makeGetCallerPerformance() {
     const firstCallMs = initiated[0] ?? null;
     const lastCallMs = initiated.length ? initiated[initiated.length - 1]! : null;
     const sessionStart = loginAt && !Number.isNaN(loginAt.getTime()) ? loginAt : today;
+    const sessionStartClipped = new Date(
+      Math.max(sessionStart.getTime(), today.getTime()),
+    );
     const currentSessionSeconds = Math.max(
       0,
-      Math.floor((now.getTime() - sessionStart.getTime()) / 1000),
+      Math.floor((now.getTime() - sessionStartClipped.getTime()) / 1000),
     );
-    // Absolute session window today ≈ current session (JWT loginAt resets each login).
-    const totalLoginSecondsToday = currentSessionSeconds;
+    const totalLoginSecondsToday = dailyLogin.totalSecondsToday;
     const hoursActive =
       firstCallMs != null && lastCallMs != null && lastCallMs > firstCallMs
         ? (lastCallMs - firstCallMs) / 3_600_000
-        : currentSessionSeconds / 3600;
+        : totalLoginSecondsToday / 3600;
 
     const timeMetrics: CallerTimeMetricsDto = {
       loginAt: sessionStart.toISOString(),
+      dayStartedAt: dailyLogin.dayStartedAt,
+      priorLoginSecondsToday: dailyLogin.priorSecondsToday,
       firstCallAt: firstCallMs != null ? new Date(firstCallMs).toISOString() : null,
       lastCallAt: lastCallMs != null ? new Date(lastCallMs).toISOString() : null,
       currentSessionSeconds,

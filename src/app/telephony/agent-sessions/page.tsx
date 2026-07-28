@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireAuth } from "@/infra/auth/session";
 import { hasPermission } from "@/modules/rbac";
 import { listUserSummaries } from "@/modules/users";
@@ -11,6 +12,8 @@ import {
 import { startAgentSessionAction } from "@/modules/telephony/presentation/controllers/startAgentSession.action";
 import { changeAgentSessionStatusAction } from "@/modules/telephony/presentation/controllers/changeAgentSessionStatus.action";
 import { endAgentSessionAction } from "@/modules/telephony/presentation/controllers/endAgentSession.action";
+import { TabNav } from "@/shared/ui/Tabs";
+import { telephonyTabItems } from "../_lib/telephonyTabs";
 
 export default async function TelephonyAgentSessionsPage() {
   const { session, authContext } = await requireAuth();
@@ -18,26 +21,43 @@ export default async function TelephonyAgentSessionsPage() {
   const canSelf = hasPermission(authContext, "agent_session.self");
   const canManage = hasPermission(authContext, "agent_session.manage");
 
-  const [activeSession, allSessions, users] = await Promise.all([
+  if (!canSelf && !canManage) {
+    redirect("/unauthorized");
+  }
+
+  const [activeSession, allSessionsRaw, users] = await Promise.all([
     canSelf ? getActiveAgentSession(session.user.id) : Promise.resolve(null),
     canManage ? listAgentSessions(authContext.organizationId, { limit: 50 }) : Promise.resolve([]),
     canManage ? listUserSummaries(authContext.organizationId) : Promise.resolve([]),
   ]);
 
-  const userNameById = new Map(users.map((user) => [user.id, user.fullName]));
+  const hierarchy = authContext.hierarchy;
+  const allSessions =
+    hierarchy.unrestricted || hierarchy.primaryRole === "Admin"
+      ? allSessionsRaw
+      : allSessionsRaw.filter((item) =>
+          (hierarchy.visibleUserIds ?? [session.user.id]).includes(item.userId),
+        );
+  const visibleUserSet = new Set(hierarchy.visibleUserIds ?? []);
+  const scopedUsers =
+    hierarchy.unrestricted || hierarchy.primaryRole === "Admin"
+      ? users
+      : users.filter((user) => visibleUserSet.has(user.id) || user.id === session.user.id);
+
+  const userNameById = new Map(scopedUsers.map((user) => [user.id, user.fullName]));
 
   return (
     <div className="mx-page flex flex-col gap-6">
-      <Link href="/telephony" className="text-sm text-accent hover:text-accent hover:underline underline-offset-4">
-        ← Telephony Dashboard
-      </Link>
-
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Agent Sessions</h1>
         <p className="text-muted mt-1 text-sm">
-          Login/logout and availability tracking for Agents.
+          {canManage
+            ? "Login/logout and availability tracking for Agents."
+            : "Your login/logout and availability status."}
         </p>
       </div>
+
+      <TabNav activeHref="/telephony/agent-sessions" items={telephonyTabItems(authContext)} />
 
       {canSelf ? (
         <section className="mx-card p-5">
@@ -105,6 +125,14 @@ export default async function TelephonyAgentSessionsPage() {
             </tbody>
           </table>
         </section>
+      ) : null}
+
+      {!canManage ? (
+        <p className="text-muted text-sm">
+          <Link href="/telephony/calls" className="text-accent hover:underline underline-offset-4">
+            ← Back to my calls
+          </Link>
+        </p>
       ) : null}
     </div>
   );

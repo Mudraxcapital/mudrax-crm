@@ -21,37 +21,51 @@ type CallStatusFormAction = (
 
 const inputClass = "mx-input";
 
-const SELECTABLE_STATUSES: CallStatus[] = [
-  "RINGING",
-  "ANSWERED",
-  "ON_HOLD",
-  "COMPLETED",
-  "NO_ANSWER",
-  "BUSY",
-  "FAILED",
-  "ABANDONED",
+const SELECTABLE_STATUSES: { value: CallStatus; label: string }[] = [
+  { value: "RINGING", label: "Ringing" },
+  { value: "ANSWERED", label: "Connected" },
+  { value: "ON_HOLD", label: "On Hold" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "NO_ANSWER", label: "No Answer" },
+  { value: "BUSY", label: "Busy" },
+  { value: "FAILED", label: "Failed" },
+  { value: "ABANDONED", label: "Abandoned" },
 ];
 
 export function CallStatusForm({
   action,
   outcomes,
+  currentStatus,
 }: {
   action: CallStatusFormAction;
   outcomes: { id: string; name: string }[];
+  /** Pre-selects the current call status (e.g. RINGING after Click-to-Call). */
+  currentStatus?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
+  const defaultStatus =
+    currentStatus && SELECTABLE_STATUSES.some((s) => s.value === currentStatus)
+      ? currentStatus
+      : "RINGING";
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="status" className="mx-label">
             New status
           </label>
-          <select id="status" name="status" required className={inputClass}>
+          <select
+            id="status"
+            name="status"
+            required
+            key={defaultStatus}
+            defaultValue={defaultStatus}
+            className={inputClass}
+          >
             {SELECTABLE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
+              <option key={status.value} value={status.value}>
+                {status.label}
               </option>
             ))}
           </select>

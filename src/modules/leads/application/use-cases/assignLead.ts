@@ -43,7 +43,11 @@ async function resolveAssigneeOwnership(
   if (user.roleName === "Manager") {
     return { ownerManagerId: user.id, ownerTeamLeadId: null };
   }
-  // Admin / unknown — leave existing ownership columns unchanged.
+  if (user.roleName === "Admin") {
+    // Admin is organization-scoped — no Manager / Team Lead ownership book.
+    return { ownerManagerId: null, ownerTeamLeadId: null };
+  }
+  // Unknown role — leave existing ownership columns unchanged.
   return undefined;
 }
 

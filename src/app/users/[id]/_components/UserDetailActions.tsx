@@ -11,21 +11,28 @@ import {
   suspendUserAction,
   unsuspendUserAction,
 } from "@/modules/users/presentation/controllers/userActions.action";
+import {
+  DIRECT_ADMIN_REASSIGN_LABEL,
+  REASSIGN_CALLERS_TO_DIRECT_ADMIN,
+} from "@/modules/users/presentation/constants/callerReassignment";
 
 export function UserDetailActions({
   userId,
   status,
   roleName,
-  canManage,
   canDelete,
+  canChangeStatus,
   canReset,
+  allowDirectAdminReassign,
   isSelf,
   teamLeadOptions,
   managerOptions,
   leadAssigneeOptions,
   callerCount,
   teamLeadCount,
+  campaignCount,
   leadCount,
+  followUpCount,
   deleteAction,
   resetPasswordAction,
 }: {
@@ -34,14 +41,18 @@ export function UserDetailActions({
   roleName: string | null;
   canManage: boolean;
   canDelete: boolean;
+  canChangeStatus: boolean;
   canReset: boolean;
+  allowDirectAdminReassign: boolean;
   isSelf: boolean;
   teamLeadOptions: { id: string; fullName: string; employeeId: string }[];
   managerOptions: { id: string; fullName: string; employeeId: string }[];
   leadAssigneeOptions: { id: string; fullName: string; roleName: string | null }[];
   callerCount: number;
   teamLeadCount: number;
+  campaignCount: number;
   leadCount: number;
+  followUpCount: number;
   deleteAction: (
     userId: string,
     options?: {
@@ -70,8 +81,9 @@ export function UserDetailActions({
   const [resetState, resetFormAction, resetPending] = useActionState(boundReset, {});
 
   const needsCallerReassign = roleName === "Team Lead" && callerCount > 0;
-  const needsManagerReassign = roleName === "Manager" && teamLeadCount > 0;
-  const needsLeadReassign = leadCount > 0;
+  const needsManagerReassign =
+    roleName === "Manager" && (teamLeadCount > 0 || campaignCount > 0);
+  const needsLeadReassign = leadCount > 0 || followUpCount > 0;
   const reassignmentTargets = useMemo(
     () => teamLeadOptions.filter((lead) => lead.id !== userId),
     [teamLeadOptions, userId],
@@ -103,7 +115,7 @@ export function UserDetailActions({
             Reset Password
           </Button>
         ) : null}
-        {canManage && !isSelf && status === "INACTIVE" ? (
+        {canChangeStatus && !isSelf && status === "INACTIVE" ? (
           <Button
             variant="secondary"
             disabled={pending}
@@ -112,7 +124,7 @@ export function UserDetailActions({
             Enable
           </Button>
         ) : null}
-        {canManage && !isSelf && status === "SUSPENDED" ? (
+        {canChangeStatus && !isSelf && status === "SUSPENDED" ? (
           <Button
             variant="secondary"
             disabled={pending}
@@ -121,12 +133,12 @@ export function UserDetailActions({
             Unsuspend
           </Button>
         ) : null}
-        {canManage && !isSelf && status === "ACTIVE" ? (
+        {canChangeStatus && !isSelf && status === "ACTIVE" ? (
           <Button variant="secondary" disabled={pending} onClick={() => setReasonOpen("INACTIVE")}>
             Disable
           </Button>
         ) : null}
-        {canManage && !isSelf && status === "ACTIVE" ? (
+        {canChangeStatus && !isSelf && status === "ACTIVE" ? (
           <Button variant="secondary" disabled={pending} onClick={() => setReasonOpen("SUSPENDED")}>
             Suspend
           </Button>
@@ -186,6 +198,11 @@ export function UserDetailActions({
                 required
               >
                 <option value="">Select Team Lead…</option>
+                {allowDirectAdminReassign ? (
+                  <option value={REASSIGN_CALLERS_TO_DIRECT_ADMIN}>
+                    {DIRECT_ADMIN_REASSIGN_LABEL}
+                  </option>
+                ) : null}
                 {reassignmentTargets.map((lead) => (
                   <option key={lead.id} value={lead.id}>
                     {lead.fullName}

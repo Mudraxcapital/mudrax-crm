@@ -211,23 +211,38 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
     return this.auditLog.filter((entry) => entry.organizationId === organizationId).slice(0, limit);
   }
 
+  private matchesAgentScope(
+    call: CallAttempt,
+    filter?: { agentUserId?: string; agentUserIds?: string[] },
+  ): boolean {
+    if (filter?.agentUserIds?.length) {
+      return !!call.agentUserId && filter.agentUserIds.includes(call.agentUserId);
+    }
+    if (filter?.agentUserId) {
+      return call.agentUserId === filter.agentUserId;
+    }
+    return true;
+  }
+
   async countInRange(
     organizationId: string,
     range: { from: Date; to: Date },
-    filter?: { statuses?: CallStatus[] },
+    filter?: { statuses?: CallStatus[]; agentUserId?: string; agentUserIds?: string[] },
   ): Promise<number> {
     return [...this.calls.values()].filter(
       (call) =>
         call.organizationId === organizationId &&
         call.initiatedAt >= range.from &&
         call.initiatedAt <= range.to &&
-        (!filter?.statuses || filter.statuses.includes(call.status)),
+        (!filter?.statuses || filter.statuses.includes(call.status)) &&
+        this.matchesAgentScope(call, filter),
     ).length;
   }
 
   async averageDurationInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: { agentUserId?: string; agentUserIds?: string[] },
   ): Promise<number | null> {
     const durations = [...this.calls.values()]
       .filter(
@@ -235,7 +250,8 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
           call.organizationId === organizationId &&
           call.initiatedAt >= range.from &&
           call.initiatedAt <= range.to &&
-          call.durationSeconds !== null,
+          call.durationSeconds !== null &&
+          this.matchesAgentScope(call, filter),
       )
       .map((call) => call.durationSeconds as number);
     if (durations.length === 0) return null;
@@ -245,11 +261,13 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
   async countByAgentInRange(
     organizationId: string,
     range: { from: Date; to: Date },
+    filter?: { agentUserId?: string; agentUserIds?: string[] },
   ): Promise<CallsByAgentEntry[]> {
     const counts = new Map<string | null, number>();
     for (const call of this.calls.values()) {
       if (call.organizationId !== organizationId) continue;
       if (call.initiatedAt < range.from || call.initiatedAt > range.to) continue;
+      if (!this.matchesAgentScope(call, filter)) continue;
       counts.set(call.agentUserId, (counts.get(call.agentUserId) ?? 0) + 1);
     }
     return [...counts.entries()]
@@ -257,9 +275,15 @@ export class FakeCallAttemptRepository implements CallAttemptRepository {
       .sort((a, b) => b.count - a.count);
   }
 
-  async listRecent(organizationId: string, limit: number): Promise<CallAttempt[]> {
+  async listRecent(
+    organizationId: string,
+    limit: number,
+    filter?: { agentUserId?: string; agentUserIds?: string[] },
+  ): Promise<CallAttempt[]> {
     return [...this.calls.values()]
-      .filter((call) => call.organizationId === organizationId)
+      .filter(
+        (call) => call.organizationId === organizationId && this.matchesAgentScope(call, filter),
+      )
       .sort((a, b) => b.initiatedAt.getTime() - a.initiatedAt.getTime())
       .slice(0, limit);
   }
