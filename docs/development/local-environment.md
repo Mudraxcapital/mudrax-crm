@@ -103,22 +103,10 @@ itself, rebuild: `npm run docker:up`.
 
 ## Why Redis is here
 
-Redis is provisioned as **infrastructure only**. No application code reads
-`REDIS_URL` today, and this environment does not choose or wire in a
-specific client library, cache strategy, or queue framework — that remains a
-deliberate, future, separate decision. It exists now so that when one of the
-following needs is actually implemented, the infrastructure is already
-available in local development without revisiting this environment:
-
-- General-purpose server-side sessions, if the authentication solution ends
-  up needing a session store.
-- Caching — e.g. the RBAC data-scope resolution and short-TTL invalidated
-  cache described in `docs/platform/platform-contracts.md` (section 2),
-  configuration caching, or analytics caching.
-- Future background job/queue processing (the seam already reserved at
-  `src/infra/jobs/README.md`).
-- Future rate limiting.
-- Future distributed locking.
+Redis backs **distributed job locks**, **login rate limiting**, and
+**temporary tokens** (`src/infra/redis`). Durable job execution state stays
+in Postgres (`jobs.job_runs`). When Redis is unreachable the app degrades:
+jobs fall back to Postgres advisory locks; rate limits fail open.
 
 ## Troubleshooting
 

@@ -5,13 +5,28 @@
 // the only file in `follow-ups` allowed to import from `users` (ADR 0001).
 // ============================================================================
 
-import { getUserSummary } from "@/modules/users";
-import type { UserLookupPort, UserLookupSummary } from "../../application/ports/UserLookupPort";
+import { getUserScopeContext, getUserSummary } from "@/modules/users";
+import type {
+  UserHierarchyLookup,
+  UserLookupPort,
+  UserLookupSummary,
+} from "../../application/ports/UserLookupPort";
 
 export class UsersModuleLookupAdapter implements UserLookupPort {
   async findById(userId: string): Promise<UserLookupSummary | null> {
     const user = await getUserSummary(userId);
     if (!user) return null;
     return { id: user.id, organizationId: user.organizationId, status: user.status };
+  }
+
+  async findHierarchy(userId: string): Promise<UserHierarchyLookup | null> {
+    const scope = await getUserScopeContext(userId);
+    if (!scope) return null;
+    return {
+      id: scope.userId,
+      status: scope.status,
+      assignedTeamLeadId: scope.assignedTeamLeadId,
+      reportingManagerId: scope.reportingManagerId,
+    };
   }
 }

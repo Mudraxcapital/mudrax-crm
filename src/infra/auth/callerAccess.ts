@@ -18,6 +18,9 @@ const ALWAYS_ALLOWED = [
   "/profile",
   "/profile/security",
   "/api/auth",
+  "/api/health",
+  "/api/ready",
+  "/api/live",
 ] as const;
 
 /**

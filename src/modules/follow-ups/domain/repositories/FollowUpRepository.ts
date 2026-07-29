@@ -35,6 +35,22 @@ export interface ReassignFollowUpData {
   reason: string | null;
 }
 
+export interface EscalateFollowUpData {
+  escalatedToUserId: string;
+  /** When set, status becomes ESCALATED; otherwise only escalated* fields update. */
+  markEscalated?: boolean;
+}
+
+export interface ListDueFollowUpsFilter {
+  /** Inclusive upper bound — Follow-ups with scheduledFor <= dueBy. */
+  dueBy: Date;
+  statuses?: FollowUpStatus[];
+  triggerType?: FollowUpTriggerType;
+  /** Only Follow-ups not yet escalated (escalatedAt IS NULL). */
+  notEscalated?: boolean;
+  limit?: number;
+}
+
 export interface ListFollowUpsFilter {
   leadId?: string;
   /** Restricts to Follow-ups on any of these Leads (customer profile, bulk). */
@@ -86,6 +102,36 @@ export interface FollowUpRepository {
     actor: FollowUpAuditActor,
     correlationId?: string | null,
   ): Promise<FollowUp>;
+
+  /** Transitions SCHEDULED → DUE when the scheduled time has arrived. Idempotent if already DUE. */
+  markDueWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+  ): Promise<FollowUp>;
+
+  /** Transitions open Follow-up → MISSED when the schedule was not actioned. */
+  markMissedWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    missedAt?: Date,
+  ): Promise<FollowUp>;
+
+  /** Records escalation recipient + optional ESCALATED status. No-op fields if already escalated to same user. */
+  escalateWithAudit(
+    id: string,
+    data: EscalateFollowUpData,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    escalatedAt?: Date,
+  ): Promise<FollowUp>;
+
+  /** Portfolio scan for background jobs (due/overdue/escalation candidates). */
+  listDueCandidates(
+    organizationId: string,
+    filter: ListDueFollowUpsFilter,
+  ): Promise<FollowUp[]>;
 
   listReassignmentHistory(followUpId: string): Promise<FollowUpReassignment[]>;
 

@@ -11,7 +11,9 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   CompleteFollowUpData,
   CreateFollowUpData,
+  EscalateFollowUpData,
   FollowUpRepository,
+  ListDueFollowUpsFilter,
   ListFollowUpsFilter,
   ReassignFollowUpData,
   UpdateFollowUpData,
@@ -44,6 +46,9 @@ function toAuditJson(followUp: FollowUp): Prisma.InputJsonValue {
     currentAssigneeUserId: followUp.currentAssigneeUserId,
     completedAt: followUp.completedAt ? followUp.completedAt.toISOString() : null,
     outcomeNotes: followUp.outcomeNotes,
+    missedAt: followUp.missedAt ? followUp.missedAt.toISOString() : null,
+    escalatedAt: followUp.escalatedAt ? followUp.escalatedAt.toISOString() : null,
+    escalatedToUserId: followUp.escalatedToUserId,
   };
 }
 
@@ -254,6 +259,159 @@ export class PrismaFollowUpRepository implements FollowUpRepository {
 
       return after;
     });
+  }
+
+  async markDueWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+  ): Promise<FollowUp> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.followUp.findUniqueOrThrow({ where: { id } });
+      const before = toFollowUp(beforeRow);
+      if (before.status === "DUE") return before;
+      if (before.status !== "SCHEDULED") {
+        return before;
+      }
+
+      const afterRow = await tx.followUp.update({
+        where: { id },
+        data: { status: "DUE" },
+      });
+      const after = toFollowUp(afterRow);
+
+      await tx.followUpAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "FollowUpMarkedDue",
+          targetType: TARGET_TYPE_FOLLOW_UP,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async markMissedWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    missedAt?: Date,
+  ): Promise<FollowUp> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.followUp.findUniqueOrThrow({ where: { id } });
+      const before = toFollowUp(beforeRow);
+      if (before.status === "MISSED" || before.status === "ESCALATED") {
+        return before;
+      }
+      if (before.status === "COMPLETED" || before.status === "CANCELLED") {
+        return before;
+      }
+
+      const at = missedAt ?? new Date();
+      const afterRow = await tx.followUp.update({
+        where: { id },
+        data: { status: "MISSED", missedAt: at },
+      });
+      const after = toFollowUp(afterRow);
+
+      await tx.followUpAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "FollowUpMarkedMissed",
+          targetType: TARGET_TYPE_FOLLOW_UP,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async escalateWithAudit(
+    id: string,
+    data: EscalateFollowUpData,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    escalatedAt?: Date,
+  ): Promise<FollowUp> {
+    return this.prisma.$transaction(async (tx) => {
+      const beforeRow = await tx.followUp.findUniqueOrThrow({ where: { id } });
+      const before = toFollowUp(beforeRow);
+      if (before.status === "COMPLETED" || before.status === "CANCELLED") {
+        return before;
+      }
+      if (
+        before.escalatedAt &&
+        before.escalatedToUserId === data.escalatedToUserId &&
+        (data.markEscalated === false || before.status === "ESCALATED")
+      ) {
+        return before;
+      }
+
+      const at = escalatedAt ?? new Date();
+      const afterRow = await tx.followUp.update({
+        where: { id },
+        data: {
+          status: data.markEscalated === false ? before.status : "ESCALATED",
+          escalatedAt: at,
+          escalatedToUserId: data.escalatedToUserId,
+        },
+      });
+      const after = toFollowUp(afterRow);
+
+      await tx.followUpAuditLog.create({
+        data: {
+          organizationId: after.organizationId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "FollowUpEscalated",
+          targetType: TARGET_TYPE_FOLLOW_UP,
+          targetId: after.id,
+          correlationId: correlationId ?? null,
+          beforeState: toAuditJson(before),
+          afterState: toAuditJson(after),
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+
+      return after;
+    });
+  }
+
+  async listDueCandidates(
+    organizationId: string,
+    filter: ListDueFollowUpsFilter,
+  ): Promise<FollowUp[]> {
+    const where: Prisma.FollowUpWhereInput = {
+      organizationId,
+      scheduledFor: { lte: filter.dueBy },
+      status: filter.statuses
+        ? { in: filter.statuses }
+        : { in: ["SCHEDULED", "DUE", "MISSED", "ESCALATED"] },
+    };
+    if (filter.triggerType) where.triggerType = filter.triggerType;
+    if (filter.notEscalated) where.escalatedAt = null;
+
+    const rows = await this.prisma.followUp.findMany({
+      where,
+      orderBy: { scheduledFor: "asc" },
+      take: filter.limit ?? 100,
+    });
+    return rows.map(toFollowUp);
   }
 
   async listReassignmentHistory(followUpId: string): Promise<FollowUpReassignment[]> {

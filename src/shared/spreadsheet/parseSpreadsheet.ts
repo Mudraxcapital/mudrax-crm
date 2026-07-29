@@ -4,8 +4,15 @@
 
 import * as XLSX from "xlsx";
 import { parseCsv } from "@/shared/csv/csv";
+import {
+  assertSafeSpreadsheetUpload,
+  sanitizeSpreadsheetCell,
+  SpreadsheetUploadError,
+} from "./uploadSecurity";
 
 export type SpreadsheetFormat = "csv" | "xlsx" | "xls";
+export { SpreadsheetUploadError, assertSafeSpreadsheetUpload, MAX_SPREADSHEET_UPLOAD_BYTES } from "./uploadSecurity";
+export { sanitizeSpreadsheetCell } from "./uploadSecurity";
 
 export interface SpreadsheetTable {
   headers: string[];
@@ -17,10 +24,12 @@ export interface SpreadsheetTable {
 
 function normalizeCell(value: unknown): string {
   if (value == null) return "";
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  if (typeof value === "string") return sanitizeSpreadsheetCell(value);
+  if (typeof value === "number" || typeof value === "boolean") {
+    return sanitizeSpreadsheetCell(String(value));
+  }
   if (value instanceof Date) return value.toISOString();
-  return String(value).trim();
+  return sanitizeSpreadsheetCell(String(value));
 }
 
 function sheetToTable(sheet: XLSX.WorkSheet): { headers: string[]; rows: Record<string, string>[] } {
@@ -76,20 +85,59 @@ export function parseSpreadsheet(input: {
   binary?: ArrayBuffer | Uint8Array | null;
   /** Worksheet name when the workbook has multiple sheets. */
   sheetName?: string | null;
+  /** Optional size check when the caller knows byte length. */
+  sizeBytes?: number;
 }): SpreadsheetTable {
+  const sizeBytes =
+    input.sizeBytes ??
+    (input.binary
+      ? input.binary.byteLength
+      : input.csvText
+        ? Buffer.byteLength(input.csvText, "utf8")
+        : 0);
+  assertSafeSpreadsheetUpload({
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: sizeBytes > 0 ? sizeBytes : 1,
+  });
+
   const format = detectSpreadsheetFormat(input.fileName, input.mimeType);
 
   if (format === "csv") {
     const text = input.csvText ?? "";
     const parsed = parseCsv(text);
-    return { headers: parsed.headers, rows: parsed.rows, format, sheetNames: [] };
+    return {
+      headers: parsed.headers.map((h) => sanitizeSpreadsheetCell(h)),
+      rows: parsed.rows.map((row) => {
+        const next: Record<string, string> = {};
+        for (const [key, value] of Object.entries(row)) {
+          next[sanitizeSpreadsheetCell(key)] = sanitizeSpreadsheetCell(value);
+        }
+        return next;
+      }),
+      format,
+      sheetNames: [],
+    };
   }
 
   if (!input.binary) {
-    throw new Error("Excel file content is required for .xlsx / .xls imports.");
+    throw new SpreadsheetUploadError("Excel file content is required for .xlsx / .xls imports.");
   }
 
-  const workbook = XLSX.read(input.binary, { type: "array", cellDates: true });
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(input.binary, {
+      type: "array",
+      cellDates: true,
+      // Reject exotic binary features that are not needed for CRM imports.
+      bookVBA: false,
+      bookFiles: false,
+    });
+  } catch {
+    throw new SpreadsheetUploadError(
+      "Unable to parse the spreadsheet. The file may be corrupt or not a valid Excel workbook.",
+    );
+  }
   const sheetNames = workbook.SheetNames ?? [];
   const selected =
     (input.sheetName && sheetNames.includes(input.sheetName) ? input.sheetName : null) ??

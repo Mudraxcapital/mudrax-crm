@@ -1,0 +1,52 @@
+// ============================================================================
+// jobs — src/infra/jobs
+//
+// Durable background-job execution log. Infrastructure concern (not a
+// business bounded context): survives process restarts, enforces
+// idempotency via (jobType, idempotencyKey), and records every run for
+// operations/audit. Handlers live under src/infra/jobs; domain work is
+// delegated to existing module public APIs (follow-ups, notifications).
+// ============================================================================
+
+enum JobRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+
+  @@map("job_run_status")
+  @@schema("jobs")
+}
+
+/// One attempted (or claimed) execution of a named job. Retries mutate the
+/// same row (attempt++) rather than inserting duplicates, so the unique
+/// (jobType, idempotencyKey) constraint is the single source of "do this
+/// business effect at most once."
+model JobRun {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String?      @db.Uuid
+  jobType        String       @db.VarChar(120)
+  idempotencyKey String       @db.VarChar(255)
+  status         JobRunStatus @default(PENDING)
+  attempt        Int          @default(0)
+  maxAttempts    Int          @default(5)
+  scheduledFor   DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  nextAttemptAt  DateTime?
+  lockedUntil    DateTime?
+  lockedBy       String?      @db.VarChar(120)
+  result         Json?        @db.JsonB
+  errorMessage   String?      @db.Text
+  correlationId  String?      @db.Uuid
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([jobType, idempotencyKey])
+  @@index([status, nextAttemptAt])
+  @@index([status, scheduledFor])
+  @@index([organizationId])
+  @@map("job_runs")
+  @@schema("jobs")
+}

@@ -34,6 +34,9 @@ export const PUBLIC_PATH_PREFIXES = [
   "/clear-session",
   "/unauthorized",
   "/api/auth",
+  "/api/health",
+  "/api/ready",
+  "/api/live",
   "/api/integrations/meta/webhook",
   "/api/integrations/webhooks",
   "/api/integrations/rest",
@@ -67,6 +70,9 @@ export const authConfig: NextAuthConfig = {
       },
     },
   },
+  // Harden against common Auth.js footguns without changing the JWT strategy
+  // (Credentials provider requires JWT — database sessions would be a breaking change).
+  trustHost: process.env.AUTH_TRUST_HOST === "true" || !isProduction,
   // CSRF protection uses Auth.js defaults (double-submit cookie + the
   // built-in `csrfToken` on every credentials sign-in POST) — not overridden.
   providers: [],

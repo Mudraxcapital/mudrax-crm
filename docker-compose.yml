@@ -54,13 +54,15 @@ services:
     env_file:
       - .env
     environment:
-      # Overrides the host-oriented values in .env so the app — when it runs
+      // Overrides the host-oriented values in .env so the app — when it runs
       # *inside* this Compose network — reaches Postgres/Redis by their
       # service name instead of "localhost". Every other variable (AUTH_*,
       # APP_URL, etc.) still comes from .env via env_file above.
       DATABASE_URL: postgresql://${POSTGRES_USER:-mudrax}:${POSTGRES_PASSWORD:-mudrax_dev_password}@postgres:5432/${POSTGRES_DB:-mudrax_crm}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD:-mudrax_dev_password}@redis:6379
       WATCHPACK_POLLING: "true" # reliable file-change detection from bind mounts on Windows/macOS Docker Desktop
+      JOBS_ENABLED: "true"
+      JOBS_INTERVAL_MS: "60000"
     volumes:
       - .:/app
       # Anonymous volumes: keep the container's own (Linux-built) copies of
@@ -80,7 +82,7 @@ services:
       # has been generated per this task's scope) — this checks that the
       # Next.js dev server responds at all. Point this at a real
       # `/api/health` route once one exists.
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/live || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -118,12 +120,8 @@ services:
       - mudrax-network
 
   # ---------------------------------------------------------------------
-  # redis — general-purpose infrastructure, provisioned but not yet used by
-  # any application code (see .env.example for the documented future
-  # seams: sessions, caching, job queues, rate limiting, distributed
-  # locks). No module, port, or repository currently depends on this
-  # service — it exists so those future needs don't require re-visiting
-  # the development environment later.
+  # redis — used for distributed job locks, login rate limiting, and
+  # temporary tokens. Durable job state remains in Postgres.
   # ---------------------------------------------------------------------
   redis:
     image: redis:7-alpine

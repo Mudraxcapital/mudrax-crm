@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "32mb",
     },
   },
+  // Keep Node-only clients out of the Turbopack/webpack graph for
+  // instrumentation and Server Actions.
+  serverExternalPackages: ["redis", "@redis/client", "pg", "@prisma/adapter-pg"],
 };
 
 export default nextConfig;

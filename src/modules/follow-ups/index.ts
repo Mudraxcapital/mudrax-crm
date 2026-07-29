@@ -23,6 +23,11 @@ import {
   makeListRecentFollowUpActivity,
 } from "./application/use-cases/listFollowUpAuditLog";
 
+import {
+  makeListFollowUpReminders,
+  makeProcessFollowUpLifecycle,
+} from "./application/use-cases/processFollowUpLifecycle";
+
 export type { FollowUp, FollowUpStatus, FollowUpTriggerType } from "./domain/entities/FollowUp";
 export {
   FOLLOW_UP_STATUSES,
@@ -41,6 +46,7 @@ export {
   InvalidLeadReferenceError,
   InvalidAssigneeReferenceError,
   FollowUpNotOpenError,
+  FollowUpInvalidTransitionError,
 } from "./domain/errors/FollowUpErrors";
 export type { ListFollowUpsFilter } from "./domain/repositories/FollowUpRepository";
 export type { FollowUpDto } from "./application/dto/FollowUpDto";
@@ -59,6 +65,11 @@ export type { CreateFollowUpCommand } from "./application/use-cases/createFollow
 export type { UpdateFollowUpCommand } from "./application/use-cases/updateFollowUp";
 export type { CompleteFollowUpCommand } from "./application/use-cases/completeFollowUp";
 export type { ReassignFollowUpCommand } from "./application/use-cases/reassignFollowUp";
+export type {
+  DayBounds,
+  FollowUpNotificationIntent,
+  ProcessFollowUpLifecycleResult,
+} from "./application/use-cases/processFollowUpLifecycle";
 
 const followUpRepository = new PrismaFollowUpRepository(prisma);
 const leadsLookup = new LeadsModuleLookupAdapter();
@@ -81,3 +92,8 @@ export const listFollowUpReassignmentHistory =
   makeListFollowUpReassignmentHistory(followUpRepository);
 export const listFollowUpAuditLog = makeListFollowUpAuditLog(followUpRepository);
 export const listRecentFollowUpActivity = makeListRecentFollowUpActivity(followUpRepository);
+export const processFollowUpLifecycle = makeProcessFollowUpLifecycle(
+  followUpRepository,
+  usersLookup,
+);
+export const listFollowUpReminders = makeListFollowUpReminders(followUpRepository);

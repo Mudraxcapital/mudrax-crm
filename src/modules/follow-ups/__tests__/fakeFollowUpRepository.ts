@@ -8,7 +8,9 @@
 import type {
   CompleteFollowUpData,
   CreateFollowUpData,
+  EscalateFollowUpData,
   FollowUpRepository,
+  ListDueFollowUpsFilter,
   ListFollowUpsFilter,
   ReassignFollowUpData,
   UpdateFollowUpData,
@@ -179,6 +181,102 @@ export class FakeFollowUpRepository implements FollowUpRepository {
       { ...updated },
     );
     return updated;
+  }
+
+  async markDueWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+  ): Promise<FollowUp> {
+    const existing = this.followUps.get(id);
+    if (!existing) throw new Error(`FakeFollowUpRepository: FollowUp ${id} not found`);
+    if (existing.status === "DUE") return existing;
+    if (existing.status !== "SCHEDULED") return existing;
+    const updated: FollowUp = { ...existing, status: "DUE", updatedAt: new Date() };
+    this.followUps.set(id, updated);
+    this.recordAudit(actor, "FollowUpMarkedDue", id, correlationId, { ...existing }, { ...updated });
+    return updated;
+  }
+
+  async markMissedWithAudit(
+    id: string,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    missedAt?: Date,
+  ): Promise<FollowUp> {
+    const existing = this.followUps.get(id);
+    if (!existing) throw new Error(`FakeFollowUpRepository: FollowUp ${id} not found`);
+    if (
+      existing.status === "MISSED" ||
+      existing.status === "ESCALATED" ||
+      existing.status === "COMPLETED" ||
+      existing.status === "CANCELLED"
+    ) {
+      return existing;
+    }
+    const updated: FollowUp = {
+      ...existing,
+      status: "MISSED",
+      missedAt: missedAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.followUps.set(id, updated);
+    this.recordAudit(
+      actor,
+      "FollowUpMarkedMissed",
+      id,
+      correlationId,
+      { ...existing },
+      { ...updated },
+    );
+    return updated;
+  }
+
+  async escalateWithAudit(
+    id: string,
+    data: EscalateFollowUpData,
+    actor: FollowUpAuditActor,
+    correlationId?: string | null,
+    escalatedAt?: Date,
+  ): Promise<FollowUp> {
+    const existing = this.followUps.get(id);
+    if (!existing) throw new Error(`FakeFollowUpRepository: FollowUp ${id} not found`);
+    if (existing.status === "COMPLETED" || existing.status === "CANCELLED") return existing;
+    const updated: FollowUp = {
+      ...existing,
+      status: data.markEscalated === false ? existing.status : "ESCALATED",
+      escalatedAt: escalatedAt ?? new Date(),
+      escalatedToUserId: data.escalatedToUserId,
+      updatedAt: new Date(),
+    };
+    this.followUps.set(id, updated);
+    this.recordAudit(actor, "FollowUpEscalated", id, correlationId, { ...existing }, { ...updated });
+    return updated;
+  }
+
+  async listDueCandidates(
+    organizationId: string,
+    filter: ListDueFollowUpsFilter,
+  ): Promise<FollowUp[]> {
+    let results = [...this.followUps.values()].filter(
+      (followUp) =>
+        followUp.organizationId === organizationId && followUp.scheduledFor <= filter.dueBy,
+    );
+    if (filter.statuses?.length) {
+      results = results.filter((followUp) => filter.statuses!.includes(followUp.status));
+    } else {
+      results = results.filter((followUp) =>
+        ["SCHEDULED", "DUE", "MISSED", "ESCALATED"].includes(followUp.status),
+      );
+    }
+    if (filter.triggerType) {
+      results = results.filter((followUp) => followUp.triggerType === filter.triggerType);
+    }
+    if (filter.notEscalated) {
+      results = results.filter((followUp) => followUp.escalatedAt === null);
+    }
+    results.sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime());
+    return results.slice(0, filter.limit ?? 100);
   }
 
   async listReassignmentHistory(followUpId: string): Promise<FollowUpReassignment[]> {

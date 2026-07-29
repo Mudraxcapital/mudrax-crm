@@ -34,3 +34,11 @@ export class FollowUpNotOpenError extends Error {
     this.name = "FollowUpNotOpenError";
   }
 }
+
+/** Marking due/missed/escalating a Follow-up that is not in an eligible status. */
+export class FollowUpInvalidTransitionError extends Error {
+  constructor(id: string, fromStatus: string, action: string) {
+    super(`Follow-up ${id} cannot ${action} from status ${fromStatus}.`);
+    this.name = "FollowUpInvalidTransitionError";
+  }
+}

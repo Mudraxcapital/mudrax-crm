@@ -13,6 +13,16 @@ export interface UserLookupSummary {
   status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
 }
 
+/** Hierarchy edges needed to resolve Team Lead / Manager escalation recipients. */
+export interface UserHierarchyLookup {
+  id: string;
+  status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
+  assignedTeamLeadId: string | null;
+  reportingManagerId: string | null;
+}
+
 export interface UserLookupPort {
   findById(userId: string): Promise<UserLookupSummary | null>;
+  /** Optional — background escalation jobs resolve TL/Manager via hierarchy. */
+  findHierarchy?(userId: string): Promise<UserHierarchyLookup | null>;
 }

@@ -43,6 +43,11 @@ import {
 } from "./application/use-cases/getNotificationQueue";
 import { makeGetNotificationsDashboard } from "./application/use-cases/getNotificationsDashboard";
 import {
+  makeEnsureSystemNotificationTemplates,
+  SYSTEM_TEMPLATE_CODES,
+  type SystemTemplateCode,
+} from "./application/use-cases/ensureSystemTemplates";
+import {
   NotificationNotFoundError,
   NotificationTemplateNotFoundError,
   DuplicateNotificationTemplateCodeError,
@@ -260,3 +265,8 @@ export const getNotificationsDashboard = makeGetNotificationsDashboard(
   notificationRepository,
   templateRepository,
 );
+
+export const ensureSystemNotificationTemplates =
+  makeEnsureSystemNotificationTemplates(templateRepository);
+export { SYSTEM_TEMPLATE_CODES };
+export type { SystemTemplateCode };

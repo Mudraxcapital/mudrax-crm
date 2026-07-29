@@ -7,7 +7,11 @@
 
 import type { LeadLookupPort, LeadLookupSummary } from "../application/ports/LeadLookupPort";
 import type { LeadNextActionPort } from "../application/ports/LeadNextActionPort";
-import type { UserLookupPort, UserLookupSummary } from "../application/ports/UserLookupPort";
+import type {
+  UserHierarchyLookup,
+  UserLookupPort,
+  UserLookupSummary,
+} from "../application/ports/UserLookupPort";
 
 export class FakeLeadLookupPort implements LeadLookupPort, LeadNextActionPort {
   leads = new Map<string, LeadLookupSummary>();
@@ -29,8 +33,13 @@ export class FakeLeadLookupPort implements LeadLookupPort, LeadNextActionPort {
 
 export class FakeUserLookupPort implements UserLookupPort {
   users = new Map<string, UserLookupSummary>();
+  hierarchy = new Map<string, UserHierarchyLookup>();
 
   async findById(userId: string): Promise<UserLookupSummary | null> {
     return this.users.get(userId) ?? null;
+  }
+
+  async findHierarchy(userId: string): Promise<UserHierarchyLookup | null> {
+    return this.hierarchy.get(userId) ?? null;
   }
 }

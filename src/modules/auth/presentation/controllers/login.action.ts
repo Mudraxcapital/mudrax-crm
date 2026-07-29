@@ -22,6 +22,12 @@ const ACCOUNT_DISABLED_ERROR =
   "Your account has been disabled. Contact your administrator.";
 const ACCOUNT_SUSPENDED_ERROR =
   "Your account has been suspended. Contact your administrator.";
+const RATE_LIMIT_ERROR =
+  "Too many login attempts. Please wait a minute and try again.";
+
+/** Max credential posts per email per rolling window. */
+const LOGIN_RATE_LIMIT = 10;
+const LOGIN_RATE_WINDOW_SECONDS = 60;
 
 export async function loginAction(
   _previousState: LoginActionState | undefined,
@@ -35,6 +41,20 @@ export async function loginAction(
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  try {
+    const { checkRateLimit } = await import("@/infra/redis/rateLimit");
+    const rate = await checkRateLimit({
+      key: `login:${parsed.data.email.toLowerCase()}`,
+      limit: LOGIN_RATE_LIMIT,
+      windowSeconds: LOGIN_RATE_WINDOW_SECONDS,
+    });
+    if (!rate.allowed) {
+      return { error: RATE_LIMIT_ERROR };
+    }
+  } catch {
+    // Redis optional — never block login if the limiter cannot load.
   }
 
   try {

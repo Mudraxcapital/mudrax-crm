@@ -18,7 +18,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 /** Bump when adding/removing Prisma models (extra signal beyond delegate checks). */
-const PRISMA_CLIENT_REVISION = 5;
+const PRISMA_CLIENT_REVISION = 6;
 
 declare global {
   var __mudraxPrisma: PrismaClient | undefined;
@@ -45,7 +45,8 @@ function clientHasRequiredModels(client: PrismaClient): boolean {
     typeof c.stagedLead?.findMany === "function" &&
     typeof c.integrationConnection?.findMany === "function" &&
     typeof c.webhookEndpoint?.findMany === "function" &&
-    typeof c.apiKey?.findMany === "function"
+    typeof c.apiKey?.findMany === "function" &&
+    typeof c.jobRun?.findMany === "function"
   );
 }
 
