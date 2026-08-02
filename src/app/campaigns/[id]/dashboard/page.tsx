@@ -122,6 +122,7 @@ export default async function CampaignDashboardPage({
           canUpdate={hasPermission(authContext, "lead.update")}
           canUpdateCall={hasPermission(authContext, "call.update")}
           canCreateFollowUp={hasPermission(authContext, "follow_up.create")}
+          callerOnly={callerOnly}
           leadDetailHrefPrefix={callerOnly ? "/caller/leads" : "/leads"}
         />
       </Suspense>

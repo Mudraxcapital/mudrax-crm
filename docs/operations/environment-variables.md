@@ -20,6 +20,7 @@ Mudrax CRM never commits real secrets. Use `.env` locally (gitignored) and
 | `REDIS_URL` / `REDIS_PASSWORD` | Job locks + login rate limits |
 | `JOBS_CRON_SECRET` | Protects `/api/internal/jobs/tick` |
 | `DOCUMENTS_LOCAL_STORAGE_ROOT` | Upload/document storage path |
+| `CALL_RECORDINGS_LOCAL_STORAGE_ROOT` | Call recording audio files (external storage; not DB) |
 | `APP_VERSION` | Reported by `/api/health` |
 
 ## Secrets policy

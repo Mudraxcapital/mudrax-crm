@@ -162,7 +162,7 @@ export async function runJobsTick(options?: {
   }
 }
 
-let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let intervalHandle: NodeJS.Timeout | null = null;
 let running = false;
 
 export function isJobsWorkerRunning(): boolean {

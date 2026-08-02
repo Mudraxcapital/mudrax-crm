@@ -38,6 +38,11 @@ export const updateCallAttemptStatusSchema = z.object({
     .enum(["ANSWERED", "NO_ANSWER", "BUSY", "FAILED", "VOICEMAIL", "CONGESTION"])
     .optional(),
   callOutcomeId: uuidSchema.nullable().optional(),
+  /**
+   * Optional client-measured duration (seconds). When set, used instead of
+   * server-side answeredAt→now math. Additive — web forms omit this field.
+   */
+  durationSeconds: z.number().int().min(0).max(8 * 60 * 60).optional(),
 });
 
 export const createCallOutcomeSchema = z.object({

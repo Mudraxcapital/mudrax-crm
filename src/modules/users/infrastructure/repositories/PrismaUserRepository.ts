@@ -734,7 +734,7 @@ export class PrismaUserRepository implements UserRepository {
           passwordHash: data.passwordHash,
           status: data.status,
           profilePhotoUrl: data.profilePhotoUrl,
-          mustChangePassword: data.mustChangePassword ?? true,
+          mustChangePassword: data.mustChangePassword ?? false,
           assignedTeamLeadId: data.assignedTeamLeadId,
           reportingManagerId: data.reportingManagerId,
           canManageCallerAccounts: data.canManageCallerAccounts ?? false,
@@ -838,7 +838,7 @@ export class PrismaUserRepository implements UserRepository {
       if (!before) throw new Error(`User not found: ${id}`);
       const mustChangePassword = options?.clearMustChangePassword
         ? false
-        : (options?.mustChangePassword ?? true);
+        : (options?.mustChangePassword ?? false);
       const actionName =
         options?.action ??
         (options?.clearMustChangePassword ? "Password Changed (Self)" : "Password Reset (Admin)");

@@ -64,14 +64,13 @@ All three run on one private Docker network (`mudrax-crm-network`) defined in
 
 ## Applying the database schema
 
-No Prisma models exist yet (this task's scope is the environment only — see
-`prisma/models/README.md`). Once schema files land under `prisma/models/*`,
-run migrations against the containerized Postgres from your host (Postgres's
-port is published to `localhost:5432`, so the native Prisma CLI works
-without needing to exec into the container):
+Schema lives under `prisma/models/*`. With Postgres reachable at `localhost:5432`
+(docker-compose publishes the port), run from the host:
 
 ```bash
-npm run prisma:migrate
+npm run prisma:generate
+npx prisma migrate deploy   # or: npm run prisma:migrate  (dev migrate)
+npm run db:seed
 ```
 
 ## Everyday commands

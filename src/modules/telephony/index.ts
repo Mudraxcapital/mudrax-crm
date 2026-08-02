@@ -50,8 +50,15 @@ import { makeUpdateCallRecording } from "./application/use-cases/updateCallRecor
 import {
   makeGetCallRecording,
   makeListCallRecordings,
+  makeListCallRecordingsByLeadIds,
 } from "./application/use-cases/getCallRecording";
+import { makeUploadCallRecordingAudio } from "./application/use-cases/uploadCallRecordingAudio";
+import {
+  CallRecordingAudioNotAvailableError,
+  makeGetCallRecordingAudio,
+} from "./application/use-cases/getCallRecordingAudio";
 import { makeGetTelephonyDashboard } from "./application/use-cases/getTelephonyDashboard";
+import { LocalRecordingStorageAdapter } from "./infrastructure/adapters/LocalRecordingStorageAdapter";
 
 export type {
   CallAttempt,
@@ -112,6 +119,16 @@ export type { CallNoteDto } from "./application/dto/CallNoteDto";
 export type { CallOutcomeDto } from "./application/dto/CallOutcomeDto";
 export type { AgentSessionDto, AgentStatusHistoryDto } from "./application/dto/AgentSessionDto";
 export type { CallRecordingDto } from "./application/dto/CallRecordingDto";
+export type { CallRecordingForLeadDto } from "./application/use-cases/getCallRecording";
+export { CallRecordingAudioNotAvailableError };
+export {
+  isAndroidLocalRecordingReference,
+  isServerStoredRecordingReference,
+} from "./domain/recordingStorage";
+export {
+  DEFAULT_CALL_RECORDINGS_RETENTION_DAYS,
+  getCallRecordingsRetentionDays,
+} from "./domain/recordingRetention";
 export type {
   CallsByAgentDto,
   TelephonyDashboardDto,
@@ -151,6 +168,7 @@ export type { ChangeAgentSessionStatusCommand } from "./application/use-cases/ch
 export type { EndAgentSessionCommand } from "./application/use-cases/endAgentSession";
 export type { CreateCallRecordingCommand } from "./application/use-cases/createCallRecording";
 export type { UpdateCallRecordingCommand } from "./application/use-cases/updateCallRecording";
+export type { UploadCallRecordingAudioCommand } from "./application/use-cases/uploadCallRecordingAudio";
 
 const callAttemptRepository = new PrismaCallAttemptRepository(prisma);
 const callNoteRepository = new PrismaCallNoteRepository(prisma);
@@ -158,6 +176,7 @@ const callOutcomeRepository = new PrismaCallOutcomeRepository(prisma);
 const agentSessionRepository = new PrismaAgentSessionRepository(prisma);
 const callRecordingRepository = new PrismaCallRecordingRepository(prisma);
 const extensionRepository = new PrismaExtensionRepository(prisma);
+const recordingStorage = new LocalRecordingStorageAdapter();
 
 const leadLookup = new LeadsModuleLookupAdapter();
 const customerLookup = new CustomersModuleLookupAdapter();
@@ -220,6 +239,19 @@ export const createCallRecording = makeCreateCallRecording(
 export const updateCallRecording = makeUpdateCallRecording(callRecordingRepository);
 export const getCallRecording = makeGetCallRecording(callRecordingRepository);
 export const listCallRecordings = makeListCallRecordings(callRecordingRepository);
+export const listCallRecordingsByLeadIds = makeListCallRecordingsByLeadIds(
+  callRecordingRepository,
+);
+export const uploadCallRecordingAudio = makeUploadCallRecordingAudio(
+  callAttemptRepository,
+  callRecordingRepository,
+  recordingStorage,
+);
+export const getCallRecordingAudio = makeGetCallRecordingAudio(
+  callAttemptRepository,
+  callRecordingRepository,
+  recordingStorage,
+);
 
 export const getTelephonyDashboard = makeGetTelephonyDashboard(
   callAttemptRepository,

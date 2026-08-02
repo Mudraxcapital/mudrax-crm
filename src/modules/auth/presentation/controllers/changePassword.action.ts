@@ -22,8 +22,8 @@ async function clientIp(): Promise<string | null> {
 }
 
 /**
- * Self-service change password — authenticated user, own account only.
- * Used by Profile → Security and the forced /change-password gate.
+ * Self-service change password — Admin only, own account.
+ * Used by Profile → Security.
  */
 export async function changePasswordAction(
   _state: ChangePasswordState | undefined,
@@ -34,7 +34,7 @@ export async function changePasswordAction(
   if (!roleMaySelfServiceChangePassword(authContext.hierarchy.primaryRole)) {
     return {
       error:
-        "Team Leads and Callers cannot change their password. Ask an Admin to reset it in User Management.",
+        "Only Admins can change their own password. Ask an Admin to reset it in User Management.",
     };
   }
 

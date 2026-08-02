@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/infra/auth/apiGuard";
-import { hasPermission } from "@/modules/rbac";
+import { canViewUserId, hasPermission } from "@/modules/rbac";
 import {
   AdminRoleProtectedError,
   getUser,
@@ -17,7 +17,9 @@ export async function GET(request: Request,
 
   const { id } = await context.params;
   const isSelf = current.session.user.id === id;
-  const canViewOthers = hasPermission(current.authContext, "user.view");
+  const canViewOthers =
+    hasPermission(current.authContext, "user.view") ||
+    canViewUserId(current.authContext.hierarchy, id);
   if (!isSelf && !canViewOthers) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

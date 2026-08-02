@@ -24,7 +24,9 @@ import {
 import { listFollowUpsByLead } from "@/modules/follow-ups";
 import {
   countCallAttempts,
+  isServerStoredRecordingReference,
   listCallAttempts,
+  listCallRecordingsByLeadIds,
   type CallStatus,
 } from "@/modules/telephony";
 import { getUserSummary, listUsers } from "@/modules/users";
@@ -40,6 +42,30 @@ import {
   descriptionMeta,
   type CampaignProgressGranularity,
 } from "./campaignDashboardRange";
+
+function toDashboardRecording(recording: {
+  id: string;
+  callAttemptId: string;
+  storageReference: string;
+  durationSeconds: number | null;
+  startedAt: string | Date;
+}): CampaignDashboardLeadRecording {
+  const playableOnWeb = isServerStoredRecordingReference(recording.storageReference);
+  return {
+    id: recording.id,
+    callAttemptId: recording.callAttemptId,
+    storageReference: recording.storageReference,
+    durationSeconds: recording.durationSeconds,
+    startedAt:
+      recording.startedAt instanceof Date
+        ? recording.startedAt.toISOString()
+        : String(recording.startedAt),
+    playableOnWeb,
+    audioUrl: playableOnWeb
+      ? `/api/telephony/calls/${recording.callAttemptId}/recordings/${recording.id}/audio`
+      : null,
+  };
+}
 
 async function fillMissingUserNames(
   map: Map<string, string>,
@@ -94,6 +120,17 @@ export interface CampaignDashboardActivityItem {
   occurredAt: string;
 }
 
+export interface CampaignDashboardLeadRecording {
+  id: string;
+  callAttemptId: string;
+  storageReference: string;
+  durationSeconds: number | null;
+  startedAt: string;
+  /** True when audio was uploaded to CRM storage (playable in browser). */
+  playableOnWeb: boolean;
+  audioUrl: string | null;
+}
+
 export interface CampaignDashboardLeadRow {
   id: string;
   fullName: string;
@@ -102,6 +139,7 @@ export interface CampaignDashboardLeadRow {
   lostReasonName: string | null;
   assigneeName: string;
   nextActionAt: string | null;
+  recordings: CampaignDashboardLeadRecording[];
 }
 
 export interface CampaignDashboardLeadNote {
@@ -151,6 +189,7 @@ export interface CampaignDashboardLeadDetail {
   notes: CampaignDashboardLeadNote[];
   followUps: CampaignDashboardLeadFollowUp[];
   timeline: CampaignDashboardLeadTimelineItem[];
+  recordings: CampaignDashboardLeadRecording[];
   latestCallAttemptId: string | null;
   latestCallStatus: string | null;
 }
@@ -684,6 +723,16 @@ export async function loadCampaignDashboard(input: {
     leads.map((lead) => lead.currentAssigneeUserId),
   );
 
+  const recordingsForPage = await listCallRecordingsByLeadIds(
+    leads.map((lead) => lead.id),
+  ).catch(() => []);
+  const recordingsByLeadId = new Map<string, CampaignDashboardLeadRecording[]>();
+  for (const recording of recordingsForPage) {
+    const list = recordingsByLeadId.get(recording.leadId) ?? [];
+    list.push(toDashboardRecording(recording));
+    recordingsByLeadId.set(recording.leadId, list);
+  }
+
   const assigneeLeads: CampaignDashboardLeadRow[] = leads.map((lead) => ({
     id: lead.id,
     fullName: lead.fullNameSnapshot,
@@ -692,6 +741,7 @@ export async function loadCampaignDashboard(input: {
     lostReasonName: lead.lostReasonName,
     assigneeName: nameFromMap(userNameById, lead.currentAssigneeUserId),
     nextActionAt: lead.nextActionAt,
+    recordings: recordingsByLeadId.get(lead.id) ?? [],
   }));
 
   const leadPaging: CampaignDashboardLeadPaging = {
@@ -762,15 +812,17 @@ export async function loadCampaignDashboard(input: {
           }
         }
 
-        const [notes, auditLogForLead, followUps, callAttempts] = await Promise.all([
-          listLeadNotes(leadDetail.id).catch(() => []),
-          listLeadAuditLog(leadDetail.id).catch(() => []),
-          listFollowUpsByLead(leadDetail.id).catch(() => []),
-          listCallAttempts(organizationId, {
-            leadId: leadDetail.id,
-            limit: 5,
-          }).catch(() => []),
-        ]);
+        const [notes, auditLogForLead, followUps, callAttempts, leadRecordings] =
+          await Promise.all([
+            listLeadNotes(leadDetail.id).catch(() => []),
+            listLeadAuditLog(leadDetail.id).catch(() => []),
+            listFollowUpsByLead(leadDetail.id).catch(() => []),
+            listCallAttempts(organizationId, {
+              leadId: leadDetail.id,
+              limit: 5,
+            }).catch(() => []),
+            listCallRecordingsByLeadIds([leadDetail.id]).catch(() => []),
+          ]);
 
         const latestCall = callAttempts[0] ?? null;
         const fieldValues: CampaignDashboardLeadFieldValue[] = [
@@ -844,6 +896,7 @@ export async function loadCampaignDashboard(input: {
           ]
             .sort((a, b) => b.at.localeCompare(a.at))
             .slice(0, 40),
+          recordings: leadRecordings.map((recording) => toDashboardRecording(recording)),
           latestCallAttemptId: latestCall?.id ?? null,
           latestCallStatus: latestCall?.status ?? null,
         };

@@ -31,7 +31,9 @@ import {
   assertCanAssignToUser,
   AssigneeNotAllowedError,
 } from "@/shared/auth/assertCanAssignToUser";
-import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
+import { ensurePersonalCampaign } from "@/modules/campaigns";
+import { listUsersByRole } from "@/modules/users";
+import { extractFieldValuesFromFormData } from "../lib/extractFieldValuesFromFormData";
 
 export interface LeadFormState {
   error?: string;
@@ -192,6 +194,32 @@ export async function createLeadAction(
     }
   }
 
+  // Single-add leads belong to the org's Personal Campaign so Caller/app
+  // queues can scope them. Soft-fail if ownership/campaign setup is unavailable.
+  let personalCampaignId: string | null = null;
+  try {
+    let campaignOwnerManagerId = resolvedOwnerManagerId;
+    if (!campaignOwnerManagerId) {
+      const managers = await listUsersByRole("Manager");
+      campaignOwnerManagerId = managers[0]?.id ?? null;
+    }
+    if (campaignOwnerManagerId) {
+      const memberUserIds = [
+        parsed.data.currentAssigneeUserId,
+        session.user.id,
+      ].filter((id): id is string => Boolean(id));
+      const personal = await ensurePersonalCampaign({
+        organizationId: authContext.organizationId,
+        ownerManagerId: campaignOwnerManagerId,
+        actor: { actorType: "USER", actorId: session.user.id },
+        memberUserIds,
+      });
+      personalCampaignId = personal.id;
+    }
+  } catch (error) {
+    console.error("[createLeadAction] ensurePersonalCampaign failed", error);
+  }
+
   let leadId: string;
   try {
     const lead = await createLead({
@@ -200,6 +228,7 @@ export async function createLeadAction(
       actor: { actorType: "USER", actorId: session.user.id },
       ownerManagerId: resolvedOwnerManagerId,
       ownerTeamLeadId,
+      campaignId: personalCampaignId,
     });
     leadId = lead.id;
   } catch (error) {
@@ -217,5 +246,10 @@ export async function createLeadAction(
   }
 
   revalidatePath("/leads");
+  if (personalCampaignId) {
+    revalidatePath("/campaigns");
+    revalidatePath(`/campaigns/${personalCampaignId}`);
+    revalidatePath("/caller/campaigns");
+  }
   redirect(`/leads/${leadId}`);
 }

@@ -54,7 +54,7 @@ services:
     env_file:
       - .env
     environment:
-      // Overrides the host-oriented values in .env so the app — when it runs
+      # Overrides the host-oriented values in .env so the app — when it runs
       # *inside* this Compose network — reaches Postgres/Redis by their
       # service name instead of "localhost". Every other variable (AUTH_*,
       # APP_URL, etc.) still comes from .env via env_file above.

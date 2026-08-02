@@ -12,7 +12,6 @@ import {
   InvalidUserHierarchyError,
 } from "../../domain/errors/UserErrors";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
-import { roleMaySelfServiceChangePassword } from "../services/selfServicePasswordPolicy";
 import { resolveCanManageCallerAccountsForUser } from "../services/callerManageGrant";
 import type { CreateUserInput } from "../validators/userSchemas";
 import { assertCanAssignRole, assertFixedRole } from "../services/userRolePolicy";
@@ -87,7 +86,7 @@ export function makeCreateUser(
         assignedTeamLeadId: normalized.assignedTeamLeadId,
         reportingManagerId: normalized.reportingManagerId,
         createdByUserId: actor.actorId,
-        mustChangePassword: roleMaySelfServiceChangePassword(role),
+        mustChangePassword: false,
         canManageCallerAccounts: resolveCanManageCallerAccountsForUser({
           role,
           requested: input.canManageCallerAccounts,

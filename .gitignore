@@ -1,6 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
+node_modules/
 /node_modules
 /.pnp
 .pnp.*
@@ -21,14 +22,46 @@
 /.next/
 /out/
 
+# ============================================================================
+# Expo / React Native / Android generated artifacts
+# ============================================================================
+.expo/
+.expo-shared/
+.metro/
+**/android/build/
+**/build/
+**/.gradle/
+**/.cxx/
+**/captures/
+android/app/build/
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/dist/
+apps/mobile/web-build/
+/android/
+/ios/
+/app.json
+/nativewind-env.d.ts
+*.apk
+*.aab
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
 # production
 /build
 
 # misc
 .DS_Store
 *.pem
+.tmp/
+tsconfig.tsbuildinfo
 
-# local document storage (LocalDiskStorageAdapter)
+# local document / call-recording storage (never commit blobs)
 /.data/
 
 # debug

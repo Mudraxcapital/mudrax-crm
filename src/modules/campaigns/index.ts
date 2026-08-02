@@ -28,6 +28,10 @@ import {
   makeListCampaignAuditLog,
   makeListRecentCampaignActivity,
 } from "./application/use-cases/listCampaignAuditLog";
+import {
+  makeEnsurePersonalCampaign,
+  PERSONAL_CAMPAIGN_NAME,
+} from "./application/use-cases/ensurePersonalCampaign";
 
 export type { Campaign, CampaignStatus } from "./domain/entities/Campaign";
 export { CAMPAIGN_STATUSES, CAMPAIGN_STATUS_TRANSITIONS } from "./domain/entities/Campaign";
@@ -86,6 +90,8 @@ export type {
 export type { AssignCampaignLeadsCommand } from "./application/use-cases/assignCampaignLeads";
 export type { RedistributeCampaignLeadsCommand } from "./application/use-cases/redistributeCampaignLeads";
 export { parseCampaignDistributionMethod } from "./application/use-cases/redistributeCampaignLeads";
+export type { EnsurePersonalCampaignCommand } from "./application/use-cases/ensurePersonalCampaign";
+export { PERSONAL_CAMPAIGN_NAME };
 
 const campaignRepository = new PrismaCampaignRepository(prisma);
 const usersLookup = new UsersModuleLookupAdapter();
@@ -94,6 +100,10 @@ const leadsLookup = new LeadsModuleLookupAdapter();
 export const createCampaign = makeCreateCampaign(campaignRepository);
 export const updateCampaign = makeUpdateCampaign(campaignRepository);
 export const changeCampaignStatus = makeChangeCampaignStatus(campaignRepository);
+export const ensurePersonalCampaign = makeEnsurePersonalCampaign(
+  campaignRepository,
+  usersLookup,
+);
 export const addCampaignMember = makeAddCampaignMember(
   campaignRepository,
   usersLookup,

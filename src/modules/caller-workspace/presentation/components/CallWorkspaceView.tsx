@@ -1,14 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CallerWorkspaceLeadDto } from "../../application/dto/CallerWorkspaceDto";
 import type { LeadFieldDefinitionDto, LeadStage, LostReason } from "@/modules/leads";
-import {
-  filterCallerLeadStages,
-  findRingingStage,
-} from "../lib/filterCallerLeadStages";
+import { filterCallerLeadStages } from "../lib/filterCallerLeadStages";
 import { DynamicLeadFields } from "@/modules/leads/presentation/components/DynamicLeadFields";
 import { LeadClickToCallPanel } from "@/modules/leads/presentation/components/LeadClickToCallPanel";
 import { LeadNoteForm } from "@/modules/leads/presentation/components/LeadNoteForm";
@@ -25,6 +22,9 @@ import { Card, CardHeader, CardBody } from "@/shared/ui/Card";
 import { Badge } from "@/shared/ui/Badge";
 import { Button } from "@/shared/ui/Button";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
+
+const FRESH_STAGE_LOCK_HINT =
+  "Fresh leads cannot be updated here. Use the mobile app to call first — then you can change status once the lead is Ringing or another stage.";
 
 export function CallWorkspaceView({
   lead,
@@ -59,8 +59,6 @@ export function CallWorkspaceView({
   void _canUpdateCall;
   const router = useRouter();
   const qs = campaignId ? `?campaignId=${campaignId}` : "";
-  const [callStarted, setCallStarted] = useState(Boolean(lead.latestCallAttemptId));
-  const [ringingPending, setRingingPending] = useState(false);
 
   const catalogStages = useMemo(() => excludeTestCatalogRows(stages), [stages]);
   const stageOptions = useMemo(
@@ -68,7 +66,8 @@ export function CallWorkspaceView({
     [catalogStages, lead.currentStageId],
   );
 
-  const leadStatusUnlocked = callStarted || Boolean(lead.latestCallAttemptId);
+  const isFreshLead = lead.currentStageBucket === "INITIAL";
+  const leadStatusUnlocked = !isFreshLead;
   const boundAddNote = addLeadNoteAction.bind(null, lead.id);
   const boundCreateFollowUp = createFollowUpAction.bind(null, lead.id);
   const waHref = lead.phoneSnapshot
@@ -76,31 +75,12 @@ export function CallWorkspaceView({
     : null;
   const smsHref = lead.phoneSnapshot ? `sms:${lead.phoneSnapshot}` : null;
 
-  async function applyRingingOnCall() {
-    const ringing = findRingingStage(catalogStages);
-    if (!ringing || ringing.id === lead.currentStageId) return;
-    setRingingPending(true);
-    try {
-      const formData = new FormData();
-      formData.set("stageId", ringing.id);
-      const result = await changeLeadStageAction(lead.id, undefined, formData);
-      if (!result.error) router.refresh();
-    } finally {
-      setRingingPending(false);
-    }
-  }
-
-  async function handleCallStarted() {
-    setCallStarted(true);
-    await applyRingingOnCall();
-  }
-
   async function stageAction(
     state: LeadFormState | undefined,
     formData: FormData,
   ): Promise<LeadFormState> {
     if (!leadStatusUnlocked) {
-      return { error: "Click Call first — then you can update lead status." };
+      return { error: FRESH_STAGE_LOCK_HINT };
     }
     const result = await changeLeadStageAction(lead.id, state, formData);
     if (!result.error) router.refresh();
@@ -158,9 +138,6 @@ export function CallWorkspaceView({
                       phone={lead.phoneSnapshot}
                       agentUserId={agentUserId}
                       returnPath={`/caller/leads/${lead.id}${qs}`}
-                      onCallStarted={() => {
-                        void handleCallStarted();
-                      }}
                     />
                   </div>
                 ) : null}
@@ -202,12 +179,8 @@ export function CallWorkspaceView({
                   stages={stageOptions}
                   lostReasons={excludeTestCatalogRows(lostReasons)}
                   currentStageId={lead.currentStageId}
-                  disabled={!leadStatusUnlocked || ringingPending}
-                  disabledHint={
-                    leadStatusUnlocked
-                      ? undefined
-                      : "Click Call first — then you can update lead status."
-                  }
+                  disabled={!leadStatusUnlocked}
+                  disabledHint={leadStatusUnlocked ? undefined : FRESH_STAGE_LOCK_HINT}
                 />
               </CardBody>
             </Card>

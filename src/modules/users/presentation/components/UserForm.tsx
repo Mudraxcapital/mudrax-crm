@@ -63,7 +63,7 @@ export function UserForm({
         <Field label="Phone *" htmlFor="phone">
           <input id="phone" name="phone" type="tel" required className={inputClass} />
         </Field>
-        <Field label="Temporary password *" htmlFor="password">
+        <Field label="Password *" htmlFor="password">
           <input
             id="password"
             name="password"
@@ -73,8 +73,8 @@ export function UserForm({
             className={inputClass}
           />
           <p className="text-muted text-xs">
-            At least 8 characters with uppercase, lowercase, and a number. The employee must change
-            it on first login.
+            At least 8 characters with uppercase, lowercase, and a number. The employee can sign in
+            with this password immediately — no forced change on first login.
           </p>
         </Field>
         <Field label="Role *" htmlFor="role">

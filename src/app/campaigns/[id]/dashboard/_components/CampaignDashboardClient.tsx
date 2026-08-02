@@ -181,6 +181,7 @@ export function CampaignDashboardClient({
   canUpdate,
   canUpdateCall,
   canCreateFollowUp,
+  callerOnly = false,
   leadDetailHrefPrefix = "/leads",
 }: {
   data: CampaignDashboardData;
@@ -194,6 +195,7 @@ export function CampaignDashboardClient({
   canUpdate: boolean;
   canUpdateCall: boolean;
   canCreateFollowUp: boolean;
+  callerOnly?: boolean;
   leadDetailHrefPrefix?: string;
 }) {
   const router = useRouter();
@@ -482,6 +484,12 @@ export function CampaignDashboardClient({
                             {lead.lostReasonName ? ` · ${lead.lostReasonName}` : ""}
                           </Badge>
                         </span>
+                        {lead.recordings.length > 0 ? (
+                          <span className="text-muted text-[11px]">
+                            {lead.recordings.length} recording
+                            {lead.recordings.length === 1 ? "" : "s"}
+                          </span>
+                        ) : null}
                       </button>
                     </li>
                   );
@@ -586,6 +594,7 @@ export function CampaignDashboardClient({
                 canUpdate={canUpdate}
                 canUpdateCall={canUpdateCall}
                 canCreateFollowUp={canCreateFollowUp}
+                callerOnly={callerOnly}
               />
             </>
           )}

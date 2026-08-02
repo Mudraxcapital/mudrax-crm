@@ -5,6 +5,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   CallRecordingRepository,
+  CallRecordingWithLeadId,
   CreateCallRecordingData,
   UpdateCallRecordingData,
 } from "../../domain/repositories/CallRecordingRepository";
@@ -42,6 +43,32 @@ export class PrismaCallRecordingRepository implements CallRecordingRepository {
       orderBy: { startedAt: "desc" },
     });
     return rows.map(toCallRecording);
+  }
+
+  async listByLeadIds(leadIds: string[]): Promise<CallRecordingWithLeadId[]> {
+    const unique = [...new Set(leadIds.filter(Boolean))];
+    if (unique.length === 0) return [];
+
+    const rows = await this.prisma.callRecording.findMany({
+      where: {
+        callAttempt: {
+          leadId: { in: unique },
+        },
+      },
+      include: {
+        callAttempt: {
+          select: { leadId: true },
+        },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+
+    return rows
+      .filter((row) => Boolean(row.callAttempt.leadId))
+      .map((row) => ({
+        ...toCallRecording(row),
+        leadId: row.callAttempt.leadId as string,
+      }));
   }
 
   async createWithAudit(
@@ -98,6 +125,9 @@ export class PrismaCallRecordingRepository implements CallRecordingRepository {
       const afterRow = await tx.callRecording.update({
         where: { id },
         data: {
+          ...(data.storageReference !== undefined
+            ? { storageReference: data.storageReference }
+            : {}),
           durationSeconds: data.durationSeconds,
           endedAt: data.endedAt,
           providerMetadata: data.providerMetadata as Prisma.InputJsonValue,

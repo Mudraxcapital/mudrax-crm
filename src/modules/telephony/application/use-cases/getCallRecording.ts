@@ -6,6 +6,10 @@ import type { CallRecordingRepository } from "../../domain/repositories/CallReco
 import { CallRecordingNotFoundError } from "../../domain/errors/TelephonyErrors";
 import { toCallRecordingDto, type CallRecordingDto } from "../dto/CallRecordingDto";
 
+export interface CallRecordingForLeadDto extends CallRecordingDto {
+  leadId: string;
+}
+
 export function makeGetCallRecording(repository: CallRecordingRepository) {
   return async function getCallRecording(id: string): Promise<CallRecordingDto> {
     const recording = await repository.findById(id);
@@ -20,5 +24,17 @@ export function makeListCallRecordings(repository: CallRecordingRepository) {
   return async function listCallRecordings(callAttemptId: string): Promise<CallRecordingDto[]> {
     const recordings = await repository.listByCallAttempt(callAttemptId);
     return recordings.map(toCallRecordingDto);
+  };
+}
+
+export function makeListCallRecordingsByLeadIds(repository: CallRecordingRepository) {
+  return async function listCallRecordingsByLeadIds(
+    leadIds: string[],
+  ): Promise<CallRecordingForLeadDto[]> {
+    const rows = await repository.listByLeadIds(leadIds);
+    return rows.map((row) => ({
+      ...toCallRecordingDto(row),
+      leadId: row.leadId,
+    }));
   };
 }

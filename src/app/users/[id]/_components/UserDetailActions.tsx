@@ -163,16 +163,17 @@ export function UserDetailActions({
         open={resetOpen}
         onClose={() => setResetOpen(false)}
         title="Reset password"
-        description="Set a temporary password. The employee must change it on next login. All sessions end immediately."
+        description="Set a new password the employee can use immediately. All sessions end immediately."
       >
         <form action={resetFormAction} className="flex flex-col gap-3">
           {resetState.error ? <p className="text-sm text-danger">{resetState.error}</p> : null}
           {resetState.success ? <p className="text-sm text-success">{resetState.success}</p> : null}
           <label className="flex flex-col gap-1.5">
-            <span className="mx-label">Temporary password</span>
+            <span className="mx-label">New password</span>
             <input name="password" type="password" required minLength={8} className="mx-input" />
             <span className="text-muted text-xs">
-              At least 8 characters with uppercase, lowercase, and a number.
+              At least 8 characters with uppercase, lowercase, and a number. No forced change on next
+              login.
             </span>
           </label>
           <Button type="submit" disabled={resetPending}>

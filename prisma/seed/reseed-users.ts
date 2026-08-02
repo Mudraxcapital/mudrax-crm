@@ -40,9 +40,11 @@ async function main(): Promise<void> {
   section("Done");
   explain(`Admin:     ${ADMIN_EMAIL} / ${ADMIN_DEV_PASSWORD}`);
   explain(`Manager:   salaudin.malik@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
-  explain(`Team Lead: (${teamLeadCount}) *@mudraxcapital.com / ${DEMO_USER_PASSWORD}`);
   explain(
-    `Callers:   ${callerCount - directAdminCount} under Team Leads + ${directAdminCount} Direct Admin / ${DEMO_USER_PASSWORD}`,
+    `Team Leads (${teamLeadCount}): ananya.sharma@… → Manager · rohan.mehta@… → Admin / ${DEMO_USER_PASSWORD}`,
+  );
+  explain(
+    `Callers:   ${callerCount - directAdminCount} under Team Leads (3 each) + ${directAdminCount} Direct Admin freelancers / ${DEMO_USER_PASSWORD}`,
   );
   explain(`Total employees: ${DEMO_USERS.length}`);
   explain("All leads, customers, campaigns, and related data were wiped.");

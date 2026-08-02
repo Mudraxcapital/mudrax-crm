@@ -35,7 +35,7 @@ export async function wipeCrmBusinessData(
   prisma: ReturnType<typeof createSeedClient>,
 ): Promise<void> {
 
-  // Core wipe path aligned with scripts/wipe-test-data.ts (proven against this schema).
+  // Core wipe path aligned with scripts/db/wipe-test-data.ts (proven against this schema).
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       disbursements.commissions,

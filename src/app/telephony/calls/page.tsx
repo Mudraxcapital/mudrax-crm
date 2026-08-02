@@ -12,11 +12,20 @@ import { nameFromMap } from "@/shared/ui/displayName";
 import { TabNav } from "@/shared/ui/Tabs";
 import { telephonyTabItems } from "../_lib/telephonyTabs";
 
+function formatCallDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const safe = Math.max(0, Math.round(seconds));
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default async function TelephonyCallsPage() {
   const { authContext } = await requirePermission("call.view");
   const canInitiate = hasPermission(authContext, "call.initiate");
   const callerWorkspace = isCallerWorkspaceUser(authContext);
   const filter = agentHierarchyFilter(authContext);
+  const columnCount = callerWorkspace ? 7 : 8;
 
   const [calls, leads, customers, assignees] = await Promise.all([
     listCallAttempts(authContext.organizationId, { ...filter, limit: 200 }),
@@ -45,7 +54,9 @@ export default async function TelephonyCallsPage() {
           {callerWorkspace ? "My Calls" : "Calls"}
         </h1>
         <p className="text-muted mt-1 text-sm">
-          {callerWorkspace ? "Your call logs and history." : "Call Logs and Call History."}
+          {callerWorkspace
+            ? "Your call logs and history."
+            : "Call logs for your team. Duration is dial time (including ring); missing duration usually means the dialer was opened without a completed disposition."}
         </p>
       </div>
 
@@ -60,6 +71,7 @@ export default async function TelephonyCallsPage() {
               <th className="px-4 py-3 font-medium">Direction</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Outcome</th>
+              <th className="px-4 py-3 font-medium">Duration</th>
               <th className="px-4 py-3 font-medium">Initiated</th>
               <th className="px-4 py-3 font-medium">&nbsp;</th>
             </tr>
@@ -67,7 +79,7 @@ export default async function TelephonyCallsPage() {
           <tbody>
             {calls.length === 0 ? (
               <tr>
-                <td colSpan={callerWorkspace ? 6 : 7} className="text-muted px-4 py-6 text-center">
+                <td colSpan={columnCount} className="text-muted px-4 py-6 text-center">
                   No Calls yet.
                 </td>
               </tr>
@@ -77,6 +89,7 @@ export default async function TelephonyCallsPage() {
                   (call.leadId && nameFromMap(leadNameById, call.leadId, "")) ||
                   (call.customerId && nameFromMap(customerNameById, call.customerId, "")) ||
                   "—";
+                const hasDuration = call.durationSeconds != null;
                 return (
                   <tr
                     key={call.id}
@@ -93,6 +106,18 @@ export default async function TelephonyCallsPage() {
                     <td className="px-4 py-3">{call.direction}</td>
                     <td className="px-4 py-3">{call.status}</td>
                     <td className="px-4 py-3">{call.callOutcomeName ?? "—"}</td>
+                    <td
+                      className={`px-4 py-3 font-mono text-xs tabular-nums ${
+                        hasDuration ? "text-foreground" : "text-muted"
+                      }`}
+                      title={
+                        hasDuration
+                          ? "Dial time including ringing"
+                          : "No timed disposition — dialer may have been opened only"
+                      }
+                    >
+                      {formatCallDuration(call.durationSeconds)}
+                    </td>
                     <td className="px-4 py-3">{new Date(call.initiatedAt).toLocaleString()}</td>
                     <td className="px-4 py-3 text-right">
                       <Link

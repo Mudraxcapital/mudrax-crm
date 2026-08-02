@@ -1,6 +1,13 @@
 # Tests
 
-- `integration/` - hits a real test database through a module's public API.
-- `e2e/` - Playwright tests that hit the running app.
+| Location | Kind |
+| --- | --- |
+| `src/**/__tests__/` and `src/**/*.test.ts` | Unit tests (Vitest) — co-located with modules |
+| `prisma/**/*.test.ts` | Prisma/seed unit tests |
+| `tests/integration/` | Reserved for integration suites against a real DB |
+| `tests/e2e/` | Playwright end-to-end tests against the running app |
 
-Unit tests are co-located inside each module (e.g. `src/modules/leads/application/use-cases/__tests__/`), since `domain/` and `application/` have zero framework dependencies.
+```bash
+npm test              # Vitest unit suite
+npm run test:e2e      # Playwright
+```

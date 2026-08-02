@@ -560,7 +560,7 @@ export function UsersTable({
         open={!!resetUserId}
         onClose={() => setResetUserId(null)}
         title="Reset password"
-        description="Set a temporary password. The employee must change it on next login. All of their sessions end immediately. Admins cannot be reset here."
+        description="Set a new password the employee can use immediately. All of their sessions end immediately. Admins cannot be reset here."
       >
         {resetUserId ? (
           <form
@@ -576,11 +576,11 @@ export function UsersTable({
               <p className="text-sm text-success">{resetState.success}</p>
             ) : null}
             <label className="flex flex-col gap-1.5">
-              <span className="mx-label">Temporary password</span>
+              <span className="mx-label">New password</span>
               <input name="password" type="password" required minLength={8} className="mx-input" />
               <span className="text-muted text-xs">
-                At least 8 characters with uppercase, lowercase, and a number. Employee must change
-                it on next login.
+                At least 8 characters with uppercase, lowercase, and a number. No forced change on
+                next login.
               </span>
             </label>
             <Button type="submit">Reset password</Button>

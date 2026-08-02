@@ -1,23 +1,17 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import {
-  initiateClickToCallAction,
-  type TelephonyFormState,
-} from "@/modules/telephony/presentation/controllers/initiateClickToCall.action";
-
-const initialState: TelephonyFormState = {};
+import { useCallback, useState } from "react";
+import { MobileAppCallRequiredDialog } from "@/modules/telephony/presentation/components/MobileAppCallRequiredDialog";
 
 export function LeadClickToCallPanel({
-  leadId,
-  customerId,
+  leadId: _leadId,
+  customerId: _customerId,
   phone,
-  agentUserId,
-  /** When set, call stays on this path (Campaign Dashboard) instead of /telephony. */
-  returnPath,
+  agentUserId: _agentUserId,
+  /** Kept for call-site compatibility; web calling redirects to the mobile app. */
+  returnPath: _returnPath,
   compact = false,
-  onCallStarted,
+  onCallStarted: _onCallStarted,
 }: {
   leadId: string;
   customerId: string;
@@ -27,76 +21,38 @@ export function LeadClickToCallPanel({
   compact?: boolean;
   onCallStarted?: () => void;
 }) {
-  const router = useRouter();
-  const [state, formAction, pending] = useActionState(initiateClickToCallAction, initialState);
-  const handledCallId = useRef<string | null>(null);
+  void _leadId;
+  void _customerId;
+  void _agentUserId;
+  void _returnPath;
+  void _onCallStarted;
 
-  useEffect(() => {
-    if (!state.callId || state.error) return;
-    if (handledCallId.current === state.callId) return;
-    handledCallId.current = state.callId;
-    onCallStarted?.();
-    if (returnPath) {
-      router.refresh();
-    }
-  }, [state.callId, state.error, returnPath, router, onCallStarted]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const closeDialog = useCallback(() => setDialogOpen(false), []);
 
   if (!phone) {
     return <p className="text-muted text-sm">No phone number on this lead.</p>;
   }
 
-  const callStarted = Boolean(state.callId && returnPath && !state.error);
-
   return (
-    <form
-      id="call"
-      action={formAction}
-      className={compact ? "inline-flex items-center gap-1.5" : "flex flex-col gap-3"}
-    >
-      <input type="hidden" name="leadId" value={leadId} />
-      <input type="hidden" name="customerId" value={customerId} />
-      <input type="hidden" name="agentUserId" value={agentUserId} />
-      <input type="hidden" name="toPhoneNumber" value={phone} />
-      {returnPath ? <input type="hidden" name="returnPath" value={returnPath} /> : null}
+    <div className={compact ? "inline-flex items-center gap-1.5" : "flex flex-col gap-3"}>
       {!compact ? (
         <p className="text-sm">
           Call <span className="font-medium">{phone}</span>
         </p>
       ) : null}
       <button
-        type="submit"
-        disabled={pending}
+        type="button"
         className={
           compact
             ? "mx-btn mx-btn-primary"
             : "mx-btn mx-btn-primary self-start"
         }
+        onClick={() => setDialogOpen(true)}
       >
-        {pending ? "Connecting…" : compact ? "Call" : "Click to Call"}
+        {compact ? "Call" : "Click to Call"}
       </button>
-      {state.error ? (
-        <p
-          role="alert"
-          className={
-            compact
-              ? "max-w-[10rem] truncate text-xs text-danger"
-              : "text-sm text-danger"
-          }
-          title={state.error}
-        >
-          {state.error}
-        </p>
-      ) : null}
-      {callStarted && !compact ? (
-        <p className="text-muted text-xs" role="status">
-          Call started — update status and add a note below.
-        </p>
-      ) : null}
-      {callStarted && compact ? (
-        <span className="text-muted text-xs whitespace-nowrap" role="status">
-          Ringing
-        </span>
-      ) : null}
-    </form>
+      <MobileAppCallRequiredDialog open={dialogOpen} onClose={closeDialog} />
+    </div>
   );
 }

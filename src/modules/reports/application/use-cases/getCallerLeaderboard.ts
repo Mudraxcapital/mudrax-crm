@@ -380,7 +380,9 @@ export function makeGetCallerLeaderboard() {
       const talkSamples: number[] = [];
       for (let index = 0; index < callsChronological.length; index += 1) {
         const call = callsChronological[index]!;
-        if (!CONNECTED_STATUSES.has(call.status) && call.durationSeconds == null) {
+        // Talk time is connected calls only — missed dials may still store
+        // durationSeconds for manager audit without counting as talk time.
+        if (!CONNECTED_STATUSES.has(call.status)) {
           continue;
         }
         const next = callsChronological[index + 1] ?? null;

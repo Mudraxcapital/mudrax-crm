@@ -18,14 +18,21 @@ export interface CreateCallRecordingData {
 }
 
 export interface UpdateCallRecordingData {
+  storageReference?: string;
   durationSeconds?: number | null;
   endedAt?: Date | null;
   providerMetadata?: Record<string, unknown> | null;
 }
 
+export interface CallRecordingWithLeadId extends CallRecording {
+  leadId: string;
+}
+
 export interface CallRecordingRepository {
   findById(id: string): Promise<CallRecording | null>;
   listByCallAttempt(callAttemptId: string): Promise<CallRecording[]>;
+  /** Recordings for Call Attempts belonging to any of the given leads (newest first). */
+  listByLeadIds(leadIds: string[]): Promise<CallRecordingWithLeadId[]>;
 
   /** Creates the Call Recording metadata row and a "recorded" Audit Record atomically — the audio payload itself is always an external reference (ADR 0006), never handled here. */
   createWithAudit(

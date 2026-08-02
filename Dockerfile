@@ -41,7 +41,12 @@ WORKDIR /app
 # deps — install exact, locked dependencies in their own cacheable layer.
 # ---------------------------------------------------------------------------
 FROM base AS deps
+# npm workspaces require every workspace package.json to be present before `npm ci`.
 COPY package.json package-lock.json ./
+COPY apps/mobile/package.json ./apps/mobile/
+COPY packages/types/package.json ./packages/types/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/api/package.json ./packages/api/
 RUN npm ci
 
 # ---------------------------------------------------------------------------

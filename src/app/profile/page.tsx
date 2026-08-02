@@ -86,8 +86,8 @@ export default async function ProfilePage() {
             />
             <CardBody>
               <p className="text-muted text-sm">
-                Team Leads and Callers use administrator-assigned passwords. Contact an Admin
-                if you need a reset via User Management.
+                Managers, Team Leads, and Callers use administrator-assigned passwords. Contact an
+                Admin if you need a reset via User Management.
               </p>
             </CardBody>
           </Card>

@@ -1,6 +1,6 @@
 // ============================================================================
 // Administrative password reset — Admin only, never for Admin targets or self.
-// Sets mustChangePassword so the user must change password on next login.
+// Does not force a password change on next login; the assigned password is used as-is.
 // ============================================================================
 
 import type { PasswordHasher } from "@/modules/auth/application/ports/PasswordHasher";
@@ -14,7 +14,6 @@ import {
   UserNotFoundError,
 } from "../../domain/errors/UserErrors";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
-import { roleMaySelfServiceChangePassword } from "../services/selfServicePasswordPolicy";
 
 export interface ResetPasswordCommand {
   userId: string;
@@ -66,7 +65,7 @@ export function makeResetPassword(
 
     const passwordHash = await passwordHasher.hash(password);
     await repository.setPasswordHashWithAudit(userId, passwordHash, actor, correlationId, {
-      mustChangePassword: roleMaySelfServiceChangePassword(targetRole),
+      mustChangePassword: false,
       action: "Password Reset (Admin)",
       ipAddress: ipAddress ?? null,
     });

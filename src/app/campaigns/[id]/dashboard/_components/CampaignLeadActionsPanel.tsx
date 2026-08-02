@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { LeadStage, LostReason } from "@/modules/leads";
-import {
-  filterCallerLeadStages,
-  findRingingStage,
-} from "@/modules/caller-workspace/presentation/lib/filterCallerLeadStages";
+import { filterCallerLeadStages } from "@/modules/caller-workspace/presentation/lib/filterCallerLeadStages";
 import { LeadClickToCallPanel } from "@/modules/leads/presentation/components/LeadClickToCallPanel";
 import { LeadNoteForm } from "@/modules/leads/presentation/components/LeadNoteForm";
 import { LeadStageForm } from "@/modules/leads/presentation/components/LeadStageForm";
@@ -19,9 +16,16 @@ import type { FollowUpFormState } from "@/modules/follow-ups/presentation/contro
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
+import { DEFAULT_CALL_RECORDINGS_RETENTION_DAYS } from "@/modules/telephony";
 import type { CampaignDashboardLeadDetail } from "../_lib/loadCampaignDashboard";
 
 type WorkspacePanel = "note" | "followup" | "iq" | "activity" | null;
+
+/** Client-safe default; override via CALL_RECORDINGS_RETENTION_DAYS on the server. */
+const recordingRetentionDays = DEFAULT_CALL_RECORDINGS_RETENTION_DAYS;
+
+const FRESH_STAGE_LOCK_HINT =
+  "Fresh leads cannot be updated here. Use the mobile app to call first — then you can change status once the lead is Ringing or another stage.";
 
 export function CampaignLeadActionsPanel({
   lead,
@@ -34,6 +38,7 @@ export function CampaignLeadActionsPanel({
   canUpdate,
   canUpdateCall: _canUpdateCall,
   canCreateFollowUp,
+  callerOnly = false,
 }: {
   lead: CampaignDashboardLeadDetail;
   agentUserId: string;
@@ -45,6 +50,8 @@ export function CampaignLeadActionsPanel({
   canUpdate: boolean;
   canUpdateCall: boolean;
   canCreateFollowUp: boolean;
+  /** When true, Fresh (INITIAL) leads cannot have status changed on web. */
+  callerOnly?: boolean;
 }) {
   void _callOutcomes;
   void _canUpdateCall;
@@ -52,26 +59,25 @@ export function CampaignLeadActionsPanel({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [hasActed, setHasActed] = useState(false);
-  const [callStarted, setCallStarted] = useState(Boolean(lead.latestCallAttemptId));
   const [skipOpen, setSkipOpen] = useState(false);
   const [panel, setPanel] = useState<WorkspacePanel>(null);
   const [fieldsExpanded, setFieldsExpanded] = useState(false);
-  const [ringingPending, setRingingPending] = useState(false);
 
   const catalogStages = useMemo(() => excludeTestCatalogRows(stages), [stages]);
   const stageOptions = useMemo(
-    () => filterCallerLeadStages(catalogStages, lead.stageId),
-    [catalogStages, lead.stageId],
+    () =>
+      callerOnly
+        ? filterCallerLeadStages(catalogStages, lead.stageId)
+        : catalogStages,
+    [catalogStages, lead.stageId, callerOnly],
   );
 
   useEffect(() => {
     setHasActed(false);
-    setCallStarted(Boolean(lead.latestCallAttemptId));
     setSkipOpen(false);
     setPanel(null);
     setFieldsExpanded(false);
-    setRingingPending(false);
-  }, [lead.id, lead.latestCallAttemptId]);
+  }, [lead.id]);
 
   const returnPath = useMemo(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -89,32 +95,11 @@ export function CampaignLeadActionsPanel({
     ? lead.fieldValues
     : lead.fieldValues.slice(0, 6);
 
-  const leadStatusUnlocked = callStarted || Boolean(lead.latestCallAttemptId);
+  const isFreshLead = lead.stageBucket === "INITIAL";
+  const leadStatusUnlocked = !callerOnly || !isFreshLead;
 
   function markActed() {
     setHasActed(true);
-  }
-
-  async function applyRingingOnCall() {
-    const ringing = findRingingStage(catalogStages);
-    if (!ringing || ringing.id === lead.stageId) return;
-    setRingingPending(true);
-    try {
-      const formData = new FormData();
-      formData.set("stageId", ringing.id);
-      const result = await changeLeadStageAction(lead.id, undefined, formData);
-      if (!result.error) {
-        router.refresh();
-      }
-    } finally {
-      setRingingPending(false);
-    }
-  }
-
-  async function handleCallStarted() {
-    markActed();
-    setCallStarted(true);
-    await applyRingingOnCall();
   }
 
   function goToNextLead() {
@@ -143,7 +128,7 @@ export function CampaignLeadActionsPanel({
     formData: FormData,
   ): Promise<LeadFormState> {
     if (!leadStatusUnlocked) {
-      return { error: "Click Call first — then you can update lead status." };
+      return { error: FRESH_STAGE_LOCK_HINT };
     }
     const result = await changeLeadStageAction(lead.id, state, formData);
     if (!result.error) {
@@ -187,12 +172,7 @@ export function CampaignLeadActionsPanel({
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {canCall ? (
-              <div
-                className="inline-flex items-center"
-                onSubmitCapture={() => {
-                  markActed();
-                }}
-              >
+              <div className="inline-flex items-center">
                 <LeadClickToCallPanel
                   key={lead.id}
                   leadId={lead.id}
@@ -201,9 +181,6 @@ export function CampaignLeadActionsPanel({
                   agentUserId={agentUserId}
                   returnPath={returnPath}
                   compact
-                  onCallStarted={() => {
-                    void handleCallStarted();
-                  }}
                 />
               </div>
             ) : null}
@@ -331,15 +308,88 @@ export function CampaignLeadActionsPanel({
               currentStageId={lead.stageId}
               stages={stageOptions}
               lostReasons={excludeTestCatalogRows(lostReasons)}
-              disabled={!leadStatusUnlocked || ringingPending}
-              disabledHint={
-                leadStatusUnlocked
-                  ? undefined
-                  : "Click Call first — then you can update lead status."
-              }
+              disabled={!leadStatusUnlocked}
+              disabledHint={leadStatusUnlocked ? undefined : FRESH_STAGE_LOCK_HINT}
             />
           </div>
         ) : null}
+
+        <div className="space-y-2 rounded-lg border border-border p-3">
+          <p className="text-muted text-xs uppercase tracking-wide">
+            Call recordings
+            {lead.recordings.length > 0 ? ` · ${lead.recordings.length}` : ""}
+          </p>
+          <p className="text-muted text-xs">
+            Server retention: {recordingRetentionDays} days (configurable). Put the call on
+            speakerphone on Android — otherwise recordings are often silent.
+          </p>
+          {lead.recordings.length === 0 ? (
+            <p className="text-muted text-sm">
+              {lead.latestCallAttemptId
+                ? "Calls are logged for this lead, but no recording file was uploaded from the mobile app yet. Place the call from the Mudrax Android app with Record on."
+                : "No call recordings for this lead yet."}
+            </p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {lead.recordings.map((recording) => {
+                const duration =
+                  recording.durationSeconds == null
+                    ? "—"
+                    : recording.durationSeconds < 60
+                      ? `${recording.durationSeconds}s`
+                      : `${Math.floor(recording.durationSeconds / 60)}m ${
+                          recording.durationSeconds % 60
+                        }s`;
+                const playableOnWeb =
+                  recording.playableOnWeb ||
+                  recording.storageReference.startsWith("local:call-recordings/");
+                const audioUrl =
+                  recording.audioUrl ??
+                  (playableOnWeb
+                    ? `/api/telephony/calls/${recording.callAttemptId}/recordings/${recording.id}/audio`
+                    : null);
+                return (
+                  <li
+                    key={recording.id}
+                    className="rounded-md border border-border/70 px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium tabular-nums">{duration}</span>
+                      <span className="text-muted text-xs">
+                        {new Date(recording.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    {playableOnWeb && audioUrl ? (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-muted text-xs">Play in browser (Manager+)</p>
+                        <audio className="w-full" controls preload="metadata" src={audioUrl}>
+                          Your browser does not support audio playback.
+                        </audio>
+                        <a
+                          href={audioUrl}
+                          className="text-accent text-xs hover:underline underline-offset-2"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open / download audio
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-muted mt-1 text-xs">
+                        Still only on the caller&apos;s phone (
+                        {recording.storageReference
+                          .replace(/^android-local:\/\/call-recordings\//, "")
+                          .slice(0, 40)}
+                        ). Cannot play on web — make a new call with the updated app to upload
+                        audio.
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
 
         {panel === "note" && canUpdate ? (
           <div className="space-y-3 rounded-lg border border-border p-3">

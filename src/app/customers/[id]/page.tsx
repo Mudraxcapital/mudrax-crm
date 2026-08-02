@@ -210,14 +210,25 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           {calls.length === 0 ? (
             <Empty>No calls.</Empty>
           ) : (
-            calls.map((call) => (
-              <Row
-                key={call.id}
-                href={`/telephony/calls/${call.id}`}
-                primary={`${call.direction} · ${call.status}`}
-                secondary={new Date(call.initiatedAt).toLocaleString()}
-              />
-            ))
+            calls.map((call) => {
+              const durationLabel =
+                call.durationSeconds == null
+                  ? "No duration"
+                  : (() => {
+                      const safe = Math.max(0, Math.round(call.durationSeconds));
+                      const m = Math.floor(safe / 60);
+                      const s = safe % 60;
+                      return `${m}:${String(s).padStart(2, "0")}`;
+                    })();
+              return (
+                <Row
+                  key={call.id}
+                  href={`/telephony/calls/${call.id}`}
+                  primary={`${call.direction} · ${call.status} · ${durationLabel}`}
+                  secondary={new Date(call.initiatedAt).toLocaleString()}
+                />
+              );
+            })
           )}
         </ProfileSection>
       ) : null}

@@ -136,7 +136,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         <section className="mx-card p-5">
           <h2 className="text-sm font-medium">Click to Call</h2>
           <p className="text-muted mt-1 text-xs">
-            Place a call, then log notes, disposition/stage, and schedule a follow-up below.
+            Calls must be placed from the mobile app. Use this page for notes, stage, and follow-ups.
           </p>
           <div className="mt-4">
             <LeadClickToCallPanel

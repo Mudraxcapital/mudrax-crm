@@ -1,0 +1,22 @@
+{
+  "name": "@mudrax/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HTTP API client for Mudrax CRM Route Handlers (shared by web and mobile).",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mudrax/shared": "*",
+    "@mudrax/types": "*",
+    "axios": "^1.11.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

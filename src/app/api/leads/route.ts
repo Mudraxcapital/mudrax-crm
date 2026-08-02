@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission, isCallerWorkspaceUser, resolveOwnerManagerId } from "@/modules/rbac";
+import { ensurePersonalCampaign } from "@/modules/campaigns";
 import {
   createLead,
   createLeadSchema,
@@ -18,6 +19,7 @@ import {
   InvalidLeadStageReferenceError,
   listLeads,
 } from "@/modules/leads";
+import { listUsersByRole } from "@/modules/users";
 import { visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 import {
   assertCanAssignToUser,
@@ -43,11 +45,21 @@ export async function GET(request: Request) {
     : DEFAULT_PAGE_SIZE;
   const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
 
+  const campaignId = url.searchParams.get("campaignId")?.trim() || undefined;
+  const assignedToUserId =
+    url.searchParams.get("assignedToUserId")?.trim() || undefined;
+  const currentStageId = url.searchParams.get("currentStageId")?.trim() || undefined;
+  const search = url.searchParams.get("search")?.trim() || undefined;
+
   const filter = {
     ...visibleLeadsFilter(current.authContext, {
       permissionCode: "lead.view",
       actorUserId: current.session.user.id,
+      assignedToUserId,
     }),
+    ...(campaignId ? { campaignId } : {}),
+    ...(currentStageId ? { currentStageId } : {}),
+    ...(search ? { search } : {}),
     limit,
     offset,
   };
@@ -85,12 +97,38 @@ export async function POST(request: Request) {
       });
     }
 
+    const ownerManagerId = resolveOwnerManagerId(current.authContext);
+    let personalCampaignId: string | null = null;
+    try {
+      let campaignOwnerManagerId = ownerManagerId;
+      if (!campaignOwnerManagerId) {
+        const managers = await listUsersByRole("Manager");
+        campaignOwnerManagerId = managers[0]?.id ?? null;
+      }
+      if (campaignOwnerManagerId) {
+        const memberUserIds = [
+          input.currentAssigneeUserId,
+          current.session.user.id,
+        ].filter((id): id is string => Boolean(id));
+        const personal = await ensurePersonalCampaign({
+          organizationId: current.authContext.organizationId,
+          ownerManagerId: campaignOwnerManagerId,
+          actor: { actorType: "USER", actorId: current.session.user.id },
+          memberUserIds,
+        });
+        personalCampaignId = personal.id;
+      }
+    } catch (error) {
+      console.error("[api/leads] ensurePersonalCampaign failed", error);
+    }
+
     const lead = await createLead({
       organizationId: current.authContext.organizationId,
       input,
       actor: { actorType: "USER", actorId: current.session.user.id },
-      ownerManagerId: resolveOwnerManagerId(current.authContext),
+      ownerManagerId,
       ownerTeamLeadId: current.authContext.hierarchy.teamLeadId,
+      campaignId: personalCampaignId,
     });
     return NextResponse.json({ data: lead }, { status: 201 });
   } catch (error) {

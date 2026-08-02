@@ -10,7 +10,7 @@ import type { LeadSource } from "../../domain/entities/LeadCatalogs";
 import { pickDefaultLeadSource } from "../../domain/pickDefaultLeadSource";
 import type { LeadFieldDefinitionDto } from "../../application/dto/LeadFieldDefinitionDto";
 import type { LeadFormState } from "../controllers/createLead.action";
-import { extractFieldValuesFromFormData } from "./DynamicLeadFields";
+import { extractFieldValuesFromFormData } from "../lib/extractFieldValuesFromFormData";
 
 const initialState: LeadFormState = {};
 

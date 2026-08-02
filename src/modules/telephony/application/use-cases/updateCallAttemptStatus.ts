@@ -57,13 +57,26 @@ export function makeUpdateCallAttemptStatus(
     const leavingTerminal = isTerminalCallStatus(existing.status);
     const becameTerminal = isTerminalCallStatus(input.status);
     const becomingAnswered = input.status === "ANSWERED";
+    const clientDuration =
+      typeof input.durationSeconds === "number" && Number.isFinite(input.durationSeconds)
+        ? Math.max(0, Math.round(input.durationSeconds))
+        : null;
 
     const answeredAt = becomingAnswered
       ? (existing.answeredAt ?? now)
-      : undefined;
+      : // Connected completions with a client duration (mobile): backfill answeredAt
+        // so talk-time reports work without an ANSWERED step. Do not stamp on
+        // NO_ANSWER/BUSY/FAILED — those may still send duration for audit only.
+        clientDuration != null &&
+          becameTerminal &&
+          !existing.answeredAt &&
+          input.status === "COMPLETED"
+        ? new Date(Math.max(existing.initiatedAt.getTime(), now.getTime() - clientDuration * 1000))
+        : undefined;
 
     const answerStamp = existing.answeredAt ?? answeredAt ?? null;
     const shouldStampDuration =
+      clientDuration == null &&
       answerStamp != null &&
       existing.durationSeconds == null &&
       !leavingTerminal &&
@@ -83,11 +96,14 @@ export function makeUpdateCallAttemptStatus(
         answeredAt,
         // Clear end markers when leaving a terminal status so re-completion recalculates.
         endedAt: becameTerminal ? now : leavingTerminal ? null : undefined,
-        durationSeconds: shouldStampDuration
-          ? Math.max(0, Math.round((now.getTime() - answerStamp!.getTime()) / 1000))
-          : leavingTerminal
-            ? null
-            : undefined,
+        durationSeconds:
+          clientDuration != null && becameTerminal && !leavingTerminal
+            ? clientDuration
+            : shouldStampDuration
+              ? Math.max(0, Math.round((now.getTime() - answerStamp!.getTime()) / 1000))
+              : leavingTerminal
+                ? null
+                : undefined,
       },
       actor,
       correlationId,

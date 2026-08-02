@@ -5,7 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { PATHNAME_HEADER, callerWorkspaceRedirect, isCallerAllowedPath } from "@/infra/auth/callerAccess";
 import { getCurrentUser } from "@/infra/auth/session";
 import { isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
-import { getDailyLoginDuration, roleMaySelfServiceChangePassword } from "@/modules/users";
+import { getDailyLoginDuration } from "@/modules/users";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
 import { ToastProvider } from "@/shared/ui/Toast";
 import { AppShell } from "./_components/AppShell";
@@ -42,18 +42,6 @@ export default async function RootLayout({
 
   const headerStore = await headers();
   const pathname = headerStore.get(PATHNAME_HEADER) ?? "/";
-
-  if (
-    current?.session.user.mustChangePassword &&
-    roleMaySelfServiceChangePassword(current.authContext.hierarchy.primaryRole) &&
-    !pathname.startsWith("/change-password") &&
-    !pathname.startsWith("/api/auth") &&
-    !pathname.startsWith("/login") &&
-    !pathname.startsWith("/clear-session") &&
-    !pathname.startsWith("/session-expired")
-  ) {
-    redirect("/change-password");
-  }
 
   if (current && callerWorkspace) {
     const remap = callerWorkspaceRedirect(pathname);

@@ -15,7 +15,7 @@ function user(overrides: Partial<User> = {}): User {
     phone: "+919999900010",
     status: "ACTIVE",
     sessionVersion: 0,
-    mustChangePassword: true,
+    mustChangePassword: false,
     lockedUntil: null,
     lockedReason: null,
     profilePhotoUrl: null,

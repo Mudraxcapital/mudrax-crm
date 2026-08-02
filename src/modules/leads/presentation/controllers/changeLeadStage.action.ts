@@ -18,8 +18,12 @@ import {
   LostReasonRequiredError,
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
+import { isCallerWorkspaceUser } from "@/modules/rbac";
 import type { LeadFormState } from "./createLead.action";
 import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
+
+const FRESH_CALLER_STAGE_LOCK_MESSAGE =
+  "Callers cannot change status while a lead is Fresh. Use the mobile app to call first, or ask a Team Lead, Manager, or Admin.";
 
 export async function changeLeadStageAction(
   id: string,
@@ -38,10 +42,13 @@ export async function changeLeadStageAction(
   }
 
   try {
-    await requireAccessibleLead(authContext, id, {
+    const lead = await requireAccessibleLead(authContext, id, {
       permissionCode: "lead.update",
       actorUserId: session.user.id,
     });
+    if (isCallerWorkspaceUser(authContext) && lead.currentStageBucket === "INITIAL") {
+      return { error: FRESH_CALLER_STAGE_LOCK_MESSAGE };
+    }
     await changeLeadStage({
       id,
       input: parsed.data,

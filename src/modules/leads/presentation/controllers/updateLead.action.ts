@@ -18,7 +18,7 @@ import {
   updateLeadSchema,
 } from "@/modules/leads";
 import type { LeadFormState } from "./createLead.action";
-import { extractFieldValuesFromFormData } from "../components/DynamicLeadFields";
+import { extractFieldValuesFromFormData } from "../lib/extractFieldValuesFromFormData";
 import { LeadAccessDeniedError, requireAccessibleLead } from "./requireLeadAccess";
 
 export async function updateLeadAction(

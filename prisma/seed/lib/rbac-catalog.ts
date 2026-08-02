@@ -95,7 +95,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "user.reset_password",
     module: "users",
     description:
-      "Admin-only: reset password for Managers, Team Leads, and Callers (not other Admins or self). Forces password change on next login.",
+      "Admin-only: reset password for Managers, Team Leads, and Callers (not other Admins or self). Does not force a password change on next login.",
     minRole: "Admin",
     systemOnly: true,
   },

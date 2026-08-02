@@ -42,6 +42,18 @@ describe("isCallerAllowedPath — campaigns & reports", () => {
     expect(isCallerAllowedPath("/crm")).toBe(false);
     expect(isCallerAllowedPath("/users")).toBe(false);
   });
+
+  it("allows mobile Caller workspace APIs", () => {
+    expect(isCallerAllowedPath("/api/caller/dashboard")).toBe(true);
+    expect(isCallerAllowedPath("/api/caller/campaigns")).toBe(true);
+    expect(isCallerAllowedPath("/api/caller/leads/abc")).toBe(true);
+    expect(isCallerAllowedPath("/api/caller/catalog")).toBe(true);
+    expect(isCallerAllowedPath("/api/caller/password")).toBe(true);
+    expect(isCallerAllowedPath("/api/home/dashboard")).toBe(true);
+    expect(isCallerAllowedPath("/api/auth/me")).toBe(true);
+    expect(isCallerAllowedPath("/api/leaderboard")).toBe(true);
+    expect(isCallerAllowedPath("/api/users/abc/photo")).toBe(true);
+  });
 });
 
 describe("callerWorkspaceRedirect", () => {

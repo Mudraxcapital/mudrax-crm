@@ -3,15 +3,12 @@
 // ============================================================================
 // src/modules/telephony/presentation/components/ClickToCallForm.tsx
 //
-// Click-to-Call form. `leads`/`customers`/`assignees` are fetched by the
-// page (this module has no authority to list them itself) and rendered as
-// selects. Exactly one of Lead/Customer must be chosen (Zod-enforced).
+// Click-to-Call form. Web CRM prompts users to place calls from the mobile app.
 // ============================================================================
 
-import { useActionState } from "react";
+import { useCallback, useState } from "react";
 import type { TelephonyFormState } from "../controllers/initiateClickToCall.action";
-
-const initialState: TelephonyFormState = {};
+import { MobileAppCallRequiredDialog } from "./MobileAppCallRequiredDialog";
 
 type ClickToCallFormAction = (
   state: TelephonyFormState | undefined,
@@ -21,7 +18,7 @@ type ClickToCallFormAction = (
 const inputClass = "mx-input";
 
 export function ClickToCallForm({
-  action,
+  action: _action,
   leads,
   customers,
   assignees,
@@ -31,16 +28,18 @@ export function ClickToCallForm({
   customers: { id: string; label: string }[];
   assignees: { id: string; fullName: string }[];
 }) {
-  const [state, formAction, isPending] = useActionState(action, initialState);
+  void _action;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const closeDialog = useCallback(() => setDialogOpen(false), []);
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="leadId" className="mx-label">
             Lead (optional)
           </label>
-          <select id="leadId" name="leadId" className={inputClass}>
+          <select id="leadId" name="leadId" className={inputClass} defaultValue="">
             <option value="">— None —</option>
             {leads.map((lead) => (
               <option key={lead.id} value={lead.id}>
@@ -53,7 +52,7 @@ export function ClickToCallForm({
           <label htmlFor="customerId" className="mx-label">
             Customer (optional)
           </label>
-          <select id="customerId" name="customerId" className={inputClass}>
+          <select id="customerId" name="customerId" className={inputClass} defaultValue="">
             <option value="">— None —</option>
             {customers.map((customer) => (
               <option key={customer.id} value={customer.id}>
@@ -84,7 +83,7 @@ export function ClickToCallForm({
           <label htmlFor="agentUserId" className="mx-label">
             Assign to Agent (optional)
           </label>
-          <select id="agentUserId" name="agentUserId" className={inputClass}>
+          <select id="agentUserId" name="agentUserId" className={inputClass} defaultValue="">
             <option value="">— Me —</option>
             {assignees.map((user) => (
               <option key={user.id} value={user.id}>
@@ -95,19 +94,14 @@ export function ClickToCallForm({
         </div>
       </div>
 
-      {state.error ? (
-        <p role="alert" className="mx-error">
-          {state.error}
-        </p>
-      ) : null}
-
       <button
-        type="submit"
-        disabled={isPending}
-        className="bg-foreground text-background mt-1 self-start rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity disabled:opacity-60"
+        type="button"
+        className="bg-foreground text-background mt-1 self-start rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity"
+        onClick={() => setDialogOpen(true)}
       >
-        {isPending ? "Calling…" : "Click to Call"}
+        Click to Call
       </button>
-    </form>
+      <MobileAppCallRequiredDialog open={dialogOpen} onClose={closeDialog} />
+    </div>
   );
 }

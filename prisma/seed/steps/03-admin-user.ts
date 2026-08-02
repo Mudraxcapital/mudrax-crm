@@ -2,8 +2,8 @@
 // prisma/seed/steps/03-admin-user.ts
 //
 // Seeds the Mudrax Capitals employee roster for local development:
-//   1 Admin, 1 Manager, 2 Team Leads, 10 Callers under Team Leads,
-//   5 Callers directly under Admin.
+//   1 Admin, 1 Manager, 2 Team Leads (1 under Manager, 1 under Admin),
+//   3 Callers per Team Lead, 4 Direct Admin (freelancer) Callers.
 // Employee IDs use the MCS#### format (auto-assigned in production creates).
 // ============================================================================
 
@@ -28,12 +28,14 @@ export interface DemoUserSeed {
   teamLeadIndex?: number;
   /** Admin-managed freelancer — no Team Lead assignment. */
   directAdmin?: boolean;
+  /** Team Lead reports to Manager or Admin. */
+  reportsTo?: "Manager" | "Admin";
 }
 
 const TEAM_LEAD_COUNT = 2;
-/** Callers per Team Lead (10 total under hierarchy). */
-const CALLER_COUNTS_PER_TL = [5, 5] as const;
-const DIRECT_ADMIN_CALLER_COUNT = 5;
+/** Callers per Team Lead (3 under Manager TL + 3 under Admin TL). */
+const CALLER_COUNTS_PER_TL = [3, 3] as const;
+const DIRECT_ADMIN_CALLER_COUNT = 4;
 
 const FIRST_NAMES = [
   "Aarav",
@@ -46,11 +48,6 @@ const FIRST_NAMES = [
   "Ayaan",
   "Krishna",
   "Ishaan",
-  "Kabir",
-  "Dev",
-  "Rohan",
-  "Yash",
-  "Kunal",
 ] as const;
 
 const LAST_NAMES = [
@@ -64,11 +61,6 @@ const LAST_NAMES = [
   "Mehta",
   "Joshi",
   "Kapoor",
-  "Desai",
-  "Khan",
-  "Chopra",
-  "Bose",
-  "Rao",
 ] as const;
 
 function employeeId(n: number): string {
@@ -79,18 +71,22 @@ function phoneFor(n: number): string {
   return `+9198${String(10000000 + n).slice(0, 8)}`;
 }
 
-const TEAM_LEAD_DEFS: Omit<DemoUserSeed, "role" | "password">[] = [
+const TEAM_LEAD_DEFS: Array<
+  Omit<DemoUserSeed, "role" | "password"> & { reportsTo: "Manager" | "Admin" }
+> = [
   {
     email: "ananya.sharma@mudraxcapital.com",
     employeeId: employeeId(3),
     fullName: "Ananya Sharma",
     phone: phoneFor(3),
+    reportsTo: "Manager",
   },
   {
     email: "rohan.mehta@mudraxcapital.com",
     employeeId: employeeId(4),
     fullName: "Rohan Mehta",
     phone: phoneFor(4),
+    reportsTo: "Admin",
   },
 ];
 
@@ -118,12 +114,13 @@ function buildCallerDefs(): DemoUserSeed[] {
     }
   }
 
+  const freelancerLabels = ["one", "two", "three", "four"] as const;
   for (let i = 0; i < DIRECT_ADMIN_CALLER_COUNT; i++) {
     const first = FIRST_NAMES[nameIndex]!;
     const last = LAST_NAMES[nameIndex]!;
     defs.push({
       role: "Caller",
-      email: `direct.admin.${["one", "two", "three", "four", "five"][i]}@mudraxcapital.com`,
+      email: `direct.admin.${freelancerLabels[i]}@mudraxcapital.com`,
       employeeId: employeeId(seq),
       fullName: `${first} ${last}`,
       phone: phoneFor(seq),
@@ -212,6 +209,9 @@ export async function seedAdminUser(
   explain(
     "DEV-ONLY roster. Admin uses the provided credential; other roles share DEMO_USER_PASSWORD. Reseed replaces all users.",
   );
+  explain(
+    "Hierarchy: 1 TL → Manager, 1 TL → Admin; 3 Callers per TL; 4 Direct Admin freelancers.",
+  );
 
   await wipeExistingUsers(prisma);
 
@@ -246,12 +246,18 @@ export async function seedAdminUser(
         : def.role === "Caller" && def.teamLeadIndex !== undefined
           ? (teamLeadIds[def.teamLeadIndex] ?? null)
           : null;
-    const reportingManagerId: string | null =
-      def.role === "Team Lead"
-        ? managerId
-        : def.role === "Caller" && !def.directAdmin
-          ? managerId
-          : null;
+
+    let reportingManagerId: string | null = null;
+    if (def.role === "Team Lead") {
+      if (def.reportsTo === "Admin") {
+        reportingManagerId = adminUserId || null;
+      } else {
+        reportingManagerId = managerId;
+      }
+      if (!reportingManagerId) {
+        throw new Error(`Team Lead ${def.email} is missing a reporting manager.`);
+      }
+    }
 
     const user: { id: string } = await prisma.user.create({
       data: {
@@ -261,6 +267,7 @@ export async function seedAdminUser(
         phone: def.phone,
         passwordHash,
         status: "ACTIVE",
+        mustChangePassword: false,
         currentBranchId: branchId,
         currentDepartmentId: departmentId,
         currentTeamId: teamId,
@@ -286,20 +293,35 @@ export async function seedAdminUser(
       },
     });
 
-    explain(`${def.role.padEnd(10)} ${def.email} / ${def.password} (${def.employeeId})`);
+    const reportsNote =
+      def.role === "Team Lead"
+        ? ` → reports to ${def.reportsTo}`
+        : def.role === "Caller" && def.directAdmin
+          ? " → Direct Admin freelancer"
+          : def.role === "Caller" && def.teamLeadIndex !== undefined
+            ? ` → under TL#${def.teamLeadIndex + 1}`
+            : "";
+    explain(
+      `${def.role.padEnd(10)} ${def.email} / ${def.password} (${def.employeeId})${reportsNote}`,
+    );
+  }
+
+  const firstCaller = DEMO_USERS.find((u) => u.role === "Caller");
+  if (!firstCaller || !managerId || !adminUserId || !teamLeadIds[0]) {
+    throw new Error("Employee seed incomplete — missing Admin, Manager, Team Lead, or Caller.");
   }
 
   const userIds = {
     Admin: adminUserId,
-    Manager: managerId!,
-    "Team Lead": teamLeadIds[0]!,
-    Caller: createdByEmail.get(DEMO_USERS.find((u) => u.role === "Caller")!.email.toLowerCase())!,
+    Manager: managerId,
+    "Team Lead": teamLeadIds[0],
+    Caller: createdByEmail.get(firstCaller.email.toLowerCase())!,
   } as Record<RoleName, string>;
 
   summary("Employees seeded", DEMO_USERS.length);
   explain(`Shared non-admin password: ${passwordByRole.get("Manager")}`);
   explain(
-    `Hierarchy: Manager → ${teamLeadIds.length} Team Leads → Callers (${CALLER_COUNTS_PER_TL.join(" / ")}) + ${directAdminCallers} Direct Admin Callers`,
+    `Hierarchy: Manager → 1 TL → 3 Callers | Admin → 1 TL → 3 Callers | Admin → ${directAdminCallers} freelancers`,
   );
 
   return {

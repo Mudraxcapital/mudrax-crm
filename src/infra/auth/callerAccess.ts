@@ -65,6 +65,9 @@ const ALLOWED_PREFIXES = [
   "/caller",
   "/leaderboard",
   "/notifications",
+  "/api/caller",
+  "/api/home",
+  "/api/leaderboard",
   "/api/leads",
   "/api/follow-ups",
   "/api/notifications",
@@ -111,6 +114,11 @@ export function isCallerAllowedPath(pathname: string): boolean {
 
   // Remapped by the root layout — allow so we redirect instead of unauthorized.
   if (callerWorkspaceRedirect(pathname)) {
+    return true;
+  }
+
+  // Profile photos (self + hierarchy peers for leaderboard avatars). Route still enforces scope.
+  if (/^\/api\/users\/[^/]+\/photo\/?$/.test(pathname)) {
     return true;
   }
 

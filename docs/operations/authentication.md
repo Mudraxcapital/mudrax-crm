@@ -14,6 +14,8 @@ sessions.
 - `AUTH_TRUST_HOST` for reverse-proxy deployments
 - Login rate limiting via Redis (fail-open if Redis is down)
 - Public health routes excluded from auth middleware
+- Post-login redirect uses Next.js relative `redirect()` (not Auth.js
+  `AUTH_URL`) so LAN access via a host IP does not bounce to `localhost`
 
 ## Intentionally unchanged
 

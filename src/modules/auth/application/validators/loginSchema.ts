@@ -9,7 +9,11 @@ import { z } from "zod";
 import { safeCallbackUrl } from "./safeCallbackUrl";
 
 export const loginSchema = z.object({
-  email: z.email("Enter a valid email address."),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Enter a valid email address.")
+    .pipe(z.email("Enter a valid email address.")),
   password: z.string().min(1, "Password is required."),
   callbackUrl: z
     .string()

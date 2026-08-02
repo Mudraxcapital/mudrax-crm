@@ -1,6 +1,6 @@
 // ============================================================================
-// Self-service password change — Admin and Manager only.
-// Team Leads and Callers use administrator-assigned credentials.
+// Self-service password change — Admin only.
+// Managers, Team Leads, and Callers use administrator-assigned credentials.
 // ============================================================================
 
 import type { PasswordHasher } from "@/modules/auth/application/ports/PasswordHasher";
@@ -30,7 +30,7 @@ export function makeChangeOwnPassword(
     const roleName = await roles.getPrimaryRoleName(input.userId);
     if (!roleMaySelfServiceChangePassword(roleName)) {
       throw new InvalidUserHierarchyError(
-        "Team Leads and Callers cannot change their password. Ask an Admin to reset it in User Management.",
+        "Only Admins can change their own password. Ask an Admin to reset it in User Management.",
       );
     }
 

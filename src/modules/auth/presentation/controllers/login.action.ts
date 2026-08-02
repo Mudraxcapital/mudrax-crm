@@ -4,11 +4,17 @@
 // src/modules/auth/presentation/controllers/login.action.ts
 //
 // Server Action backing the login form (src/modules/auth/presentation/
-// components/LoginForm.tsx). Auth.js's `signIn` performs the actual sign-in
-// + redirect; CSRF protection is Auth.js's own default (double-submit
-// cookie), not reimplemented here.
+// components/LoginForm.tsx). Auth.js's `signIn` performs the actual sign-in;
+// CSRF protection is Auth.js's own default (double-submit cookie), not
+// reimplemented here.
+//
+// Important: use signIn({ redirect: false }) + next/navigation redirect.
+// Auth.js redirectTo builds an absolute URL from AUTH_URL (often
+// http://localhost:3000), which breaks LAN access from other devices.
+// Next.js relative redirects keep the host the user actually opened.
 // ============================================================================
 
+import { redirect } from "next/navigation";
 import { AuthError, CredentialsSignin } from "next-auth";
 import { signIn } from "@/infra/auth";
 import { loginSchema } from "../../application/validators/loginSchema";
@@ -59,12 +65,25 @@ export async function loginAction(
 
   try {
     // callbackUrl is already sanitized by loginSchema → safeCallbackUrl.
-    await signIn("credentials", {
+    const result = await signIn("credentials", {
       email: parsed.data.email,
       password: parsed.data.password,
-      redirectTo: parsed.data.callbackUrl,
+      redirect: false,
     });
-    return {};
+
+    if (result && typeof result === "object" && "error" in result && result.error) {
+      const code =
+        "code" in result && typeof result.code === "string" ? result.code : undefined;
+      if (code === "account_disabled") {
+        return { error: ACCOUNT_DISABLED_ERROR };
+      }
+      if (code === "account_suspended") {
+        return { error: ACCOUNT_SUSPENDED_ERROR };
+      }
+      return { error: GENERIC_ERROR };
+    }
+
+    redirect(parsed.data.callbackUrl);
   } catch (error) {
     if (error instanceof CredentialsSignin) {
       if (error.code === "account_disabled") {
@@ -78,8 +97,7 @@ export async function loginAction(
     if (error instanceof AuthError) {
       return { error: GENERIC_ERROR };
     }
-    // Auth.js's successful `signIn` redirects by throwing Next.js's internal
-    // redirect signal — never swallow it here.
+    // Next.js `redirect()` throws an internal signal — never swallow it.
     throw error;
   }
 }

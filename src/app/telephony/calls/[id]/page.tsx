@@ -10,16 +10,13 @@ import {
   listCallAttemptAuditLog,
   listCallNotes,
   listCallOutcomes,
-  listCallRecordings,
 } from "@/modules/telephony";
 import { getUser } from "@/modules/users";
 import { CallStatusForm } from "@/modules/telephony/presentation/components/CallStatusForm";
 import { CallNoteForm } from "@/modules/telephony/presentation/components/CallNoteForm";
-import { CallRecordingForm } from "@/modules/telephony/presentation/components/CallRecordingForm";
 import { updateCallAttemptStatusAction } from "@/modules/telephony/presentation/controllers/updateCallAttemptStatus.action";
 import { addCallNoteAction } from "@/modules/telephony/presentation/controllers/addCallNote.action";
 import { updateCallNoteAction } from "@/modules/telephony/presentation/controllers/updateCallNote.action";
-import { createCallRecordingAction } from "@/modules/telephony/presentation/controllers/createCallRecording.action";
 import { canAccessCall } from "@/shared/auth/assertCanAccessCall";
 import { resolveDisplayName } from "@/shared/ui/displayName";
 import { humanizeAuditAction } from "@/shared/ui/humanizeAuditAction";
@@ -47,10 +44,9 @@ export default async function TelephonyCallDetailPage({
     notFound();
   }
 
-  const [outcomes, notes, recordings, auditLog, lead, customer, agent] = await Promise.all([
+  const [outcomes, notes, auditLog, lead, customer, agent] = await Promise.all([
     listCallOutcomes(authContext.organizationId),
     listCallNotes(id),
-    listCallRecordings(id),
     listCallAttemptAuditLog(id),
     call.leadId ? getLead(call.leadId).catch(() => null) : Promise.resolve(null),
     call.customerId ? getCustomer(call.customerId).catch(() => null) : Promise.resolve(null),
@@ -59,11 +55,9 @@ export default async function TelephonyCallDetailPage({
 
   const canUpdate = hasPermission(authContext, "call.update");
   const canManageNotes = hasPermission(authContext, "call.note.manage");
-  const canLogRecordings = hasPermission(authContext, "call.recording.log");
 
   const boundUpdateStatus = updateCallAttemptStatusAction.bind(null, id);
   const boundAddNote = addCallNoteAction.bind(null, id);
-  const boundCreateRecording = createCallRecordingAction.bind(null, id);
 
   const leadName = resolveDisplayName(lead?.fullNameSnapshot, null, "Lead");
   const customerName = resolveDisplayName(customer?.fullName, null, "Customer");
@@ -93,7 +87,16 @@ export default async function TelephonyCallDetailPage({
           <dt className="text-muted">Call Outcome</dt>
           <dd>{call.callOutcomeName ?? "—"}</dd>
           <dt className="text-muted">Duration</dt>
-          <dd>{call.durationSeconds !== null ? `${call.durationSeconds}s` : "—"}</dd>
+          <dd>
+            {call.durationSeconds !== null
+              ? (() => {
+                  const safe = Math.max(0, Math.round(call.durationSeconds));
+                  const m = Math.floor(safe / 60);
+                  const s = safe % 60;
+                  return `${m}:${String(s).padStart(2, "0")} (${safe}s dial time)`;
+                })()
+              : "— (no timed disposition)"}
+          </dd>
           <dt className="text-muted">Provider Call Id</dt>
           <dd className="font-mono text-xs">{call.providerCallId ?? "—"}</dd>
           {call.leadId ? (
@@ -172,29 +175,6 @@ export default async function TelephonyCallDetailPage({
                   </li>
                 );
               })
-            )}
-          </ul>
-        </section>
-      ) : null}
-
-      {canLogRecordings ? (
-        <section className="mx-card p-5">
-          <h2 className="text-sm font-medium">Recordings</h2>
-          <div className="mt-4">
-            <CallRecordingForm action={boundCreateRecording} />
-          </div>
-          <ul className="mt-6 flex flex-col gap-2 text-sm">
-            {recordings.length === 0 ? (
-              <li className="text-muted">No recordings logged yet.</li>
-            ) : (
-              recordings.map((recording) => (
-                <li key={recording.id} className="flex items-center justify-between">
-                  <span>{recording.storageReference}</span>
-                  <span className="text-muted">
-                    {recording.durationSeconds !== null ? `${recording.durationSeconds}s` : "—"}
-                  </span>
-                </li>
-              ))
             )}
           </ul>
         </section>

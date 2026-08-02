@@ -547,6 +547,8 @@ export class FakeAgentSessionRepository implements AgentSessionRepository {
 export class FakeCallRecordingRepository implements CallRecordingRepository {
   recordings = new Map<string, CallRecording>();
   auditLog: TelephonyAuditRecord[] = [];
+  /** Optional lead lookup for listByLeadIds (callAttemptId → leadId). */
+  leadIdByCallAttemptId = new Map<string, string>();
 
   async findById(id: string): Promise<CallRecording | null> {
     return this.recordings.get(id) ?? null;
@@ -556,6 +558,18 @@ export class FakeCallRecordingRepository implements CallRecordingRepository {
     return [...this.recordings.values()].filter(
       (recording) => recording.callAttemptId === callAttemptId,
     );
+  }
+
+  async listByLeadIds(leadIds: string[]) {
+    const allowed = new Set(leadIds);
+    return [...this.recordings.values()]
+      .map((recording) => {
+        const leadId = this.leadIdByCallAttemptId.get(recording.callAttemptId);
+        if (!leadId || !allowed.has(leadId)) return null;
+        return { ...recording, leadId };
+      })
+      .filter((row): row is CallRecording & { leadId: string } => row != null)
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
   }
 
   async createWithAudit(

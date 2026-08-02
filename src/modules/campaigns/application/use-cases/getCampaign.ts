@@ -5,6 +5,7 @@
 import type { CampaignRepository } from "../../domain/repositories/CampaignRepository";
 import { CampaignNotFoundError } from "../../domain/errors/CampaignErrors";
 import { toCampaignDto, type CampaignDto } from "../dto/CampaignDto";
+import { PERSONAL_CAMPAIGN_NAME } from "./ensurePersonalCampaign";
 
 export function makeGetCampaign(repository: CampaignRepository) {
   return async function getCampaign(id: string): Promise<CampaignDto> {
@@ -40,7 +41,14 @@ export function makeListCampaignsForMember(repository: CampaignRepository) {
         campaigns.push(toCampaignDto(campaign));
       }
     }
-    return campaigns.sort((a, b) => a.name.localeCompare(b.name));
+    // Personal Campaign first so Caller/app defaults land on single-add leads.
+    const personalName = PERSONAL_CAMPAIGN_NAME.toLowerCase();
+    return campaigns.sort((a, b) => {
+      const aPersonal = a.name.trim().toLowerCase() === personalName;
+      const bPersonal = b.name.trim().toLowerCase() === personalName;
+      if (aPersonal !== bPersonal) return aPersonal ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
   };
 }
 

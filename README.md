@@ -1,97 +1,229 @@
 # Mudrax CRM
 
-Production-grade Enterprise CRM for **Mudrax Capitals**, a Loan DSA (Direct Selling Associate) business. Built as a modular monolith with Clean Architecture and Domain-Driven feature modules, intended to be deployed on the company's own Linux server and used daily by real employees.
+Production Enterprise CRM for **Mudrax Capitals** (Loan DSA). Modular monolith,
+Clean Architecture, Domain-Driven feature modules — deployed on the company’s
+own Linux server and used daily by employees.
 
-This is not a demo or a college project — see [`docs/business/BusinessRequirements.md`](docs/business/BusinessRequirements.md) for the business context and [`docs/adr/`](docs/adr) for architecture decisions.
+- Business context: [`docs/business/BusinessRequirements.md`](docs/business/BusinessRequirements.md)
+- Architecture decisions: [`docs/adr/`](docs/adr)
+- Full from-scratch guide: [`docs/setup/getting-started-from-scratch.md`](docs/setup/getting-started-from-scratch.md)
 
-## Tech Stack
+---
 
-- **Frontend**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, Shadcn UI
-- **Backend**: Next.js Route Handlers, Prisma ORM, PostgreSQL
-- **Infrastructure**: Redis (provisioned for future sessions/caching/queues/rate limiting — not yet wired into application code)
-- **Authentication**: Auth.js
-- **Validation**: Zod
-- **Forms**: React Hook Form
-- **Local development**: Docker Desktop + Docker Compose
-- **Deployment**: Linux, PM2, Nginx
+## Tech stack
 
-## Getting Started
-
-### Option A — Docker (recommended, matches every developer's environment)
-
-Requires only [Docker Desktop](https://www.docker.com/products/docker-desktop/) — no local Node.js or PostgreSQL install needed.
-
-```bash
-cp .env.example .env       # fill in real local values
-docker compose up -d --build
-```
-
-Open [http://localhost:3000](http://localhost:3000) to view the app. See
-[`docs/development/local-environment.md`](docs/development/local-environment.md)
-for the full guide (what each service does, everyday commands, troubleshooting).
-
-### Option B — Native (Node.js + a local/remote PostgreSQL)
-
-```bash
-npm install
-cp .env.example .env   # fill in real local values, pointing DATABASE_URL at your own Postgres
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to view the app.
-
-## Available Scripts
-
-| Script | Purpose |
+| Layer | Choice |
 | --- | --- |
-| `npm run dev` | Start the Next.js dev server (Turbopack) |
-| `npm run build` | Production build |
-| `npm run start` | Start the production server |
-| `npm run lint` | Run ESLint |
-| `npm run format` | Format the codebase with Prettier |
-| `npm run format:check` | Check formatting without writing |
-| `npm run type-check` | Run the TypeScript compiler with no emit |
-| `npm run prisma:generate` | Generate the Prisma Client |
-| `npm run prisma:migrate` | Run Prisma migrations in development |
-| `npm run docker:up` | Build (if needed) and start the full Docker Compose environment |
-| `npm run docker:down` | Stop the Docker Compose environment (keeps data volumes) |
-| `npm run docker:logs` | Follow the app container's logs |
-| `npm run docker:reset` | Stop the environment and delete all data volumes (clean slate) |
+| Web app | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4 |
+| API | Next.js Route Handlers + Server Actions |
+| Database | PostgreSQL + Prisma |
+| Cache / locks | Redis (jobs, rate limits; graceful degrade if down) |
+| Auth | Auth.js (NextAuth v5) |
+| Validation | Zod |
+| Mobile | Expo / React Native (`apps/mobile`) |
+| Local infra | Docker Desktop + Docker Compose |
+| Production | Linux, PM2, Nginx (`deploy/`) |
 
-A pre-commit hook (Husky + lint-staged) automatically lints and formats staged files.
+---
 
-## Repository Structure
+## Repository layout
 
 ```
 mudrax-crm/
-├── docs/               # architecture decisions, module docs, business requirements
-├── prisma/             # database schema (multi-file), migrations, seed
-├── deploy/             # PM2, Nginx, and environment templates for the Linux server
-├── scripts/            # operational scripts
-├── tests/              # integration and e2e tests
-├── Dockerfile          # single-app image (dev + production build targets)
-├── docker-compose.yml  # local development environment (app + postgres + redis)
-└── src/
-    ├── app/            # Next.js App Router — routes only, kept thin
-    ├── modules/        # business modules (Clean Architecture: domain/application/infrastructure/presentation)
-    ├── integrations/   # plugin-based external system connectors
-    ├── shared/         # cross-cutting, generic, reusable code
-    ├── infra/          # app-wide infrastructure wiring (db, auth, logger, realtime)
-    └── styles/         # shared theme tokens
+├── apps/mobile/          # Expo Android client (@mudrax/mobile)
+├── packages/
+│   ├── api/              # @mudrax/api — typed Axios client for /api/*
+│   ├── shared/           # @mudrax/shared — constants, permissions, utils
+│   └── types/            # @mudrax/types — shared serializable types
+├── src/
+│   ├── app/              # Next.js routes (thin)
+│   ├── modules/          # Business modules (domain → application → infrastructure → presentation)
+│   ├── integrations/     # External system adapters
+│   ├── shared/           # Cross-cutting UI/lib
+│   ├── infra/            # db, auth, jobs, redis, logger
+│   └── styles/
+├── prisma/               # Schema (multi-file), migrations, seed
+├── tests/
+│   ├── e2e/              # Playwright end-to-end tests
+│   └── integration/      # Integration test docs / suites
+├── scripts/
+│   ├── dev/              # start-app.ps1, restart-dev.ps1
+│   ├── db/               # DB maintenance one-offs
+│   ├── jobs/             # Background worker entrypoint
+│   └── mobile/           # APK / Metro packaging notes
+├── docs/                 # ADRs, setup, operations, module docs
+├── deploy/               # PM2, Nginx, env templates
+├── docker-compose.yml    # Local postgres + redis (+ optional app)
+├── Dockerfile
+└── index.js              # Metro shim for monorepo Android release builds only
 ```
 
-Every folder contains a `README.md` explaining its purpose and what should never be placed inside it. Start with [`docs/README.md`](docs/README.md) for documentation conventions, and each module's own `README.md` under `src/modules/*` for module-specific rules.
+Root package `mudrax-crm` is the deployable Next.js web CRM (ADR 0001). Mobile and shared packages are npm workspaces.
 
-## Architecture Principles
+---
 
-- **Modular Monolith** — one deployable app, internally partitioned into independent business modules that only talk to each other through public `index.ts` APIs.
-- **Clean Architecture per module** — `domain -> application -> infrastructure -> presentation`, dependencies point inward only.
+## From scratch — what to download and run
+
+### 1) Install on your machine
+
+| # | Download | Notes |
+| --- | --- | --- |
+| 1 | [Git](https://git-scm.com/downloads) | Clone the repository |
+| 2 | [Node.js 20 LTS](https://nodejs.org/) | Includes npm. Confirm: `node -v` → v20.x |
+| 3 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Must be **running** before compose commands |
+| 4 | *(Optional, mobile)* [Android Studio](https://developer.android.com/studio) + [JDK 17](https://learn.microsoft.com/en-us/java/openjdk/download) | SDK Platform-Tools + device/emulator |
+
+Windows details: [`docs/setup/windows-development-setup.md`](docs/setup/windows-development-setup.md).
+
+### 2) Clone and install dependencies
+
+```bash
+git clone <repo-url> Mudrax_CRM
+cd Mudrax_CRM
+npm install
+```
+
+This installs the root Next.js app and workspace packages (`apps/*`, `packages/*`).
+
+### 3) Create your `.env`
+
+```bash
+# macOS / Linux
+cp .env.example .env
+
+# Windows PowerShell
+Copy-Item .env.example .env
+```
+
+Edit `.env` at least:
+
+- `AUTH_SECRET` — long random string (≥ 32 characters)
+- Leave `DATABASE_URL` / Redis defaults if you use the included Docker Postgres/Redis
+
+Never commit `.env`. Variable reference: [`docs/operations/environment-variables.md`](docs/operations/environment-variables.md).
+
+### 4) Start the database and the web app
+
+**Easiest (recommended on Windows):**
+
+```bash
+npm run app:start
+```
+
+What this does:
+
+1. Ensures `.env` exists  
+2. Starts **Postgres** + **Redis** via Docker Compose  
+3. Waits until Postgres is healthy  
+4. Runs `prisma generate`  
+5. Starts Next.js on [http://localhost:3000](http://localhost:3000)
+
+**First time only — apply schema and seed users:**
+
+In a second terminal (while Postgres is up):
+
+```bash
+npx prisma migrate deploy
+npm run db:seed
+```
+
+The seed command prints login emails/passwords (development only).
+
+**Alternative — everything in Docker (including the Next.js app):**
+
+```bash
+npm run app:start:docker
+# or: docker compose up -d --build
+```
+
+Then migrate/seed against published `localhost:5432` the same way, or exec into the app container.
+
+**Alternative — fully manual:**
+
+```bash
+docker compose up -d postgres redis
+npx prisma generate
+npx prisma migrate deploy
+npm run db:seed
+npm run dev
+```
+
+### 5) Open the CRM
+
+| URL | Purpose |
+| --- | --- |
+| [http://localhost:3000](http://localhost:3000) | Web CRM |
+| [http://localhost:3000/login](http://localhost:3000/login) | Sign in with seeded Admin / role users |
+
+### 6) Everyday commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run app:start` | Postgres + Redis (Docker) + local Next.js |
+| `npm run restart` | Kill port 3000 and start Next.js again |
+| `npm run dev` | Next.js only (infra already running) |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm run lint` | ESLint |
+| `npm run type-check` | TypeScript |
+| `npm test` | Vitest unit tests |
+| `npm run test:e2e` | Playwright (`tests/e2e`) |
+| `npm run prisma:generate` | Generate Prisma Client |
+| `npm run prisma:migrate` | Dev migrations |
+| `npm run db:seed` | Seed RBAC + demo users |
+| `npm run jobs:worker` | Background jobs worker |
+| `npm run docker:up` / `docker:down` / `docker:logs` / `docker:reset` | Compose helpers |
+| `npm run mobile:dev` | Expo Metro |
+| `npm run mobile:android` | Run Android client |
+
+Docker-only deep dive: [`docs/development/local-environment.md`](docs/development/local-environment.md).
+
+---
+
+## Mobile app (optional)
+
+1. Web CRM must be reachable on your LAN (`npm run app:start` or Docker).  
+2. `Copy-Item apps\mobile\.env.example apps\mobile\.env` and set:
+
+   ```env
+   EXPO_PUBLIC_API_URL=http://YOUR_LAN_IP:3000
+   ```
+
+   Use `ipconfig` (Windows) / `ip a` (Linux) for the PC IP. Physical phones cannot use `localhost`. Android emulator can use `http://10.0.2.2:3000`.
+
+3. From repo root:
+
+   ```bash
+   npm run mobile:android
+   ```
+
+Full mobile notes: [`apps/mobile/README.md`](apps/mobile/README.md).
+
+---
+
+## Quality checks before you push
+
+```bash
+npm run lint
+npm run type-check
+npm test
+npm run build
+```
+
+CI runs the same pipeline (plus Playwright) via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+---
+
+## Architecture principles
+
+- **Modular monolith** — one deployable web app; modules talk only through public `index.ts` APIs.
+- **Clean Architecture per module** — `domain → application → infrastructure → presentation`.
 - **Strict TypeScript** — no implicit `any`, no unchecked indexed access.
-- **One canonical location per concern** — no competing `utils/`, `helpers/`, `common/` dumping grounds.
-- **Enterprise RBAC** — a User is the stable identity; Caller, Manager, Team
-  Leader, Admin, and future job functions are Roles assigned to that User.
-  Access is derived from Role Permissions, never from separate job-title
-  modules.
+- **Enterprise RBAC** — Users get Roles; access comes from Role Permissions, never from separate job-title modules.
 
-See `docs/adr/` for accepted architecture decisions and `src/modules/README.md`
-for the module-by-module boundaries.
+See [`docs/adr/`](docs/adr) and [`src/modules/README.md`](src/modules/README.md).
+
+---
+
+## Deployment
+
+Production templates and Nginx/PM2 layout live under [`deploy/`](deploy/). Operational runbooks: [`docs/operations/`](docs/operations/).
