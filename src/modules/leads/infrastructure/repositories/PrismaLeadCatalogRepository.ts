@@ -24,8 +24,25 @@ export class PrismaLeadCatalogRepository implements LeadCatalogRepository {
   }
 
   async findDefaultStage(organizationId: string): Promise<LeadStage | null> {
+    // Prefer the real "Fresh" stage; never return leftover Integration Test catalog rows.
+    const fresh = await this.prisma.leadStage.findFirst({
+      where: {
+        organizationId,
+        bucket: "INITIAL",
+        isActive: true,
+        name: { equals: "Fresh", mode: "insensitive" },
+      },
+      orderBy: { sortOrder: "asc" },
+    });
+    if (fresh) return toLeadStage(fresh);
+
     const row = await this.prisma.leadStage.findFirst({
-      where: { organizationId, bucket: "INITIAL", isActive: true },
+      where: {
+        organizationId,
+        bucket: "INITIAL",
+        isActive: true,
+        NOT: { name: { startsWith: "Integration Test", mode: "insensitive" } },
+      },
       orderBy: { sortOrder: "asc" },
     });
     return row ? toLeadStage(row) : null;

@@ -65,6 +65,15 @@ export class FakeCustomerRepository implements CustomerRepository {
     type: IdentifierType,
     valueNormalized: string,
   ): Promise<CustomerWithIdentifiers[]> {
+    return this.listByNormalizedIdentifiers(organizationId, type, [valueNormalized]);
+  }
+
+  async listByNormalizedIdentifiers(
+    organizationId: string,
+    type: IdentifierType,
+    valueNormalizedList: string[],
+  ): Promise<CustomerWithIdentifiers[]> {
+    const wanted = new Set(valueNormalizedList);
     const results: CustomerWithIdentifiers[] = [];
     for (const [customerId, identifierList] of this.identifiers.entries()) {
       const customer = this.customers.get(customerId);
@@ -74,7 +83,10 @@ export class FakeCustomerRepository implements CustomerRepository {
       if (
         identifierList.some(
           (i) =>
-            i.type === type && i.valueNormalized === valueNormalized && i.status === "ACTIVE",
+            i.type === type &&
+            i.valueNormalized != null &&
+            wanted.has(i.valueNormalized) &&
+            i.status === "ACTIVE",
         )
       ) {
         results.push({ customer, identifiers: identifierList });
@@ -123,6 +135,18 @@ export class FakeCustomerRepository implements CustomerRepository {
       if (options?.customerIds && !options.customerIds.includes(c.id)) return false;
       return true;
     }).length;
+  }
+
+  async createManyWithAudit(
+    items: CreateCustomerData[],
+    actor: CustomerAuditActor,
+    correlationId?: string | null,
+  ): Promise<CustomerWithIdentifiers[]> {
+    const results: CustomerWithIdentifiers[] = [];
+    for (const data of items) {
+      results.push(await this.createWithAudit(data, actor, correlationId));
+    }
+    return results;
   }
 
   async createWithAudit(

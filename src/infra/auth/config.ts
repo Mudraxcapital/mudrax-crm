@@ -42,6 +42,7 @@ export const PUBLIC_PATH_PREFIXES = [
   "/api/integrations/rest",
   "/_next",
   "/favicon.ico",
+  "/downloads",
 ];
 
 export function isPublicPath(pathname: string): boolean {

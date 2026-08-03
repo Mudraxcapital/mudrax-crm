@@ -20,24 +20,25 @@ describe("changeCampaignStatus", () => {
     changeCampaignStatus = makeChangeCampaignStatus(repository);
   });
 
-  it("allows DRAFT -> ACTIVE", async () => {
+  it("creates campaigns as ACTIVE and allows ACTIVE -> PAUSED", async () => {
     const campaign = await createCampaign({
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
       actor: { actorType: "USER", actorId: "actor-1" },
       ownerManagerId: "actor-1",
     });
+    expect(campaign.status).toBe("ACTIVE");
 
     const updated = await changeCampaignStatus({
       id: campaign.id,
-      input: { status: "ACTIVE" },
+      input: { status: "PAUSED" },
       actor: { actorType: "USER", actorId: "actor-1" },
     });
 
-    expect(updated.status).toBe("ACTIVE");
+    expect(updated.status).toBe("PAUSED");
   });
 
-  it("rejects an invalid transition (DRAFT -> COMPLETED)", async () => {
+  it("rejects an invalid transition (ACTIVE -> DRAFT)", async () => {
     const campaign = await createCampaign({
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
@@ -48,7 +49,7 @@ describe("changeCampaignStatus", () => {
     await expect(
       changeCampaignStatus({
         id: campaign.id,
-        input: { status: "COMPLETED" },
+        input: { status: "DRAFT" },
         actor: { actorType: "USER", actorId: "actor-1" },
       }),
     ).rejects.toBeInstanceOf(InvalidCampaignStatusTransitionError);

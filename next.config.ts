@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   // Keep Node-only clients out of the Turbopack/webpack graph for
   // instrumentation and Server Actions.
   serverExternalPackages: ["redis", "@redis/client", "pg", "@prisma/adapter-pg"],
+  // Tree-shake heavy client packages that are imported from many screens.
+  optimizePackageImports: ["recharts", "xlsx"],
 };
 
 export default nextConfig;

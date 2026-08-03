@@ -126,6 +126,23 @@ export class FakeLeadRepository implements LeadRepository {
           (lead.emailSnapshot?.toLowerCase().includes(q) ?? false),
       );
     }
+    if (filter?.phoneSnapshots?.length || filter?.emailSnapshots?.length) {
+      const phones = new Set((filter.phoneSnapshots ?? []).map((p) => p.trim()).filter(Boolean));
+      const emails = new Set(
+        (filter.emailSnapshots ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean),
+      );
+      results = results.filter(
+        (lead) =>
+          (lead.phoneSnapshot != null && phones.has(lead.phoneSnapshot)) ||
+          (lead.emailSnapshot != null && emails.has(lead.emailSnapshot.toLowerCase())),
+      );
+    }
+    const createdAtDir = filter?.sortCreatedAt === "asc" ? 1 : -1;
+    results.sort((a, b) => {
+      const byCreated = (a.createdAt.getTime() - b.createdAt.getTime()) * createdAtDir;
+      if (byCreated !== 0) return byCreated;
+      return a.id.localeCompare(b.id);
+    });
     const limit = filter?.limit;
     if (typeof limit === "number") {
       results = results.slice(filter?.offset ?? 0, (filter?.offset ?? 0) + limit);
@@ -229,48 +246,61 @@ export class FakeLeadRepository implements LeadRepository {
     actor: LeadAuditActor,
     correlationId?: string | null,
   ): Promise<Lead> {
-    const now = new Date();
-    const id = makeId();
-    const lead: Lead = {
-      id,
-      organizationId: data.organizationId,
-      customerId: data.customerId,
-      leadSourceId: data.leadSourceId,
-      currentStageId: data.currentStageId,
-      lostReasonId: null,
-      campaignId: data.campaignId ?? null,
-      currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
-      ownerManagerId: data.ownerManagerId ?? null,
-      ownerTeamLeadId: data.ownerTeamLeadId ?? null,
-      fullNameSnapshot: data.fullNameSnapshot,
-      phoneSnapshot: data.phoneSnapshot ?? null,
-      emailSnapshot: data.emailSnapshot ?? null,
-      nextActionAt: null,
-      nextActionType: null,
-      wonAt: null,
-      lostAt: null,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.leads.set(id, lead);
+    const [lead] = await this.createManyWithAudit([data], actor, correlationId);
+    return lead!;
+  }
 
-    if (data.initialAssignment) {
-      this.assignments.set(id, [
-        {
-          id: makeId(),
-          leadId: id,
-          assignedToUserId: data.initialAssignment.assignedToUserId,
-          assignedByUserId: data.initialAssignment.assignedByUserId,
-          assignmentType: data.initialAssignment.assignmentType,
-          campaignAssignmentId: null,
-          assignedAt: now,
-          unassignedAt: null,
-        },
-      ]);
+  async createManyWithAudit(
+    items: CreateLeadData[],
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead[]> {
+    const created: Lead[] = [];
+    for (const data of items) {
+      const now = new Date();
+      const id = makeId();
+      const lead: Lead = {
+        id,
+        organizationId: data.organizationId,
+        customerId: data.customerId,
+        leadSourceId: data.leadSourceId,
+        currentStageId: data.currentStageId,
+        lostReasonId: null,
+        campaignId: data.campaignId ?? null,
+        currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
+        ownerManagerId: data.ownerManagerId ?? null,
+        ownerTeamLeadId: data.ownerTeamLeadId ?? null,
+        fullNameSnapshot: data.fullNameSnapshot,
+        phoneSnapshot: data.phoneSnapshot ?? null,
+        emailSnapshot: data.emailSnapshot ?? null,
+        nextActionAt: null,
+        nextActionType: null,
+        wonAt: null,
+        lostAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.leads.set(id, lead);
+
+      if (data.initialAssignment) {
+        this.assignments.set(id, [
+          {
+            id: makeId(),
+            leadId: id,
+            assignedToUserId: data.initialAssignment.assignedToUserId,
+            assignedByUserId: data.initialAssignment.assignedByUserId,
+            assignmentType: data.initialAssignment.assignmentType,
+            campaignAssignmentId: null,
+            assignedAt: now,
+            unassignedAt: null,
+          },
+        ]);
+      }
+
+      this.recordAudit(actor, "LeadCreated", id, correlationId, null, { ...lead });
+      created.push(lead);
     }
-
-    this.recordAudit(actor, "LeadCreated", id, correlationId, null, { ...lead });
-    return lead;
+    return created;
   }
 
   async updateWithAudit(
@@ -372,6 +402,39 @@ export class FakeLeadRepository implements LeadRepository {
 
   async listRecentAuditLog(organizationId: string, limit: number): Promise<LeadAuditRecord[]> {
     return this.auditLog.filter((entry) => entry.organizationId === organizationId).slice(0, limit);
+  }
+
+  async hardDeleteLeadsWithCustomers(
+    organizationId: string,
+    leadIds: string[],
+  ): Promise<{
+    deletedLeadIds: string[];
+    deletedCustomerIds: string[];
+    failed: Array<{ leadId: string; error: string }>;
+  }> {
+    const deletedLeadIds: string[] = [];
+    const deletedCustomerIds: string[] = [];
+    const failed: Array<{ leadId: string; error: string }> = [];
+    const customerIds = new Set<string>();
+
+    for (const leadId of [...new Set(leadIds)]) {
+      const lead = this.leads.get(leadId);
+      if (!lead || lead.organizationId !== organizationId) {
+        failed.push({ leadId, error: "Lead was not found." });
+        continue;
+      }
+      this.leads.delete(leadId);
+      this.assignments.delete(leadId);
+      customerIds.add(lead.customerId);
+      deletedLeadIds.push(leadId);
+    }
+
+    for (const customerId of customerIds) {
+      const remaining = [...this.leads.values()].some((lead) => lead.customerId === customerId);
+      if (!remaining) deletedCustomerIds.push(customerId);
+    }
+
+    return { deletedLeadIds, deletedCustomerIds, failed };
   }
 
   private recordAudit(

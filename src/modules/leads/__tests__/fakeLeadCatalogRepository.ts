@@ -78,10 +78,17 @@ export class FakeLeadCatalogRepository implements LeadCatalogRepository {
   }
 
   async findDefaultStage(organizationId: string): Promise<LeadStage | null> {
+    const initial = this.stages.filter(
+      (stage) =>
+        stage.organizationId === organizationId &&
+        stage.bucket === "INITIAL" &&
+        stage.isActive &&
+        !/^integration\s*test/i.test(stage.name.trim()),
+    );
     return (
-      this.stages.find(
-        (stage) => stage.organizationId === organizationId && stage.bucket === "INITIAL",
-      ) ?? null
+      initial.find((stage) => stage.name.trim().toLowerCase() === "fresh") ??
+      initial[0] ??
+      null
     );
   }
 

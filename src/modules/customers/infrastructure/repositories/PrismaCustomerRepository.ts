@@ -83,10 +83,20 @@ export class PrismaCustomerRepository implements CustomerRepository {
     type: IdentifierType,
     valueNormalized: string,
   ): Promise<CustomerWithIdentifiers[]> {
+    return this.listByNormalizedIdentifiers(organizationId, type, [valueNormalized]);
+  }
+
+  async listByNormalizedIdentifiers(
+    organizationId: string,
+    type: IdentifierType,
+    valueNormalizedList: string[],
+  ): Promise<CustomerWithIdentifiers[]> {
+    const values = [...new Set(valueNormalizedList.map((v) => v.trim()).filter(Boolean))];
+    if (values.length === 0) return [];
     const identifiers = await this.prisma.customerIdentifier.findMany({
       where: {
         type,
-        valueNormalized,
+        valueNormalized: { in: values },
         status: "ACTIVE",
         customer: { organizationId, status: "ACTIVE" },
       },
@@ -180,58 +190,118 @@ export class PrismaCustomerRepository implements CustomerRepository {
     actor: CustomerAuditActor,
     correlationId?: string | null,
   ): Promise<CustomerWithIdentifiers> {
-    return this.prisma.$transaction(async (tx) => {
-      const identityConfidence = data.identifiers.some((identifier) =>
-        isStrongIdentifierType(identifier.type),
-      )
-        ? "DECLARED"
-        : "UNVERIFIED";
+    const [created] = await this.createManyWithAudit([data], actor, correlationId);
+    return created!;
+  }
 
-      const customerRow = await tx.customer.create({
-        data: {
-          organizationId: data.organizationId,
-          fullName: data.fullName,
-          dob: data.dob ?? null,
-          identityConfidence,
-          ownerManagerId: data.ownerManagerId ?? null,
-        },
-      });
+  async createManyWithAudit(
+    items: CreateCustomerData[],
+    actor: CustomerAuditActor,
+    correlationId?: string | null,
+  ): Promise<CustomerWithIdentifiers[]> {
+    if (items.length === 0) return [];
 
-      const identifierRows = [];
-      for (const identifier of data.identifiers) {
-        const identifierRow = await tx.customerIdentifier.create({
-          data: {
-            customerId: customerRow.id,
+    const CHUNK = 200;
+    const created: CustomerWithIdentifiers[] = [];
+
+    for (let offset = 0; offset < items.length; offset += CHUNK) {
+      const chunk = items.slice(offset, offset + CHUNK);
+      const chunkCreated = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const prepared = chunk.map((data) => {
+          const id = crypto.randomUUID();
+          const identityConfidence = data.identifiers.some((identifier) =>
+            isStrongIdentifierType(identifier.type),
+          )
+            ? ("DECLARED" as const)
+            : ("UNVERIFIED" as const);
+          return { id, data, identityConfidence, now };
+        });
+
+        await tx.customer.createMany({
+          data: prepared.map(({ id, data, identityConfidence, now: createdAt }) => ({
+            id,
+            organizationId: data.organizationId,
+            fullName: data.fullName,
+            dob: data.dob ?? null,
+            identityConfidence,
+            ownerManagerId: data.ownerManagerId ?? null,
+            createdAt,
+            updatedAt: createdAt,
+          })),
+        });
+
+        const identifierData = prepared.flatMap(({ id, data }) =>
+          data.identifiers.map((identifier) => ({
+            customerId: id,
             type: identifier.type,
             valueHash: identifier.valueHash,
             valueNormalized: identifier.valueNormalized,
             valueMasked: identifier.valueMasked,
             verifiedAt: identifier.verifiedAt ?? null,
             verificationSource: identifier.verificationSource ?? null,
+          })),
+        );
+        if (identifierData.length > 0) {
+          await tx.customerIdentifier.createMany({ data: identifierData });
+        }
+
+        const results: CustomerWithIdentifiers[] = prepared.map(
+          ({ id, data, identityConfidence, now: createdAt }) => {
+            const customer: Customer = {
+              id,
+              organizationId: data.organizationId,
+              fullName: data.fullName,
+              dob: data.dob ?? null,
+              identityConfidence,
+              status: "ACTIVE",
+              mergedIntoCustomerId: null,
+              ownerManagerId: data.ownerManagerId ?? null,
+              createdAt,
+              updatedAt: createdAt,
+            };
+            return {
+              customer,
+              identifiers: data.identifiers.map((identifier) => ({
+                id: crypto.randomUUID(),
+                customerId: id,
+                type: identifier.type,
+                valueHash: identifier.valueHash,
+                valueNormalized: identifier.valueNormalized,
+                valueMasked: identifier.valueMasked,
+                status: "ACTIVE" as const,
+                verifiedAt: identifier.verifiedAt ?? null,
+                verificationSource: identifier.verificationSource ?? null,
+                supersededByIdentifierId: null,
+                createdAt,
+                updatedAt: createdAt,
+              })),
+            };
           },
+        );
+
+        await tx.customerAuditLog.createMany({
+          data: results.map(({ customer }) => ({
+            organizationId: customer.organizationId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            action: "CustomerCreated",
+            targetType: TARGET_TYPE_CUSTOMER,
+            targetId: customer.id,
+            correlationId: correlationId ?? null,
+            beforeState: undefined,
+            afterState: toAuditJson(customer),
+            recordHash: PLACEHOLDER_RECORD_HASH,
+          })),
         });
-        identifierRows.push(identifierRow);
-      }
 
-      const customer = toCustomer(customerRow);
-
-      await tx.customerAuditLog.create({
-        data: {
-          organizationId: customer.organizationId,
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          action: "CustomerCreated",
-          targetType: TARGET_TYPE_CUSTOMER,
-          targetId: customer.id,
-          correlationId: correlationId ?? null,
-          beforeState: undefined,
-          afterState: toAuditJson(customer),
-          recordHash: PLACEHOLDER_RECORD_HASH,
-        },
+        return results;
       });
 
-      return { customer, identifiers: identifierRows.map(toCustomerIdentifier) };
-    });
+      created.push(...chunkCreated);
+    }
+
+    return created;
   }
 
   async updateWithAudit(

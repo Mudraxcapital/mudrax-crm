@@ -152,7 +152,7 @@ describe.skipIf(!hasDatabase)("Campaign aggregate (integration)", () => {
       ownerManagerId: userAId,
     });
     campaignId = created.id;
-    expect(created.status).toBe("DRAFT");
+    expect(created.status).toBe("ACTIVE");
 
     await addCampaignMember({
       campaignId,

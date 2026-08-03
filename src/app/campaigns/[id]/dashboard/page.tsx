@@ -7,6 +7,7 @@ import { listCallOutcomes } from "@/modules/telephony";
 import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/Button";
+import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { authorizeCampaignDashboard } from "./_lib/authorizeCampaignDashboard";
 import {
   resolveCampaignDashboardRange,
@@ -54,6 +55,8 @@ export default async function CampaignDashboardPage({
     typeof query.leadId === "string" && query.leadId.trim()
       ? query.leadId.trim()
       : null;
+  const requestedLeadSearch =
+    typeof query.q === "string" && query.q.trim() ? query.q.trim() : null;
   const rawLeadPage =
     typeof query.leadPage === "string" ? Number.parseInt(query.leadPage, 10) : NaN;
   const requestedLeadPage =
@@ -73,6 +76,7 @@ export default async function CampaignDashboardPage({
       requestedAssigneeId,
       requestedLeadId,
       requestedLeadPage,
+      requestedLeadSearch,
     }),
     leadCatalogs.listStages(authContext.organizationId),
     leadCatalogs.listLostReasons(authContext.organizationId),
@@ -112,8 +116,8 @@ export default async function CampaignDashboardPage({
           range={range}
           granularity={granularity}
           agentUserId={session.user.id}
-          stages={stages}
-          lostReasons={lostReasons}
+          stages={excludeTestCatalogRows(stages)}
+          lostReasons={excludeTestCatalogRows(lostReasons)}
           callOutcomes={callOutcomes.map((outcome) => ({
             id: outcome.id,
             name: outcome.name,

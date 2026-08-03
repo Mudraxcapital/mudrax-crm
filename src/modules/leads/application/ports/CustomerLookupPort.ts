@@ -26,4 +26,11 @@ export interface CustomerLookupPort {
   findById(customerId: string): Promise<CustomerLookupSummary | null>;
   /** Import path: find by phone/email when possible, otherwise create a Customer. */
   resolveOrCreate?(input: ResolveOrCreateCustomerInput): Promise<CustomerLookupSummary>;
+  /**
+   * Bulk import path: resolve/create many Customers with a few DB round-trips.
+   * Return order matches `inputs`.
+   */
+  resolveOrCreateMany?(
+    inputs: ResolveOrCreateCustomerInput[],
+  ): Promise<CustomerLookupSummary[]>;
 }

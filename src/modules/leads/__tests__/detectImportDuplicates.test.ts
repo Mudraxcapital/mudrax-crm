@@ -114,6 +114,37 @@ describe("classifyImportDuplicates", () => {
     expect(ringing?.latestUpdatedAt).toBe("2026-07-25T10:34:00.000Z");
   });
 
+  it("hides Integration Test statuses from the status picker groups", () => {
+    const result = classifyImportDuplicates({
+      matchMode: "phone",
+      existingLeads: [
+        {
+          ...existing[0]!,
+          currentStageId: "stage-test-fresh",
+          currentStageName: "Integration Test - Fresh",
+        },
+      ],
+      stages: [
+        ...stages,
+        {
+          id: "stage-test-fresh",
+          name: "Integration Test - Fresh",
+          sortOrder: 0,
+          isActive: true,
+        },
+      ],
+      rows: [{ rowNumber: 1, name: "Rahul", phone: "9876543210", email: "" }],
+    });
+    expect(
+      result.statusGroups.some((group) => /integration\s*test/i.test(group.stageName)),
+    ).toBe(false);
+    expect(result.statusGroups.map((group) => group.stageId)).toEqual([
+      "stage-fresh",
+      "stage-ringing",
+      "stage-lost",
+    ]);
+  });
+
   it("classifies phone+name possible vs exact", () => {
     const result = classifyImportDuplicates({
       matchMode: "phone_name",

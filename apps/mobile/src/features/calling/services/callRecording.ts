@@ -1,80 +1,153 @@
 import { PermissionsAndroid, Platform } from "react-native";
 import {
-  armCallRecording,
-  disarmCallRecording,
+  clearDialerRecordingFolder,
+  getDialerRecordingFolder,
   hasLocalCallRecording,
+  importDialerCallRecording,
   isCallLogVerificationAvailable,
   isCallRecordingAvailable,
+  pickDialerRecordingFolder,
   playLocalCallRecording,
   stopLocalCallRecordingPlayback,
   type CallRecordingSnapshot,
+  type DialerRecordingFolderInfo,
   type LocalRecordingPlaybackResult,
 } from "mudrax-call-log";
 
-export type { CallRecordingSnapshot, LocalRecordingPlaybackResult };
+export type {
+  CallRecordingSnapshot,
+  DialerRecordingFolderInfo,
+  LocalRecordingPlaybackResult,
+};
 
-/** Native module linked and platform is Android (permission may still be missing). */
+/** Native module linked and platform is Android. */
 export function canUseAndroidCallRecording(): boolean {
   return Platform.OS === "android" && isCallLogVerificationAvailable();
 }
 
-export async function ensureCallRecordingPermissions(): Promise<boolean> {
-  if (!canUseAndroidCallRecording()) return false;
-
-  const recordGranted = await ensurePermission(
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-    {
-      title: "Allow microphone access",
-      message:
-        "Mudrax can record outbound CRM calls on this Android phone so supervisors can review them later. You can deny and still place calls.",
-      buttonPositive: "Allow",
-      buttonNegative: "Deny",
-    },
-  );
-  if (!recordGranted) return false;
-
-  const phoneStateGranted = await ensurePermission(
-    PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-    {
-      title: "Allow phone state access",
-      message:
-        "Mudrax needs phone state access to start and stop recording when your call connects and ends.",
-      buttonPositive: "Allow",
-      buttonNegative: "Deny",
-    },
-  );
-  return phoneStateGranted;
+export function getDialerMediaPath(): DialerRecordingFolderInfo | null {
+  if (!canUseAndroidCallRecording()) return null;
+  return getDialerRecordingFolder();
 }
 
-/**
- * Best-effort arm. Never throws — call placement must continue even if
- * recording cannot start.
- */
-export async function tryArmCallRecording(phone: string): Promise<boolean> {
-  if (!canUseAndroidCallRecording()) return false;
-  try {
-    const permitted = await ensureCallRecordingPermissions();
-    if (!permitted) return false;
-    // isCallRecordingAvailable reflects current RECORD_AUDIO grant after request.
-    if (!isCallRecordingAvailable()) return false;
-    const digits = phone.replace(/\D/g, "");
-    const snap = await armCallRecording(digits);
-    return Boolean(snap?.armed || snap?.state === "armed");
-  } catch {
-    return false;
-  }
+export function isDialerMediaPathConfigured(): boolean {
+  return Boolean(getDialerMediaPath()?.configured);
 }
 
-/**
- * Best-effort disarm. Returns a completed snapshot when a file was captured.
- */
-export async function tryDisarmCallRecording(): Promise<CallRecordingSnapshot | null> {
+/** Ask the user to pick the dialer call-recording folder (TeleCRM Media Path). */
+export async function chooseDialerMediaPath(): Promise<DialerRecordingFolderInfo | null> {
   if (!canUseAndroidCallRecording()) return null;
   try {
-    return await disarmCallRecording();
+    return await pickDialerRecordingFolder();
   } catch {
     return null;
   }
+}
+
+export async function resetDialerMediaPath(): Promise<DialerRecordingFolderInfo | null> {
+  if (!canUseAndroidCallRecording()) return null;
+  try {
+    return await clearDialerRecordingFolder();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensure we can read recent audio from shared storage (MediaStore fallback).
+ * Folder access itself uses a persisted SAF tree URI and does not need this.
+ */
+export async function ensureDialerRecordingPermissions(): Promise<boolean> {
+  if (!canUseAndroidCallRecording()) return false;
+
+  const audioPermission =
+    Number(Platform.Version) >= 33
+      ? (("READ_MEDIA_AUDIO" in PermissionsAndroid.PERMISSIONS
+          ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO
+          : "android.permission.READ_MEDIA_AUDIO") as (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS])
+      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
+  return ensurePermission(audioPermission, {
+    title: "Allow audio access",
+    message:
+      "Mudrax imports call recordings created by your phone dialer (Samsung Phone or ODialer) so supervisors can review CRM calls.",
+    buttonPositive: "Allow",
+    buttonNegative: "Deny",
+  });
+}
+
+/**
+ * After a verified outbound call, poll for the dialer's recording file and
+ * import it into app storage. Dialers often finalize the file a few seconds
+ * after hangup.
+ */
+export async function tryImportDialerCallRecording(
+  phone: string,
+  callStartedAtMs: number,
+  durationSeconds: number,
+  options: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    signal?: { cancelled: boolean };
+  } = {},
+): Promise<CallRecordingSnapshot | null> {
+  if (!canUseAndroidCallRecording()) return null;
+
+  try {
+    await ensureDialerRecordingPermissions();
+  } catch {
+    // Continue — SAF folder may still work without MediaStore permission.
+  }
+
+  const timeoutMs = options.timeoutMs ?? 45_000;
+  const intervalMs = options.intervalMs ?? 1_500;
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+
+  const deadline = Date.now() + timeoutMs;
+  let lastError: string | null = null;
+
+  while (Date.now() < deadline) {
+    if (options.signal?.cancelled) return null;
+    try {
+      const snap = await importDialerCallRecording(
+        digits,
+        callStartedAtMs,
+        durationSeconds,
+      );
+      if (snap?.storageReference) return snap;
+      lastError = snap?.error ?? lastError;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "Dialer import failed.";
+    }
+    await sleep(intervalMs);
+  }
+
+  return {
+    state: "failed",
+    armed: false,
+    recording: false,
+    filePath: null,
+    storageReference: null,
+    startedAtMs: callStartedAtMs,
+    endedAtMs: 0,
+    durationSeconds: Math.max(0, durationSeconds),
+    audioSource: "DIALER_FILE",
+    phoneDigits: digits,
+    error:
+      lastError ??
+      "No dialer recording found. Enable Record all calls in Samsung Phone or ODialer and set Media Path in Mudrax.",
+  };
+}
+
+/** @deprecated Mic arm removed from call flow — dialer sync is used instead. */
+export async function tryArmCallRecording(_phone: string): Promise<boolean> {
+  return isDialerMediaPathConfigured() || canUseAndroidCallRecording();
+}
+
+/** @deprecated No mic recorder to disarm; kept so cancel paths stay safe. */
+export async function tryDisarmCallRecording(): Promise<CallRecordingSnapshot | null> {
+  return null;
 }
 
 async function ensurePermission(
@@ -86,10 +159,15 @@ async function ensurePermission(
     buttonNegative: string;
   },
 ): Promise<boolean> {
+  if (!permission) return true;
   const existing = await PermissionsAndroid.check(permission);
   if (existing) return true;
   const result = await PermissionsAndroid.request(permission, rationale);
   return result === PermissionsAndroid.RESULTS.GRANTED;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export { isCallRecordingAvailable };

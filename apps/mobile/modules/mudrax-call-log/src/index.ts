@@ -26,6 +26,7 @@ export interface CallRecordingSnapshot {
   audioSource: string | null;
   phoneDigits: string;
   error: string | null;
+  sourceFileName?: string | null;
 }
 
 export interface LocalRecordingPlaybackResult {
@@ -34,6 +35,14 @@ export interface LocalRecordingPlaybackResult {
   error: string | null;
   path?: string | null;
   durationSeconds?: number;
+}
+
+export interface DialerRecordingFolderInfo {
+  configured: boolean;
+  treeUri: string | null;
+  displayName: string | null;
+  cancelled?: boolean;
+  error?: string | null;
 }
 
 type MudraxCallLogNative = {
@@ -53,6 +62,14 @@ type MudraxCallLogNative = {
   ): Promise<LocalRecordingPlaybackResult>;
   stopLocalCallRecordingPlayback(): Promise<LocalRecordingPlaybackResult>;
   isLocalCallRecordingPlaying(): boolean;
+  getDialerRecordingFolder(): DialerRecordingFolderInfo;
+  pickDialerRecordingFolder(): Promise<DialerRecordingFolderInfo>;
+  clearDialerRecordingFolder(): Promise<DialerRecordingFolderInfo>;
+  importDialerCallRecording(
+    phoneDigits: string,
+    callStartedAtMs: number,
+    durationSeconds: number,
+  ): Promise<CallRecordingSnapshot>;
 };
 
 let native: MudraxCallLogNative | null = null;
@@ -87,7 +104,7 @@ export async function findLatestOutboundCall(
   return mod.findLatestOutboundCall(phoneDigits, sinceEpochMs);
 }
 
-/** Android only — false on iOS / Expo Go / missing RECORD_AUDIO. */
+/** Android only — true when mic permission or dialer folder is usable. */
 export function isCallRecordingAvailable(): boolean {
   const mod = getNative();
   try {
@@ -108,8 +125,7 @@ export function getCallRecordingState(): CallRecordingSnapshot | null {
 }
 
 /**
- * Arm phone-state-driven recording before opening the dialer.
- * Recording starts on OFFHOOK and stops on IDLE.
+ * Legacy mic arm (unused by TeleCRM-style sync). Kept for native compatibility.
  */
 export async function armCallRecording(
   phoneDigits: string,
@@ -124,6 +140,45 @@ export async function disarmCallRecording(): Promise<CallRecordingSnapshot | nul
   const mod = getNative();
   if (!mod) return null;
   return mod.disarmCallRecording();
+}
+
+export function getDialerRecordingFolder(): DialerRecordingFolderInfo | null {
+  const mod = getNative();
+  if (!mod) return null;
+  try {
+    return mod.getDialerRecordingFolder();
+  } catch {
+    return null;
+  }
+}
+
+export async function pickDialerRecordingFolder(): Promise<DialerRecordingFolderInfo | null> {
+  const mod = getNative();
+  if (!mod) return null;
+  return mod.pickDialerRecordingFolder();
+}
+
+export async function clearDialerRecordingFolder(): Promise<DialerRecordingFolderInfo | null> {
+  const mod = getNative();
+  if (!mod) return null;
+  return mod.clearDialerRecordingFolder();
+}
+
+/**
+ * Import a dialer-produced recording that matches the verified outbound call.
+ */
+export async function importDialerCallRecording(
+  phoneDigits: string,
+  callStartedAtMs: number,
+  durationSeconds: number,
+): Promise<CallRecordingSnapshot | null> {
+  const mod = getNative();
+  if (!mod) return null;
+  return mod.importDialerCallRecording(
+    phoneDigits,
+    callStartedAtMs,
+    durationSeconds,
+  );
 }
 
 /** True when `android-local://call-recordings/...` exists in this app's files. */

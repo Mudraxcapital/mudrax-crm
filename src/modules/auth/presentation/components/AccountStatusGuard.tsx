@@ -13,7 +13,7 @@ import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
 import { isSessionClearReason, type SessionClearReason } from "../../domain/sessionClearReason";
 
-const POLL_MS = 8_000;
+const POLL_MS = 30_000;
 
 type SessionEndReason = SessionClearReason | "unauthenticated";
 
@@ -64,6 +64,8 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
 
     async function check() {
       if (forcingOut.current) return;
+      // Don't burn DB/auth when the tab is in the background.
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const response = await fetch("/api/auth/session-status", {
           method: "GET",
@@ -93,6 +95,7 @@ export function AccountStatusGuard({ enabled }: { enabled: boolean }) {
     }, POLL_MS);
 
     const onFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       void check();
     };
     window.addEventListener("focus", onFocus);

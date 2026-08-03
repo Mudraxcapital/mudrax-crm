@@ -34,13 +34,15 @@ export function makeListCampaigns(repository: CampaignRepository) {
 export function makeListCampaignsForMember(repository: CampaignRepository) {
   return async function listCampaignsForMember(userId: string): Promise<CampaignDto[]> {
     const memberships = await repository.listActiveMembershipsForUser(userId);
-    const campaigns: CampaignDto[] = [];
-    for (const membership of memberships) {
-      const campaign = await repository.findById(membership.campaignId);
-      if (campaign && (campaign.status === "ACTIVE" || campaign.status === "PAUSED")) {
-        campaigns.push(toCampaignDto(campaign));
-      }
-    }
+    const loaded = await Promise.all(
+      memberships.map((membership) => repository.findById(membership.campaignId)),
+    );
+    const campaigns = loaded
+      .filter(
+        (campaign): campaign is NonNullable<typeof campaign> =>
+          campaign != null && (campaign.status === "ACTIVE" || campaign.status === "PAUSED"),
+      )
+      .map(toCampaignDto);
     // Personal Campaign first so Caller/app defaults land on single-add leads.
     const personalName = PERSONAL_CAMPAIGN_NAME.toLowerCase();
     return campaigns.sort((a, b) => {

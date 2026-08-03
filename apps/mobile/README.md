@@ -1,7 +1,7 @@
 # @mudrax/mobile — Mudrax CRM Android client
 
 Expo (React Native) app for callers: leads, dialer, post-call logging, and
-best-effort call recording upload to the web CRM API.
+TeleCRM-style dialer call-recording import/upload to the web CRM API.
 
 ## Prerequisites
 
@@ -52,8 +52,13 @@ during `assembleRelease`. Copy the APK from
 `android/app/build/outputs/apk/release/` to `apps/mobile/dist/` if you serve it
 on your LAN.
 
-## Recording note
+## Recording note (TeleCRM-style dialer sync)
 
-Android third-party apps cannot reliably capture full duplex cellular audio.
-Use **speakerphone** so the microphone path records usable voice. Audio is
-uploaded to the server (`local:call-recordings/…`); see ADR 0006.
+Mudrax does **not** record cellular audio with the app microphone. Like TeleCRM:
+
+1. Enable **Record all calls** in **Samsung Phone** or **ODialer** (set as default dialer).
+2. In Mudrax, set **Media Path** to that dialer’s recordings folder (Profile or Lead Call screen).
+3. Turn off **Wi‑Fi Calling**.
+4. After hangup, Mudrax imports the dialer file and uploads it to CRM storage.
+
+See ADR 0006 for recording metadata / external audio reference.

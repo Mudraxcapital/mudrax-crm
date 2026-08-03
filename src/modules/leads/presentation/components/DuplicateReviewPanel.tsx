@@ -62,7 +62,8 @@ const STRATEGY_OPTIONS: Array<{
   {
     value: "replace_selected_statuses",
     title: "Replace selected statuses",
-    description: "Close old leads in checked statuses, then import a fresh copy from Excel.",
+    description:
+      "Only re-imports Excel rows that match leads in the checked statuses. Old matches are removed and the same rows come back as Fresh — other rows in the file are skipped.",
     needsStatuses: true,
   },
   {
@@ -410,7 +411,7 @@ export function DuplicateReviewPanel({
           onClick={onContinue}
           disabled={!canContinue}
         >
-          Continue to campaign
+          Continue to agents
         </button>
       </div>
     </div>

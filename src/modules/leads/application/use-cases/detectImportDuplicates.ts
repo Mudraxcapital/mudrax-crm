@@ -20,7 +20,7 @@ export const IN_FILE_DUPLICATE_STAGE_ID = "__in_file__";
  * Import strategies for duplicate rows.
  * - skip_duplicates: import only new leads (recommended)
  * - import_all: create another lead for every duplicate
- * - replace_selected_statuses: close (soft-delete) old leads in selected stages, then import fresh
+ * - replace_selected_statuses: remove old leads in selected stages (same campaign), re-import those rows only as Fresh
  * - archive_and_reimport: close/archive old leads in selected stages (history kept), then create new
  * - merge / update_existing: legacy update paths
  */
@@ -310,7 +310,9 @@ export function groupDuplicatesByStage(
   stages: Array<{ id: string; name: string; sortOrder: number; isActive: boolean }>,
 ): DuplicateStatusGroup[] {
   const activeStages = stages
-    .filter((stage) => stage.isActive)
+    .filter(
+      (stage) => stage.isActive && !/^integration\s*test/i.test(stage.name.trim()),
+    )
     .slice()
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
@@ -342,6 +344,8 @@ export function groupDuplicatesByStage(
     const named =
       rows[0]?.existingStageName?.trim() ||
       (stageId.startsWith("__missing__:") ? stageId.slice("__missing__:".length) : "");
+    // Hide leftover Integration Test catalog rows from the import status picker.
+    if (/^integration\s*test/i.test(named)) continue;
     groups.push({
       stageId,
       stageName: named && named.toLowerCase() !== "unknown" ? named : "Unassigned status",

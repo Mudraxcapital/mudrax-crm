@@ -9,6 +9,7 @@ import { TabNav } from "@/shared/ui/Tabs";
 import { managerBookFilter, visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { CampaignPipelineFilter } from "./_components/CampaignPipelineFilter";
+import { filterPipelineFocusColumns } from "./_lib/pipelineFocusColumns";
 
 export default async function LeadPipelinePage({
   searchParams,
@@ -77,10 +78,11 @@ export default async function LeadPipelinePage({
     ...(effectiveCampaignId ? { campaignId: effectiveCampaignId } : {}),
   };
 
-  const [columns, lostReasons] = await Promise.all([
+  const [boardColumns, lostReasons] = await Promise.all([
     getKanbanBoard(authContext.organizationId, filter),
     leadCatalogs.listLostReasons(authContext.organizationId),
   ]);
+  const columns = filterPipelineFocusColumns(boardColumns);
 
   const totalOnBoard = columns.reduce((sum, column) => sum + column.totalCount, 0);
 

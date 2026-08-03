@@ -4,7 +4,7 @@
 // Caller Dashboard — always scoped to the logged-in Caller + optional campaign.
 // ============================================================================
 
-import { listCampaignsForMember, getCampaign } from "@/modules/campaigns";
+import { listCampaignsForMember } from "@/modules/campaigns";
 import { countLeads, listLeads } from "@/modules/leads";
 import { listFollowUps } from "@/modules/follow-ups";
 import { listCallAttempts } from "@/modules/telephony";
@@ -111,14 +111,9 @@ export function makeGetCallerDashboard() {
     });
 
     const leadNameById = new Map(myLeads.map((lead) => [lead.id, lead.fullNameSnapshot]));
-    let campaignName: string | null = null;
-    if (selectedCampaignId) {
-      try {
-        campaignName = (await getCampaign(selectedCampaignId)).name;
-      } catch {
-        campaignName = campaigns.find((c) => c.id === selectedCampaignId)?.name ?? null;
-      }
-    }
+    const campaignName = selectedCampaignId
+      ? (campaigns.find((c) => c.id === selectedCampaignId)?.name ?? null)
+      : null;
 
     return {
       campaigns: campaigns.map((c) => ({ id: c.id, name: c.name, status: c.status })),

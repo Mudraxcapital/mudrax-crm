@@ -12,6 +12,8 @@ import {
   bulkChangeLeadStageSchema,
   bulkCloseLeads,
   bulkCloseLeadsSchema,
+  bulkHardDeleteLeads,
+  bulkHardDeleteLeadsSchema,
   createSavedView,
   createSavedViewSchema,
   deleteSavedView,
@@ -35,7 +37,7 @@ import {
   visibleLeadsFilter,
 } from "@/shared/auth/applyHierarchyListFilter";
 import { resolveImportOwnership } from "@/shared/auth/resolveImportOwnership";
-import { requireOwnerManagerId } from "@/modules/rbac";
+import { hasRole, requireOwnerManagerId } from "@/modules/rbac";
 import {
   LeadAccessDeniedError,
   requireAccessibleLead,
@@ -286,10 +288,14 @@ export async function importLeadsFileAction(input: {
       campaignNameToId,
       ownerManagerId: ownership.ownerManagerId,
       ownerTeamLeadId: ownership.ownerTeamLeadId,
-      existingLeadsFilter: visibleLeadsFilter(authContext, {
-        permissionCode: "lead.import",
-        actorUserId: session.user.id,
-      }),
+      existingLeadsFilter: {
+        ...visibleLeadsFilter(authContext, {
+          permissionCode: "lead.import",
+          actorUserId: session.user.id,
+        }),
+        // Replace/skip/update only against leads already in the target campaign.
+        ...(parsed.data.campaignId ? { campaignId: parsed.data.campaignId } : {}),
+      },
     });
 
     // Ensure assigned agents become Campaign members so Callers can see
@@ -356,6 +362,10 @@ export async function previewImportDuplicatesAction(input: {
   rows: Record<string, string>[];
   columnMapping: Record<string, string | undefined>;
   matchMode: "phone" | "email" | "phone_name" | "phone_or_email";
+  /** Scope duplicate detection to this campaign (required for same-campaign replace). */
+  campaignId?: string;
+  /** New campaign — treat all rows as not yet in CRM for this import target. */
+  forNewCampaign?: boolean;
 }): Promise<{ error?: string; summary?: DuplicateDetectionSummary; reportCsv?: string }> {
   const { authContext } = await requirePermission("lead.import");
   const parsed = previewImportDuplicatesSchema.safeParse(input);
@@ -367,10 +377,16 @@ export async function previewImportDuplicatesAction(input: {
     rows: parsed.data.rows,
     columnMapping: parsed.data.columnMapping,
     matchMode: parsed.data.matchMode,
-    existingLeadsFilter: visibleLeadsFilter(authContext, {
-      permissionCode: "lead.import",
-      actorUserId: authContext.userId,
-    }),
+    // Impossible campaign id → zero CRM matches when importing into a brand-new campaign.
+    existingLeadsFilter: parsed.data.forNewCampaign
+      ? { campaignId: "00000000-0000-4000-8000-000000000000" }
+      : {
+          ...visibleLeadsFilter(authContext, {
+            permissionCode: "lead.import",
+            actorUserId: authContext.userId,
+          }),
+          ...(parsed.data.campaignId ? { campaignId: parsed.data.campaignId } : {}),
+        },
   });
   return { summary, reportCsv: buildDuplicateReportCsv(summary) };
 }
@@ -420,12 +436,18 @@ export async function createCampaignForImportAction(input: {
   }
 
   try {
+    // Prefer explicit / hierarchy-resolved Manager. For All-agents imports the
+    // campaign still needs one ownerManagerId column value — use whatever was
+    // passed (or resolve from members). Leads keep per-assignee ownership.
     const ownership = await resolveImportOwnership({
       authContext,
       agentUserIds: memberUserIds,
       explicitOwnerManagerId: cleanId(input.ownerManagerId),
     });
-    const ownerManagerId = requireOwnerManagerId(authContext, ownership.ownerManagerId);
+    const ownerManagerId = requireOwnerManagerId(
+      authContext,
+      ownership.ownerManagerId ?? cleanId(input.ownerManagerId),
+    );
     const campaign = await createCampaign({
       organizationId: authContext.organizationId,
       input: parsed.data,
@@ -551,6 +573,46 @@ export async function bulkCloseLeadsAction(
     revalidatePath("/leads/pipeline");
     return {
       success: `Closed ${result.succeeded.length} Lead(s); ${result.failed.length} failed.`,
+    };
+  } catch (error) {
+    if (error instanceof LeadAccessDeniedError || error instanceof BulkOperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Admin/Manager only — permanently deletes leads and orphaned customers. */
+export async function bulkHardDeleteLeadsAction(
+  _prev: ProductivityFormState | undefined,
+  formData: FormData,
+): Promise<ProductivityFormState> {
+  const { session, authContext } = await requirePermission("lead.update");
+  if (!hasRole(authContext, "Admin") && !hasRole(authContext, "Manager")) {
+    return { error: "Only Admin or Manager can permanently delete leads." };
+  }
+
+  const leadIds = formData.getAll("leadIds").map(String).filter(Boolean);
+  const parsed = bulkHardDeleteLeadsSchema.safeParse({ leadIds });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  try {
+    await requireAccessibleLeads(authContext, parsed.data.leadIds, {
+      permissionCode: "lead.update",
+      actorUserId: session.user.id,
+    });
+    const result = await bulkHardDeleteLeads({
+      organizationId: authContext.organizationId,
+      leadIds: parsed.data.leadIds,
+    });
+    revalidatePath("/leads");
+    revalidatePath("/leads/pipeline");
+    revalidatePath("/customers");
+    revalidatePath("/campaigns");
+    return {
+      success: `Permanently deleted ${result.succeeded.length} Lead(s) and ${result.deletedCustomerIds.length} Customer(s); ${result.failed.length} failed.`,
     };
   } catch (error) {
     if (error instanceof LeadAccessDeniedError || error instanceof BulkOperationError) {

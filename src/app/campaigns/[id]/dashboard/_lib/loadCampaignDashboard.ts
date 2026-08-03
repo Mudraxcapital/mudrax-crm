@@ -29,7 +29,7 @@ import {
   listCallRecordingsByLeadIds,
   type CallStatus,
 } from "@/modules/telephony";
-import { getUserSummary, listUsers } from "@/modules/users";
+import { getUserSummary } from "@/modules/users";
 import { canViewUserId, type AuthorizationContext } from "@/modules/rbac";
 import {
   agentHierarchyFilter,
@@ -84,12 +84,8 @@ async function fillMissingUserNames(
 }
 
 async function buildUserNameMap(userIds: string[]): Promise<Map<string, string>> {
-  const users = await listUsers({ limit: 5_000 });
-  const map = new Map(
-    users
-      .filter((user) => user.fullName?.trim())
-      .map((user) => [user.id, user.fullName.trim()]),
-  );
+  // Only resolve names for IDs we actually need — avoid loading the full user table.
+  const map = new Map<string, string>();
   await fillMissingUserNames(map, userIds);
   return map;
 }
@@ -224,11 +220,13 @@ export interface CampaignDashboardData {
     remaining: number;
     completed: number;
     fresh: number;
+    ringing: number;
     contacted: number;
     interested: number;
     documents: number;
     approved: number;
     disbursed: number;
+    won: number;
     lost: number;
     followUpsDueToday: number;
     pendingFollowUps: number;
@@ -237,6 +235,8 @@ export interface CampaignDashboardData {
     callsThisMonth: number;
     conversionRate: number;
   };
+  /** Active lead list search query (name / phone / email). */
+  leadSearch: string | null;
   leadStatusDistribution: NamedCount[];
   leadSourceDistribution: NamedCount[];
   callOutcomes: NamedCount[];
@@ -261,7 +261,7 @@ const CONNECTED: CallStatus[] = [
 ];
 
 /** Page size for the campaign dashboard lead list. */
-export const CAMPAIGN_DASHBOARD_LEAD_PAGE_SIZE = 50;
+export const CAMPAIGN_DASHBOARD_LEAD_PAGE_SIZE = 10;
 
 function matchStage(name: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(name));
@@ -344,6 +344,8 @@ export async function loadCampaignDashboard(input: {
   requestedLeadId?: string | null;
   /** 1-based lead list page from ?leadPage=. */
   requestedLeadPage?: number | null;
+  /** Lead list search from ?q= (name / phone / email). */
+  requestedLeadSearch?: string | null;
 }): Promise<CampaignDashboardData> {
   const {
     organizationId,
@@ -358,7 +360,12 @@ export async function loadCampaignDashboard(input: {
     requestedAssigneeId = null,
     requestedLeadId = null,
     requestedLeadPage = null,
+    requestedLeadSearch = null,
   } = input;
+  const leadSearch =
+    typeof requestedLeadSearch === "string" && requestedLeadSearch.trim()
+      ? requestedLeadSearch.trim().slice(0, 120)
+      : null;
 
   const showTeamCharts = mode === "full";
   const actorId = authContext.userId;
@@ -465,6 +472,7 @@ export async function loadCampaignDashboard(input: {
     .reduce((sum, stage) => sum + stage.count, 0);
   const remaining = Math.max(0, totalLeads - completed);
   const won = sumStages(stages, [/^won$/i, /disburs/i]);
+  const ringing = sumStages(stages, [/^ringing$/i]);
   const conversionRate = totalLeads === 0 ? 0 : won / totalLeads;
 
   const [
@@ -692,10 +700,11 @@ export async function loadCampaignDashboard(input: {
     { key: "skipped", label: "skipped", count: abandonedCalls },
   ];
 
-  // Lead list: always load, 50 per page. Callers (mode=self) are scoped to
-  // themselves via baseLeadFilter. Managers see all campaign assignees' leads,
-  // or one person when ?assignee= is set.
-  const leadListScope: ListLeadsFilter =
+  // Lead list: 10 per page, oldest-first so the calling queue stays fixed when
+  // a lead's status is updated. Callers (mode=self) are scoped to themselves
+  // via baseLeadFilter. Managers see all campaign assignees' leads, or one
+  // person when ?assignee= is set.
+  const leadListBaseScope: ListLeadsFilter =
     selectedAssigneeId || mode === "self"
       ? { ...baseLeadFilter }
       : {
@@ -703,6 +712,10 @@ export async function loadCampaignDashboard(input: {
           ...hierarchyLead,
           ...(memberIds.length > 0 ? { assignedToUserIds: memberIds } : {}),
         };
+  const leadListScope: ListLeadsFilter = {
+    ...leadListBaseScope,
+    ...(leadSearch ? { search: leadSearch } : {}),
+  };
 
   const listTotal = await countLeads(organizationId, leadListScope);
   const pageSize = CAMPAIGN_DASHBOARD_LEAD_PAGE_SIZE;
@@ -715,6 +728,7 @@ export async function loadCampaignDashboard(input: {
 
   const leads = await listLeads(organizationId, {
     ...leadListScope,
+    sortCreatedAt: "asc",
     limit: pageSize,
     offset: leadOffset,
   });
@@ -752,10 +766,9 @@ export async function loadCampaignDashboard(input: {
     hasPrev: leadPage > 1,
   };
 
-  // Lost-reason chart: sample from the same scope (cap) so pagination does not
-  // empty the report when browsing page 2+.
+  // Lost-reason chart: sample from assignee scope (cap), not search/page slice.
   const lostReasonSample = await listLeads(organizationId, {
-    ...leadListScope,
+    ...leadListBaseScope,
     limit: 500,
   });
   const lostCounts = new Map<string, { label: string; count: number }>();
@@ -804,6 +817,7 @@ export async function loadCampaignDashboard(input: {
           } else if (leadPaging.hasNext) {
             const peek = await listLeads(organizationId, {
               ...leadListScope,
+              sortCreatedAt: "asc",
               limit: 1,
               offset: leadOffset + leads.length,
             });
@@ -924,6 +938,7 @@ export async function loadCampaignDashboard(input: {
     assigneeLeads,
     leadPaging,
     selectedLead,
+    leadSearch,
     summary: {
       totalLeads,
       assigned: selectedAssigneeId ? totalLeads : assigned,
@@ -931,12 +946,20 @@ export async function loadCampaignDashboard(input: {
       remaining,
       completed,
       fresh: sumStages(stages, [/^fresh$/i, /^new$/i]),
+      ringing,
       contacted: sumStages(stages, [/^contacted$/i]),
       interested: sumStages(stages, [/^interested$/i]),
       documents: sumStages(stages, [/document/i]),
       approved: sumStages(stages, [/approv/i, /submitted to bank/i]),
-      disbursed: sumStages(stages, [/disburs/i, /^won$/i]),
-      lost: sumStages(stages, [/^lost$/i]),
+      disbursed: won,
+      won,
+      lost: sumStages(stages, [
+        /^lost$/i,
+        /^duplicate$/i,
+        /^invalid$/i,
+        /^no need$/i,
+        /^not eligible$/i,
+      ]),
       followUpsDueToday,
       pendingFollowUps,
       callsToday,

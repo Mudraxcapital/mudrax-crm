@@ -72,7 +72,7 @@ export class FakeCampaignRepository implements CampaignRepository {
       organizationId: data.organizationId,
       name: data.name,
       description: data.description ?? null,
-      status: "DRAFT",
+      status: "ACTIVE",
       startDate: data.startDate ?? null,
       endDate: data.endDate ?? null,
       createdByUserId: data.createdByUserId,

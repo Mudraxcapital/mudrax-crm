@@ -26,6 +26,8 @@
         "android.permission.READ_PHONE_NUMBERS",
         "android.permission.READ_CALL_LOG",
         "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MICROPHONE",
         "android.permission.POST_NOTIFICATIONS"

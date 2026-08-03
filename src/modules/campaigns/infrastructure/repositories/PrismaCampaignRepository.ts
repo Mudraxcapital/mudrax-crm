@@ -106,6 +106,7 @@ export class PrismaCampaignRepository implements CampaignRepository {
           organizationId: data.organizationId,
           name: data.name,
           description: data.description ?? null,
+          status: "ACTIVE",
           startDate: data.startDate ?? null,
           endDate: data.endDate ?? null,
           createdByUserId: data.createdByUserId,

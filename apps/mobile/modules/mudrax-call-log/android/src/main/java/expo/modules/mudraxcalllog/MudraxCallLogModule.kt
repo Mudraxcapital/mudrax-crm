@@ -1,9 +1,11 @@
 package expo.modules.mudraxcalllog
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.provider.CallLog
 import androidx.core.content.ContextCompat
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -11,6 +13,8 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class MudraxCallLogModule : Module() {
   private val context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+
+  private var folderPickPromise: Promise? = null
 
   override fun definition() = ModuleDefinition {
     Name("MudraxCallLog")
@@ -20,7 +24,9 @@ class MudraxCallLogModule : Module() {
     }
 
     Function("isCallRecordingAvailable") {
-      CallRecordingController.isAvailable(context)
+      // Dialer-file sync does not need RECORD_AUDIO; keep for local playback helpers.
+      CallRecordingController.isAvailable(context) ||
+        (DialerRecordingSync.folderSnapshot(context)["configured"] as? Boolean == true)
     }
 
     Function("getCallRecordingState") {
@@ -28,6 +34,7 @@ class MudraxCallLogModule : Module() {
     }
 
     AsyncFunction("armCallRecording") { phoneDigits: String ->
+      // Legacy mic path retained for compatibility; JS uses dialer sync instead.
       if (
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
         != PackageManager.PERMISSION_GRANTED
@@ -67,6 +74,75 @@ class MudraxCallLogModule : Module() {
       CallRecordingController.resolveLocalRecordingFile(context, storageReference)?.absolutePath
     }
 
+    Function("getDialerRecordingFolder") {
+      DialerRecordingSync.folderSnapshot(context)
+    }
+
+    AsyncFunction("clearDialerRecordingFolder") {
+      DialerRecordingSync.clearFolder(context)
+    }
+
+    AsyncFunction("pickDialerRecordingFolder") { promise: Promise ->
+      val activity =
+        appContext.currentActivity
+          ?: run {
+            promise.reject(
+              "E_NO_ACTIVITY",
+              "Cannot open folder picker without an active Android activity.",
+              null,
+            )
+            return@AsyncFunction
+          }
+      folderPickPromise?.reject(
+        "E_PICK_CANCELLED",
+        "Replaced by a newer folder pick request.",
+        null,
+      )
+      folderPickPromise = promise
+      try {
+        activity.startActivityForResult(
+          DialerRecordingSync.createPickIntent(),
+          REQUEST_PICK_FOLDER,
+        )
+      } catch (error: Exception) {
+        folderPickPromise = null
+        promise.reject(
+          "E_PICK_FAILED",
+          error.message ?: "Could not open the folder picker.",
+          error,
+        )
+      }
+    }
+
+    AsyncFunction("importDialerCallRecording") {
+        phoneDigits: String,
+        callStartedAtMs: Double,
+        durationSeconds: Int,
+      ->
+      DialerRecordingSync.findAndImport(
+        context,
+        phoneDigits,
+        callStartedAtMs.toLong(),
+        durationSeconds,
+      )
+    }
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode != REQUEST_PICK_FOLDER) return@OnActivityResult
+      val promise = folderPickPromise ?: return@OnActivityResult
+      folderPickPromise = null
+      if (payload.resultCode != Activity.RESULT_OK) {
+        promise.resolve(
+          DialerRecordingSync.folderSnapshot(context).toMutableMap().apply {
+            put("configured", this["configured"] == true)
+            put("cancelled", true)
+          },
+        )
+        return@OnActivityResult
+      }
+      promise.resolve(DialerRecordingSync.persistFolderFromResult(context, payload.data))
+    }
+
     AsyncFunction("findLatestOutboundCall") { phoneDigits: String, sinceEpochMs: Double ->
       if (
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG)
@@ -83,12 +159,13 @@ class MudraxCallLogModule : Module() {
       val needleSuffix = needle.takeLast(suffixLen)
       val sinceMs = sinceEpochMs.toLong().coerceAtLeast(0L)
 
-      val projection = arrayOf(
-        CallLog.Calls.NUMBER,
-        CallLog.Calls.TYPE,
-        CallLog.Calls.DATE,
-        CallLog.Calls.DURATION,
-      )
+      val projection =
+        arrayOf(
+          CallLog.Calls.NUMBER,
+          CallLog.Calls.TYPE,
+          CallLog.Calls.DATE,
+          CallLog.Calls.DURATION,
+        )
 
       // Newest first; restrict to recent window to keep the scan cheap.
       context.contentResolver.query(
@@ -120,6 +197,10 @@ class MudraxCallLogModule : Module() {
 
       null
     }
+  }
+
+  companion object {
+    private const val REQUEST_PICK_FOLDER = 771430
   }
 }
 

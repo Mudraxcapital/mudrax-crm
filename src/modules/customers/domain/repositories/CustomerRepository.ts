@@ -84,6 +84,13 @@ export interface CustomerRepository {
     valueNormalized: string,
   ): Promise<CustomerWithIdentifiers[]>;
 
+  /** Bulk PHONE/EMAIL lookup for import — one query for many normalized values. */
+  listByNormalizedIdentifiers(
+    organizationId: string,
+    type: IdentifierType,
+    valueNormalizedList: string[],
+  ): Promise<CustomerWithIdentifiers[]>;
+
   list(organizationId: string, options?: ListCustomersOptions): Promise<Customer[]>;
   listWithIdentifiers(
     organizationId: string,
@@ -97,6 +104,16 @@ export interface CustomerRepository {
     actor: CustomerAuditActor,
     correlationId?: string | null,
   ): Promise<CustomerWithIdentifiers>;
+
+  /**
+   * Bulk Customer create for Excel/CSV import — chunked transactions instead
+   * of one transaction per row.
+   */
+  createManyWithAudit(
+    items: CreateCustomerData[],
+    actor: CustomerAuditActor,
+    correlationId?: string | null,
+  ): Promise<CustomerWithIdentifiers[]>;
 
   /** Updates the Customer and its "updated" Audit Record atomically. */
   updateWithAudit(

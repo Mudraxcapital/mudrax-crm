@@ -103,7 +103,7 @@ export function makeCreateLead(
       input.fullNameSnapshot?.trim() ||
       "";
     if (fullName.length < 2) {
-      throw new LeadFieldValidationError("Lead Name must be at least 2 characters.");
+      throw new LeadFieldValidationError("Customer Name must be at least 2 characters.");
     }
 
     const created = await repository.createWithAudit(

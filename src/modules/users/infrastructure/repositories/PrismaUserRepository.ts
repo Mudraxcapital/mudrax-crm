@@ -37,7 +37,6 @@ import {
   toUser,
   toUserAuditRecord,
   toUserAuthProfile,
-  toUserScopeContext,
   toUserSessionRecord,
   toUserSummary,
 } from "../mappers/userMapper";
@@ -48,6 +47,9 @@ const TARGET_TYPE_USER = "User";
 const PLACEHOLDER_RECORD_HASH = "pending-hash-chain-trigger";
 /** Large lead/campaign reassignments during user delete. */
 const USER_DELETE_TX_OPTIONS = { maxWait: 15_000, timeout: 120_000 } as const;
+const SESSION_TOUCH_MIN_INTERVAL_MS = 60_000;
+/** Process-local throttle so hot request paths skip a DB write. */
+const sessionTouchAt = new Map<string, number>();
 
 function toAuditJson(user: User): Prisma.InputJsonValue {
   return {
@@ -76,8 +78,30 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async findScopeContext(userId: string): Promise<UserScopeContext | null> {
-    const row = await this.prisma.user.findUnique({ where: { id: userId } });
-    return row ? toUserScopeContext(row) : null;
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        status: true,
+        currentTeamId: true,
+        currentBranchId: true,
+        currentDepartmentId: true,
+        assignedTeamLeadId: true,
+        reportingManagerId: true,
+        canManageCallerAccounts: true,
+      },
+    });
+    if (!row) return null;
+    return {
+      userId: row.id,
+      status: row.status as UserStatus,
+      currentTeamId: row.currentTeamId,
+      currentBranchId: row.currentBranchId,
+      currentDepartmentId: row.currentDepartmentId,
+      assignedTeamLeadId: row.assignedTeamLeadId,
+      reportingManagerId: row.reportingManagerId,
+      canManageCallerAccounts: row.canManageCallerAccounts,
+    };
   }
 
   async findAccountSessionState(userId: string) {
@@ -1185,14 +1209,24 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async touchSessionActivity(sessionId: string): Promise<void> {
-    const session = await this.prisma.userSession.findUnique({ where: { id: sessionId } });
-    if (!session || session.status !== "ACTIVE") return;
-    const staleMs = Date.now() - session.lastActivityAt.getTime();
-    if (staleMs < 60_000) return;
-    await this.prisma.userSession.update({
-      where: { id: sessionId },
-      data: { lastActivityAt: new Date() },
-    });
+    const now = Date.now();
+    const last = sessionTouchAt.get(sessionId);
+    if (last != null && now - last < SESSION_TOUCH_MIN_INTERVAL_MS) return;
+
+    // Coalesce concurrent requests before the DB round-trip.
+    sessionTouchAt.set(sessionId, now);
+    try {
+      await this.prisma.userSession.updateMany({
+        where: {
+          id: sessionId,
+          status: "ACTIVE",
+          lastActivityAt: { lt: new Date(now - SESSION_TOUCH_MIN_INTERVAL_MS) },
+        },
+        data: { lastActivityAt: new Date(now) },
+      });
+    } catch {
+      sessionTouchAt.delete(sessionId);
+    }
   }
 
   async endSession(sessionId: string, reason?: string | null): Promise<void> {

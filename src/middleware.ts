@@ -7,6 +7,6 @@ export { default } from "@/infra/middleware";
 export const config = {
   matcher: [
     // Every path except Next.js internals and common static asset extensions.
-    "/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)",
+    "/((?!_next/static|_next/image|downloads/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|apk)$).*)",
   ],
 };

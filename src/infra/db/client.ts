@@ -16,6 +16,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
 /** Bump when adding/removing Prisma models (extra signal beyond delegate checks). */
 const PRISMA_CLIENT_REVISION = 6;
@@ -23,9 +24,16 @@ const PRISMA_CLIENT_REVISION = 6;
 declare global {
   var __mudraxPrisma: PrismaClient | undefined;
   var __mudraxPrismaRevision: number | undefined;
+  var __mudraxPgPool: Pool | undefined;
 }
 
-function createPrismaClient(): PrismaClient {
+let prismaClient: PrismaClient | undefined;
+
+function getPool(): Pool {
+  if (globalThis.__mudraxPgPool) {
+    return globalThis.__mudraxPgPool;
+  }
+
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
@@ -33,7 +41,23 @@ function createPrismaClient(): PrismaClient {
     );
   }
 
-  const adapter = new PrismaPg({ connectionString });
+  const pool = new Pool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    keepAlive: true,
+  });
+  pool.on("error", (error) => {
+    console.error("[db] Unexpected PostgreSQL pool error", error);
+  });
+
+  globalThis.__mudraxPgPool = pool;
+  return pool;
+}
+
+function createPrismaClient(): PrismaClient {
+  const adapter = new PrismaPg(getPool());
   return new PrismaClient({ adapter });
 }
 
@@ -51,12 +75,13 @@ function clientHasRequiredModels(client: PrismaClient): boolean {
 }
 
 function getPrismaClient(): PrismaClient {
-  const existing = globalThis.__mudraxPrisma;
+  const existing = prismaClient ?? globalThis.__mudraxPrisma;
   if (
     existing &&
     globalThis.__mudraxPrismaRevision === PRISMA_CLIENT_REVISION &&
     clientHasRequiredModels(existing)
   ) {
+    prismaClient = existing;
     return existing;
   }
 
@@ -71,10 +96,10 @@ function getPrismaClient(): PrismaClient {
     );
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.__mudraxPrisma = client;
-    globalThis.__mudraxPrismaRevision = PRISMA_CLIENT_REVISION;
-  }
+  // Always cache — production used to recreate a client per property access.
+  prismaClient = client;
+  globalThis.__mudraxPrisma = client;
+  globalThis.__mudraxPrismaRevision = PRISMA_CLIENT_REVISION;
   return client;
 }
 

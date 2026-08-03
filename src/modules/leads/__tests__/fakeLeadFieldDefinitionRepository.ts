@@ -18,7 +18,7 @@ function systemDefaults(organizationId: string): LeadFieldDefinition[] {
     {
       id: makeId(),
       organizationId,
-      name: "Lead Name",
+      name: "Customer Name",
       internalKey: "full_name",
       fieldType: "TEXT",
       fieldGroup: "PRIMARY",
@@ -208,5 +208,11 @@ export class FakeLeadFieldDefinitionRepository implements LeadFieldDefinitionRep
       else next.push(row);
     }
     this.values.set(leadId, next);
+  }
+
+  async createManyValues(rows: Array<{ leadId: string; values: UpsertLeadFieldValueData[] }>) {
+    for (const row of rows) {
+      await this.upsertValuesForLead(row.leadId, row.values);
+    }
   }
 }

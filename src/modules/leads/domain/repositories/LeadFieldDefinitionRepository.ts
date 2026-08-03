@@ -102,6 +102,11 @@ export interface LeadFieldDefinitionRepository {
     values: UpsertLeadFieldValueData[],
   ): Promise<void>;
 
+  /** Bulk insert of custom field values (import path — no per-lead upserts). */
+  createManyValues(
+    rows: Array<{ leadId: string; values: UpsertLeadFieldValueData[] }>,
+  ): Promise<void>;
+
   ensureSystemDefaults(
     organizationId: string,
     createdByUserId?: string | null,

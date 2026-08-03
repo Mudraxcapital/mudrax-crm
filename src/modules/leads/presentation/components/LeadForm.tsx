@@ -52,6 +52,11 @@ function isLeadIdField(field: LeadFieldDefinitionDto, fields: LeadFieldDefinitio
   return field.fieldType === "PHONE" && field.fieldGroup === "PRIMARY";
 }
 
+function displayFieldName(field: LeadFieldDefinitionDto): string {
+  if (field.internalKey === "full_name") return "Customer Name";
+  return field.name;
+}
+
 export function LeadForm({
   action,
   sources,
@@ -147,7 +152,7 @@ export function LeadForm({
                       htmlFor={name}
                       className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]"
                     >
-                      {field.name}
+                      {displayFieldName(field)}
                       {field.isRequired ? " *" : ""}
                     </label>
                     {leadId ? (
@@ -167,7 +172,7 @@ export function LeadForm({
                         defaultChecked={defaultValue === "true" || defaultValue === "1"}
                         className="size-4 rounded border-[var(--border)]"
                       />
-                      {field.name}
+                      {displayFieldName(field)}
                     </label>
                   ) : field.fieldType === "TEXTAREA" ? (
                     <div className="relative">

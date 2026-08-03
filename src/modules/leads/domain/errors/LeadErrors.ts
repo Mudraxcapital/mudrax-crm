@@ -98,3 +98,11 @@ export class BulkOperationError extends Error {
     this.name = "BulkOperationError";
   }
 }
+
+/** Thrown when a Lead/Customer cannot be hard-deleted due to dependent loan records. */
+export class LeadHardDeleteBlockedError extends Error {
+  constructor(leadId: string, reason: string) {
+    super(`Lead ${leadId} cannot be permanently deleted: ${reason}`);
+    this.name = "LeadHardDeleteBlockedError";
+  }
+}

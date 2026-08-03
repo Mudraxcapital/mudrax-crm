@@ -22,6 +22,7 @@ import { changeLeadStageAction } from "@/modules/leads/presentation/controllers/
 import { assignLeadAction } from "@/modules/leads/presentation/controllers/assignLead.action";
 import { addLeadNoteAction } from "@/modules/leads/presentation/controllers/addLeadNote.action";
 import { updateLeadNoteAction } from "@/modules/leads/presentation/controllers/updateLeadNote.action";
+import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { listFollowUpsByLead } from "@/modules/follow-ups";
 import { FollowUpForm } from "@/modules/follow-ups/presentation/components/FollowUpForm";
 import { CompleteFollowUpForm } from "@/modules/follow-ups/presentation/components/CompleteFollowUpForm";
@@ -182,8 +183,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <LeadStageForm
               action={boundChangeStage}
               currentStageId={lead.currentStageId}
-              stages={stages}
-              lostReasons={lostReasons}
+              stages={excludeTestCatalogRows(stages)}
+              lostReasons={excludeTestCatalogRows(lostReasons)}
             />
           </div>
         </section>

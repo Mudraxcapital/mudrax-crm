@@ -6,16 +6,31 @@
 // ============================================================================
 
 import type { HierarchyPrimaryRole, HierarchyScope } from "@/modules/rbac";
+import type { UserScopeContext } from "../../domain/entities/UserAuthProfile";
 import type { UserRepository } from "../../domain/repositories/UserRepository";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
+
+export interface ResolveVisibleHierarchyPreload {
+  scope?: UserScopeContext | null;
+  primaryRoleName?: HierarchyPrimaryRole | null;
+}
 
 export function makeResolveVisibleHierarchy(
   repository: UserRepository,
   roles: RoleAssignmentPort,
 ) {
-  return async function resolveVisibleHierarchy(userId: string): Promise<HierarchyScope> {
-    const scope = await repository.findScopeContext(userId);
-    const roleName = (await roles.getPrimaryRoleName(userId)) as HierarchyPrimaryRole | null;
+  return async function resolveVisibleHierarchy(
+    userId: string,
+    preload?: ResolveVisibleHierarchyPreload,
+  ): Promise<HierarchyScope> {
+    const scope =
+      preload && "scope" in preload
+        ? (preload.scope ?? null)
+        : await repository.findScopeContext(userId);
+    const roleName =
+      preload && "primaryRoleName" in preload
+        ? (preload.primaryRoleName ?? null)
+        : ((await roles.getPrimaryRoleName(userId)) as HierarchyPrimaryRole | null);
 
     if (!scope || !roleName) {
       return {

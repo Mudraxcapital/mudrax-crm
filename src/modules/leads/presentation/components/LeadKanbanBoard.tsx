@@ -8,10 +8,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { KanbanColumn } from "@/modules/leads";
 import { changeLeadStageKanbanAction } from "../controllers/productivity.actions";
 import { cn } from "@/shared/ui/cn";
+
+const BOARD_SCROLL_STEP = 280;
 
 export function LeadKanbanBoard({
   columns,
@@ -21,15 +23,73 @@ export function LeadKanbanBoard({
   lostReasons: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
+  const boardRef = useRef<HTMLDivElement>(null);
+  const stageNavRef = useRef<HTMLDivElement>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [draggingLeadId, setDraggingLeadId] = useState<string | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
+  const [activeStageId, setActiveStageId] = useState<string | null>(
+    columns[0]?.stageId ?? null,
+  );
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const [pendingLostDrop, setPendingLostDrop] = useState<{
     leadId: string;
     stageId: string;
   } | null>(null);
   const [lostReasonId, setLostReasonId] = useState("");
+
+  function updateBoardScrollState() {
+    const board = boardRef.current;
+    if (!board) return;
+    const maxScroll = board.scrollWidth - board.clientWidth;
+    setCanScrollLeft(board.scrollLeft > 4);
+    setCanScrollRight(maxScroll - board.scrollLeft > 4);
+  }
+
+  useEffect(() => {
+    if (!columns.some((column) => column.stageId === activeStageId)) {
+      setActiveStageId(columns[0]?.stageId ?? null);
+    }
+  }, [columns, activeStageId]);
+
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    updateBoardScrollState();
+    board.addEventListener("scroll", updateBoardScrollState, { passive: true });
+    const observer = new ResizeObserver(updateBoardScrollState);
+    observer.observe(board);
+    return () => {
+      board.removeEventListener("scroll", updateBoardScrollState);
+      observer.disconnect();
+    };
+  }, [columns.length]);
+
+  function scrollBoardBy(delta: number) {
+    boardRef.current?.scrollBy({ left: delta, behavior: "smooth" });
+  }
+
+  function scrollToStage(stageId: string) {
+    const board = boardRef.current;
+    if (!board) return;
+    const column = board.querySelector<HTMLElement>(
+      `[data-stage-id="${CSS.escape(stageId)}"]`,
+    );
+    if (!column) return;
+    const boardRect = board.getBoundingClientRect();
+    const columnRect = column.getBoundingClientRect();
+    const nextLeft = board.scrollLeft + (columnRect.left - boardRect.left) - 12;
+    board.scrollTo({ left: Math.max(0, nextLeft), behavior: "smooth" });
+    setActiveStageId(stageId);
+
+    const nav = stageNavRef.current;
+    const chip = nav?.querySelector<HTMLElement>(
+      `[data-stage-nav-id="${CSS.escape(stageId)}"]`,
+    );
+    chip?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }
 
   function commitStageChange(leadId: string, stageId: string, reasonId?: string) {
     startTransition(async () => {
@@ -136,10 +196,61 @@ export function LeadKanbanBoard({
         </div>
       ) : null}
 
-      <div className="mx-scroll flex gap-3 overflow-x-auto pb-2">
+      {columns.length > 0 ? (
+        <div className="mx-card flex items-center gap-2 p-2">
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-sm disabled:opacity-40"
+            aria-label="Scroll pipeline left"
+            disabled={!canScrollLeft}
+            onClick={() => scrollBoardBy(-BOARD_SCROLL_STEP)}
+          >
+            ←
+          </button>
+          <div
+            ref={stageNavRef}
+            className="mx-scroll flex min-w-0 flex-1 gap-1.5 overflow-x-auto"
+            role="navigation"
+            aria-label="Pipeline stages"
+          >
+            {columns.map((column) => {
+              const active = activeStageId === column.stageId;
+              return (
+                <button
+                  key={column.stageId}
+                  type="button"
+                  data-stage-nav-id={column.stageId}
+                  onClick={() => scrollToStage(column.stageId)}
+                  className={cn(
+                    "shrink-0 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
+                    active
+                      ? "border-accent bg-accent-muted text-foreground"
+                      : "border-border bg-surface text-muted hover:border-accent/40 hover:text-foreground",
+                  )}
+                >
+                  <span className="font-medium">{column.stageName}</span>
+                  <span className="ml-1.5 tabular-nums opacity-70">{column.totalCount}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-sm disabled:opacity-40"
+            aria-label="Scroll pipeline right"
+            disabled={!canScrollRight}
+            onClick={() => scrollBoardBy(BOARD_SCROLL_STEP)}
+          >
+            →
+          </button>
+        </div>
+      ) : null}
+
+      <div ref={boardRef} className="mx-scroll flex gap-3 overflow-x-auto pb-2">
         {columns.map((column) => (
           <section
             key={column.stageId}
+            data-stage-id={column.stageId}
             className={cn(
               "bg-surface-sunken/50 min-w-[240px] flex-1 rounded-xl border border-border transition-colors",
               overStageId === column.stageId && "border-accent bg-accent-muted/30",

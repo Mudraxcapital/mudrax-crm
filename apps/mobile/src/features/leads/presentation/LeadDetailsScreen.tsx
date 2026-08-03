@@ -17,17 +17,18 @@ import {
 import {
   canPlayLocalRecording,
   canUseAndroidCallRecording,
+  chooseDialerMediaPath,
+  getDialerMediaPath,
+  isDialerMediaPathConfigured,
   playStoredCallRecording,
   stopStoredCallRecordingPlayback,
-  tryArmCallRecording,
-  tryDisarmCallRecording,
+  tryImportDialerCallRecording,
 } from "@/features/calling/services/callRecording";
 import { formatCallDuration } from "@/features/calling/domain/callTiming";
 import { placeNativeCall } from "@/features/calling/services/nativeDialer";
 import {
   ensureCallLogPermission,
   isCallLogVerificationAvailable,
-  waitForRecordingSettled,
   waitForVerifiedOutboundCall,
 } from "@/features/calling/services/verifyOutboundCall";
 import { useSimPreferenceStore } from "@/features/calling/store/simPreferenceStore";
@@ -87,6 +88,8 @@ export function LeadDetailsScreen() {
   const [verifying, setVerifying] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
   const [recordCall, setRecordCall] = useState(true);
+  const [mediaPathLabel, setMediaPathLabel] = useState<string | null>(null);
+  const [mediaPathConfigured, setMediaPathConfigured] = useState(false);
   const [playingRecordingId, setPlayingRecordingId] = useState<string | null>(null);
   const verifyCancelRef = useRef({ cancelled: false });
   const [pendingDial, setPendingDial] = useState<{
@@ -120,6 +123,17 @@ export function LeadDetailsScreen() {
   useEffect(() => {
     void hydrateSims();
   }, [hydrateSims]);
+
+  const refreshMediaPath = () => {
+    const folder = getDialerMediaPath();
+    setMediaPathConfigured(Boolean(folder?.configured));
+    setMediaPathLabel(folder?.displayName ?? null);
+  };
+
+  useEffect(() => {
+    if (!recordingSupported) return;
+    refreshMediaPath();
+  }, [recordingSupported]);
 
   const openDisposition = (params: {
     callAttemptId: string | null;
@@ -182,32 +196,37 @@ export function LeadDetailsScreen() {
         signal: verifyCancelRef.current,
       });
       if (verifyCancelRef.current.cancelled) {
-        await tryDisarmCallRecording();
         setCallError("Verification cancelled. No call was logged.");
         return;
       }
       if (!match) {
-        await tryDisarmCallRecording();
         setCallError(
           "No outbound call found in the phone call log. Opening the dial pad without tapping Call does not log anything.",
         );
         return;
       }
 
-      // Let MediaRecorder finish after the call ends before we read the file.
-      await waitForRecordingSettled({
-        signal: verifyCancelRef.current,
-        timeoutMs: 20_000,
-      });
-
-      const recordingSnap = await tryDisarmCallRecording();
-      if (recordingSnap?.storageReference) {
-        recordingCaptured = true;
-      } else if (recordingSnap?.error) {
-        recordingError = recordingSnap.error;
-      } else if (recordCall) {
-        recordingError =
-          "No recording file was captured on this phone. Some devices block call audio.";
+      // TeleCRM-style: import the dialer's recording file (not app mic capture).
+      let recordingSnap = null as Awaited<ReturnType<typeof tryImportDialerCallRecording>>;
+      if (recordCall && recordingSupported) {
+        recordingSnap = await tryImportDialerCallRecording(
+          phone,
+          match.startedAtMs,
+          match.durationSeconds,
+          { signal: verifyCancelRef.current, timeoutMs: 45_000 },
+        );
+        if (verifyCancelRef.current.cancelled) {
+          setCallError("Verification cancelled. No call was logged.");
+          return;
+        }
+        if (recordingSnap?.storageReference) {
+          recordingCaptured = true;
+        } else if (recordingSnap?.error) {
+          recordingError = recordingSnap.error;
+        } else {
+          recordingError =
+            "No dialer recording found. Enable Record all calls in Samsung Phone or ODialer and set Media Path.";
+        }
       }
 
       let callAttemptId: string | null = null;
@@ -269,7 +288,6 @@ export function LeadDetailsScreen() {
         recordingError,
       });
     } catch (err) {
-      await tryDisarmCallRecording();
       setCallError(err instanceof Error ? err.message : "Could not verify the call.");
     } finally {
       setVerifying(false);
@@ -347,9 +365,16 @@ export function LeadDetailsScreen() {
         return;
       }
 
-      // Best-effort Android recording — never blocks dialing if it fails.
-      if (recordCall && recordingSupported) {
-        await tryArmCallRecording(data.phoneSnapshot);
+      // Dialer records the call; Mudrax imports the file after hangup.
+      if (recordCall && recordingSupported && !isDialerMediaPathConfigured()) {
+        const picked = await chooseDialerMediaPath();
+        refreshMediaPath();
+        if (!picked?.configured) {
+          Alert.alert(
+            "Media Path recommended",
+            "Select the folder where Samsung Phone or ODialer saves call recordings (TeleCRM-style Media Path). You can still place the call without it — MediaStore may find the file.",
+          );
+        }
       }
 
       // Do NOT CRM-log yet — only after the device call log shows an outbound dial.
@@ -362,7 +387,6 @@ export function LeadDetailsScreen() {
         setPendingDial({ phone: data.phoneSnapshot, dialOpenedAtMs });
       }
     } catch (err) {
-      await tryDisarmCallRecording();
       setCallError(err instanceof Error ? err.message : "Could not start the call.");
     } finally {
       setCalling(false);
@@ -476,9 +500,26 @@ export function LeadDetailsScreen() {
             Call recording
           </Text>
           <Text style={{ color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 8 }}>
-            Android only. Recording starts when you tap Call and stops when the call ends. Put the
-            call on speakerphone so the mic can pick up voice — otherwise the file may be silent.
+            Like TeleCRM: your phone dialer records the call (Samsung Phone or ODialer with Record
+            all calls). Mudrax imports that file after you hang up — turn off Wi‑Fi Calling.
           </Text>
+          <Text style={{ color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 8 }}>
+            Media Path:{" "}
+            {mediaPathConfigured
+              ? mediaPathLabel ?? "Folder selected"
+              : "Not set — tap below to choose the dialer recordings folder"}
+          </Text>
+          <AppButton
+            label={mediaPathConfigured ? "Change Media Path" : "Set Media Path"}
+            variant="secondary"
+            onPress={() => {
+              void (async () => {
+                await chooseDialerMediaPath();
+                refreshMediaPath();
+              })();
+            }}
+            style={{ marginBottom: 10, minHeight: 48 }}
+          />
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Pressable
               onPress={() => setRecordCall(true)}
@@ -495,7 +536,7 @@ export function LeadDetailsScreen() {
                   fontWeight: "700",
                 }}
               >
-                Record on
+                Import on
               </Text>
             </Pressable>
             <Pressable
@@ -513,7 +554,7 @@ export function LeadDetailsScreen() {
                   fontWeight: "700",
                 }}
               >
-                Record off
+                Import off
               </Text>
             </Pressable>
           </View>
@@ -535,16 +576,14 @@ export function LeadDetailsScreen() {
             Waiting for a real call…
           </Text>
           <Text style={{ color: colors.onSurfaceVariant, marginBottom: 12, fontSize: 13 }}>
-            Place the call from the dialer and hang up when done. Mudrax only logs after your
-            phone call log shows an outbound call to this number — opening the dial pad alone
-            does not count.
+            Place the call from the dialer and hang up when done. Mudrax logs the call from your
+            phone call log, then imports the dialer recording file.
           </Text>
           <AppButton
             label="Cancel"
             variant="secondary"
             onPress={() => {
               verifyCancelRef.current.cancelled = true;
-              void tryDisarmCallRecording();
             }}
           />
         </View>
@@ -570,8 +609,8 @@ export function LeadDetailsScreen() {
 
       <Section title="Call recordings" colors={colors}>
         <Text style={{ color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 10 }}>
-          Audio stays on this phone. CRM only stores the file reference — play recordings here
-          on the device that made the call.
+          Imported from the phone dialer after each call and uploaded to CRM when possible. Local
+          copies can also be played here on this device.
         </Text>
         {recordingsQuery.isLoading ? (
           <Text style={{ color: colors.onSurfaceVariant }}>Loading recordings…</Text>

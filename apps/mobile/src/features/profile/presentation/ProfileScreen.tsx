@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Controller, useForm } from "react-hook-form";
 import { useTheme } from "@/core/theme";
 import { useAuthMe, useRoleNames } from "@/features/auth/hooks/usePermissions";
 import { useSessionStore } from "@/features/auth/store/sessionStore";
+import {
+  canUseAndroidCallRecording,
+  chooseDialerMediaPath,
+  getDialerMediaPath,
+  resetDialerMediaPath,
+} from "@/features/calling/services/callRecording";
 import { changePassword } from "@/features/profile/data/profileRepository";
 import { profileDisplayName } from "@/features/profile/domain/profileDisplay";
 import { AppButton, Screen, TextField, UserAvatar } from "@/shared/ui";
@@ -30,6 +36,20 @@ export function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mediaPathLabel, setMediaPathLabel] = useState<string | null>(null);
+  const [mediaPathConfigured, setMediaPathConfigured] = useState(false);
+  const recordingSupported = canUseAndroidCallRecording();
+
+  const refreshMediaPath = () => {
+    const folder = getDialerMediaPath();
+    setMediaPathConfigured(Boolean(folder?.configured));
+    setMediaPathLabel(folder?.displayName ?? null);
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || !recordingSupported) return;
+    refreshMediaPath();
+  }, [recordingSupported]);
 
   const { control, handleSubmit, reset } = useForm<PasswordForm>({
     defaultValues: {
@@ -245,6 +265,58 @@ export function ProfileScreen() {
           </View>
         </>
       )}
+
+      {recordingSupported ? (
+        <>
+          <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
+            Call recording (Media Path)
+          </Text>
+          <Text style={{ color: colors.onSurfaceVariant, marginBottom: 10, fontSize: 13 }}>
+            TeleCRM-style sync: enable Record all calls in Samsung Phone or ODialer, then select
+            that recordings folder here. Mudrax imports the file after each CRM call.
+          </Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.surfaceVariant, borderColor: colors.outline },
+            ]}
+          >
+            <Text style={{ color: colors.onSurface, fontWeight: "700" }}>
+              {mediaPathConfigured
+                ? mediaPathLabel ?? "Folder selected"
+                : "No folder selected"}
+            </Text>
+            <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, fontSize: 13 }}>
+              {mediaPathConfigured
+                ? "Dialer recordings in this folder will be imported after outbound CRM calls."
+                : "Required for reliable import on most phones (same as TeleCRM Media Path)."}
+            </Text>
+            <AppButton
+              label={mediaPathConfigured ? "Change folder" : "Select folder"}
+              onPress={() => {
+                void (async () => {
+                  await chooseDialerMediaPath();
+                  refreshMediaPath();
+                })();
+              }}
+              style={{ marginTop: 12 }}
+            />
+            {mediaPathConfigured ? (
+              <AppButton
+                label="Clear folder"
+                variant="secondary"
+                onPress={() => {
+                  void (async () => {
+                    await resetDialerMediaPath();
+                    refreshMediaPath();
+                  })();
+                }}
+                style={{ marginTop: 8 }}
+              />
+            ) : null}
+          </View>
+        </>
+      ) : null}
 
       <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Session</Text>
       <AppButton

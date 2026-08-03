@@ -97,6 +97,19 @@ export interface ListLeadsFilter {
     teamLeadId: string;
     callerUserIds: string[];
   };
+  /**
+   * Import dedup: match any of these phoneSnapshot values (exact).
+   * Combined with emailSnapshots via OR when both are set.
+   */
+  phoneSnapshots?: string[];
+  /** Import dedup: match any of these emailSnapshot values (case-insensitive exact). */
+  emailSnapshots?: string[];
+  /**
+   * Primary list sort on Lead.createdAt. Always paired with id ASC as a
+   * stable tie-breaker so status updates do not reshuffle the queue.
+   * Default: newest first (`desc`).
+   */
+  sortCreatedAt?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -151,6 +164,16 @@ export interface LeadRepository {
     correlationId?: string | null,
   ): Promise<Lead>;
 
+  /**
+   * Bulk Lead create for Excel/CSV import — one transaction per chunk
+   * (leads + assignments + audit rows) instead of N round-trips.
+   */
+  createManyWithAudit(
+    items: CreateLeadData[],
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead[]>;
+
   /** Updates the Lead's editable fields and its "updated" Audit Record atomically. */
   updateWithAudit(
     id: string,
@@ -194,4 +217,17 @@ export interface LeadRepository {
 
   /** Read-only Audit Trail access for the whole Organization (Activity Timeline / CRM Dashboard "Recent Activities"). */
   listRecentAuditLog(organizationId: string, limit: number): Promise<LeadAuditRecord[]>;
+
+  /**
+   * Permanently removes Leads (and orphaned Customers with no remaining Leads /
+   * loan records). Used by Admin/Manager delete — not soft-close.
+   */
+  hardDeleteLeadsWithCustomers(
+    organizationId: string,
+    leadIds: string[],
+  ): Promise<{
+    deletedLeadIds: string[];
+    deletedCustomerIds: string[];
+    failed: Array<{ leadId: string; error: string }>;
+  }>;
 }

@@ -7,16 +7,20 @@
 
 import { parseCsv } from "@/shared/csv/csv";
 import type {
+  CreateLeadData,
   LeadRepository,
   ListLeadsFilter,
 } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
 import type { ImportBatchRepository } from "../../domain/repositories/ImportBatchRepository";
 import type { LeadNoteRepository } from "../../domain/repositories/LeadNoteRepository";
-import type { LeadFieldDefinitionRepository } from "../../domain/repositories/LeadFieldDefinitionRepository";
+import type {
+  LeadFieldDefinitionRepository,
+  UpsertLeadFieldValueData,
+} from "../../domain/repositories/LeadFieldDefinitionRepository";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
 import type { CustomerLookupPort } from "../ports/CustomerLookupPort";
-import type { UserLookupPort } from "../ports/UserLookupPort";
+import type { UserLookupPort, UserLookupSummary } from "../ports/UserLookupPort";
 import {
   ImportBatchNotFoundError,
   InvalidLeadSourceReferenceError,
@@ -129,14 +133,67 @@ function resolveAgentId(
   return null;
 }
 
+async function listLeadsForImportDedup(
+  leadRepository: LeadRepository,
+  organizationId: string,
+  input: {
+    baseFilter?: ListLeadsFilter;
+    phoneSnapshots: string[];
+    emailSnapshots: string[];
+  },
+) {
+  const phones = input.phoneSnapshots;
+  const emails = input.emailSnapshots;
+  if (phones.length === 0 && emails.length === 0) return [];
+
+  const CHUNK = 800;
+  const byId = new Map<string, Awaited<ReturnType<LeadRepository["list"]>>[number]>();
+  const maxChunks = Math.max(
+    Math.ceil(phones.length / CHUNK) || 0,
+    Math.ceil(emails.length / CHUNK) || 0,
+    1,
+  );
+
+  for (let chunkIndex = 0; chunkIndex < maxChunks; chunkIndex++) {
+    const phoneChunk = phones.slice(chunkIndex * CHUNK, chunkIndex * CHUNK + CHUNK);
+    const emailChunk = emails.slice(chunkIndex * CHUNK, chunkIndex * CHUNK + CHUNK);
+    if (phoneChunk.length === 0 && emailChunk.length === 0) continue;
+    const rows = await leadRepository.list(organizationId, {
+      ...input.baseFilter,
+      phoneSnapshots: phoneChunk,
+      emailSnapshots: emailChunk,
+      limit: Math.max(phoneChunk.length + emailChunk.length, 1) * 5,
+    });
+    for (const row of rows) byId.set(row.id, row);
+  }
+
+  return [...byId.values()];
+}
+
+/** Expand a phone into common CRM storage variants for targeted dedup queries. */
+function phoneLookupVariants(phone: string): string[] {
+  const trimmed = phone.trim();
+  if (!trimmed) return [];
+  const digits = trimmed.replace(/\D+/g, "");
+  const last10 = digits.length > 10 ? digits.slice(-10) : digits;
+  const variants = new Set<string>([trimmed]);
+  if (digits) variants.add(digits);
+  if (last10) {
+    variants.add(last10);
+    variants.add(`91${last10}`);
+    variants.add(`+91${last10}`);
+  }
+  return [...variants];
+}
+
 /** Ownership for a newly created Lead — prefer assignee hierarchy when present. */
-async function ownershipForAssignee(
-  userLookup: UserLookupPort,
+function ownershipForAssignee(
+  agentsById: Map<string, UserLookupSummary>,
   agentId: string | null | undefined,
   fallback: { ownerManagerId: string | null; ownerTeamLeadId: string | null },
-): Promise<{ ownerManagerId: string | null; ownerTeamLeadId: string | null }> {
+): { ownerManagerId: string | null; ownerTeamLeadId: string | null } {
   if (!agentId) return fallback;
-  const user = await userLookup.findById(agentId);
+  const user = agentsById.get(agentId);
   if (!user?.roleName) return fallback;
 
   if (user.roleName === "Caller" && !user.assignedTeamLeadId) {
@@ -149,7 +206,7 @@ async function ownershipForAssignee(
     };
   }
   if (user.roleName === "Caller" && user.assignedTeamLeadId) {
-    const teamLead = await userLookup.findById(user.assignedTeamLeadId);
+    const teamLead = agentsById.get(user.assignedTeamLeadId);
     return {
       ownerManagerId: teamLead?.reportingManagerId ?? null,
       ownerTeamLeadId: user.assignedTeamLeadId,
@@ -222,17 +279,42 @@ export function makeImportLeadsCsv(
     ]);
     const sourceByName = new Map(sources.map((item) => [item.name.trim().toLowerCase(), item.id]));
     const stageById = new Map(stages.map((stage) => [stage.id, stage]));
-    const lostStage = stages.find(
-      (stage) => stage.bucket === "CLOSED" && stage.closeOutcome === "LOST" && stage.isActive,
+    const productionStages = stages.filter(
+      (stage) => !/^integration\s*test/i.test(stage.name.trim()),
+    );
+    // Prefer "Lost" for soft-close fallback — never park replaced leads on the
+    // "Duplicate" stage (callers expect the re-imported copy to be Fresh only).
+    const lostStage =
+      productionStages.find(
+        (stage) =>
+          stage.bucket === "CLOSED" &&
+          stage.closeOutcome === "LOST" &&
+          stage.isActive &&
+          /^lost$/i.test(stage.name.trim()),
+      ) ??
+      productionStages.find(
+        (stage) =>
+          stage.bucket === "CLOSED" &&
+          stage.closeOutcome === "LOST" &&
+          stage.isActive &&
+          !/^duplicate$/i.test(stage.name.trim()),
+      ) ??
+      productionStages.find(
+        (stage) => stage.bucket === "CLOSED" && stage.closeOutcome === "LOST" && stage.isActive,
+      );
+    const productionLostReasons = lostReasons.filter(
+      (reason) => !/^integration\s*test/i.test(reason.name.trim()),
     );
     const replaceLostReason =
-      lostReasons.find((reason) => /replaced|import/i.test(reason.name)) ??
-      lostReasons.find((reason) => /duplicate/i.test(reason.name)) ??
-      lostReasons[0];
+      productionLostReasons.find((reason) => /replaced|import/i.test(reason.name)) ??
+      productionLostReasons.find((reason) => /not interested/i.test(reason.name)) ??
+      productionLostReasons.find((reason) => !/duplicate/i.test(reason.name)) ??
+      productionLostReasons[0];
     const archiveLostReason =
-      lostReasons.find((reason) => /archiv/i.test(reason.name)) ??
-      lostReasons.find((reason) => /duplicate/i.test(reason.name)) ??
-      lostReasons[0];
+      productionLostReasons.find((reason) => /archiv/i.test(reason.name)) ??
+      productionLostReasons.find((reason) => /not interested/i.test(reason.name)) ??
+      productionLostReasons.find((reason) => !/duplicate/i.test(reason.name)) ??
+      productionLostReasons[0];
     const selectedStageIds = new Set(input.selectedStageIds ?? []);
 
     const agents = userLookup.listByOrganization
@@ -272,10 +354,21 @@ export function makeImportLeadsCsv(
     const emailHeader = mapGet(mapping, "email");
     const duplicateResolution = resolveDuplicateMode(input);
     const matchMode: DuplicateMatchMode = input.duplicateMatchMode ?? "phone";
+    const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
 
-    const existingLeads = await leadRepository.list(organizationId, {
-      ...command.existingLeadsFilter,
-      limit: command.existingLeadsFilter?.limit ?? 100_000,
+    // Targeted dedup: only load leads matching phones/emails in this file.
+    const phoneSnapshots = new Set<string>();
+    const emailSnapshots = new Set<string>();
+    for (const row of tableRows) {
+      const phone = mappedCell(row, phoneHeader);
+      const email = mappedCell(row, emailHeader);
+      for (const variant of phoneLookupVariants(phone)) phoneSnapshots.add(variant);
+      if (email) emailSnapshots.add(email);
+    }
+    const existingLeads = await listLeadsForImportDedup(leadRepository, organizationId, {
+      baseFilter: command.existingLeadsFilter,
+      phoneSnapshots: [...phoneSnapshots],
+      emailSnapshots: [...emailSnapshots],
     });
     const classifications = classifyImportDuplicates({
       rows: tableRows.map((row, index) => ({
@@ -300,7 +393,7 @@ export function makeImportLeadsCsv(
         };
       }),
       matchMode,
-      stages,
+      stages: productionStages,
     });
     const classByRow = new Map(
       [
@@ -329,7 +422,18 @@ export function makeImportLeadsCsv(
       if (isDup && (duplicateResolution === "update_existing" || duplicateResolution === "merge")) {
         continue; // handled as update path, not new create
       }
-      if (isDup && isStatusStrategy) {
+      if (duplicateResolution === "replace_selected_statuses") {
+        // Replace only re-imports CRM matches in checked statuses — not the rest of the file.
+        const stageId = classification?.existingStageId;
+        if (
+          !isDup ||
+          classification?.origin !== "crm" ||
+          !stageId ||
+          !selectedStageIds.has(stageId)
+        ) {
+          continue;
+        }
+      } else if (isDup && isStatusStrategy) {
         const stageId = classification?.existingStageId;
         if (!stageId || !selectedStageIds.has(stageId)) continue;
       }
@@ -412,8 +516,33 @@ export function makeImportLeadsCsv(
       strategy ? `Distribution: ${strategy}` : null,
       selectedAgentIds.length > 0 ? `Agents: ${selectedAgentIds.length}` : null,
     ].filter((item): item is string => Boolean(item));
-    const importRows = [];
+    const importRows: Array<{
+      importBatchId: string;
+      rowNumber: number;
+      rawData: Record<string, string>;
+      parseStatus: "PARSED" | "INVALID";
+      parseErrors: string[] | null;
+      resolvedCustomerId?: string | null;
+    }> = [];
     let rolledBack = false;
+
+    type PendingCreate = {
+      rowNumber: number;
+      row: Record<string, string>;
+      fullName: string;
+      phone: string;
+      email: string;
+      notes: string;
+      agentId: string | null;
+      leadOwnership: { ownerManagerId: string | null; ownerTeamLeadId: string | null };
+      resolvedSourceId: string;
+      resolvedCampaignId: string | null;
+      systemUpdates: Partial<
+        Record<"fullNameSnapshot" | "phoneSnapshot" | "emailSnapshot", string | null>
+      >;
+      customValues: UpsertLeadFieldValueData[];
+    };
+    const pendingCreates: PendingCreate[] = [];
 
     try {
       for (let index = 0; index < tableRows.length; index++) {
@@ -422,8 +551,6 @@ export function makeImportLeadsCsv(
         const fullName = mappedCell(row, nameHeader);
         const phone = mappedCell(row, phoneHeader);
         const email = mappedCell(row, emailHeader);
-        const city = mappedCell(row, mapGet(mapping, "city"));
-        const state = mappedCell(row, mapGet(mapping, "state"));
         const sourceName = mappedCell(row, mapGet(mapping, "source"));
         const campaignName = mappedCell(row, mapGet(mapping, "campaign"));
         const agentRaw = mappedCell(row, mapGet(mapping, "assignedAgent"));
@@ -503,6 +630,32 @@ export function makeImportLeadsCsv(
         }
 
         try {
+          // Replace mode only re-imports checked CRM statuses — skip everything else.
+          if (duplicateResolution === "replace_selected_statuses") {
+            const stageId = classification?.existingStageId;
+            const isSelectedCrmDup =
+              isDuplicate &&
+              classification?.origin === "crm" &&
+              Boolean(stageId) &&
+              selectedStageIds.has(stageId!);
+            if (!isSelectedCrmDup) {
+              skippedDuplicateCount += 1;
+              importRows.push({
+                importBatchId: batch.id,
+                rowNumber,
+                rawData: row,
+                parseStatus: "INVALID" as const,
+                parseErrors: [
+                  isDuplicate
+                    ? `Duplicate in status “${classification?.existingStageName ?? "unknown"}” — not selected; skipped`
+                    : "Replace selected statuses only re-imports checked CRM matches — skipped",
+                ],
+                resolvedCustomerId: classification?.existingCustomerId ?? null,
+              });
+              continue;
+            }
+          }
+
           if (isDuplicate) {
             duplicateRowCount += 1;
 
@@ -536,41 +689,71 @@ export function makeImportLeadsCsv(
                 continue;
               }
 
-              if (!lostStage || !replaceLostReason) {
-                throw new InvalidLeadStageReferenceError(
-                  "(no Closed-Lost Lead Stage / Lost Reason configured for replace/archive)",
-                );
-              }
-
               const existingLeadId = classification?.existingLeadId;
-              if (existingLeadId) {
+              if (existingLeadId && duplicateResolution === "replace_selected_statuses") {
+                // Prefer hard-delete so the campaign only shows the Fresh re-import.
+                const deleted = await leadRepository.hardDeleteLeadsWithCustomers(
+                  organizationId,
+                  [existingLeadId],
+                );
+                if (deleted.deletedLeadIds.includes(existingLeadId)) {
+                  replacedCount += 1;
+                } else if (lostStage && replaceLostReason) {
+                  try {
+                    await changeLeadStage({
+                      id: existingLeadId,
+                      input: {
+                        stageId: lostStage.id,
+                        lostReasonId: replaceLostReason.id,
+                      },
+                      actor,
+                      correlationId: batch.id,
+                    });
+                    replacedCount += 1;
+                    if (actor.actorId) {
+                      await noteRepository.createWithAudit(
+                        {
+                          leadId: existingLeadId,
+                          authorUserId: actor.actorId,
+                          body: `Replaced via import from ${input.sourceFileName} row ${rowNumber} (closed before re-import as Fresh).`,
+                        },
+                        actor,
+                      );
+                    }
+                  } catch (closeError) {
+                    if (!(closeError instanceof LeadAlreadyClosedError)) {
+                      throw closeError;
+                    }
+                  }
+                } else {
+                  throw new InvalidLeadStageReferenceError(
+                    "(no Closed-Lost Lead Stage / Lost Reason configured for replace)",
+                  );
+                }
+                // Fall through to create a new Lead as Fresh.
+              } else if (existingLeadId && duplicateResolution === "archive_and_reimport") {
+                if (!lostStage || !archiveLostReason) {
+                  throw new InvalidLeadStageReferenceError(
+                    "(no Closed-Lost Lead Stage / Lost Reason configured for archive)",
+                  );
+                }
                 try {
                   await changeLeadStage({
                     id: existingLeadId,
                     input: {
                       stageId: lostStage.id,
-                      lostReasonId:
-                        duplicateResolution === "archive_and_reimport"
-                          ? archiveLostReason!.id
-                          : replaceLostReason.id,
+                      lostReasonId: archiveLostReason.id,
                     },
                     actor,
                     correlationId: batch.id,
                   });
-                  if (duplicateResolution === "archive_and_reimport") {
-                    archivedCount += 1;
-                  } else {
-                    replacedCount += 1;
-                  }
+                  archivedCount += 1;
                   if (actor.actorId) {
                     await noteRepository.createWithAudit(
                       {
                         leadId: existingLeadId,
                         authorUserId: actor.actorId,
-                        body:
-                          duplicateResolution === "archive_and_reimport"
-                            ? `Archived via import from ${input.sourceFileName} row ${rowNumber} (history retained).`
-                            : `Replaced via import from ${input.sourceFileName} row ${rowNumber} (closed before re-import).`,
+                        body: `Archived via import from ${input.sourceFileName} row ${rowNumber} (history retained).`,
                       },
                       actor,
                     );
@@ -579,10 +762,9 @@ export function makeImportLeadsCsv(
                   if (!(closeError instanceof LeadAlreadyClosedError)) {
                     throw closeError;
                   }
-                  // Already closed — still allow creating the fresh copy.
                 }
+                // Fall through to create a new Lead from the Excel row.
               }
-              // Fall through to create a new Lead from the Excel row.
             } else if (
               (duplicateResolution === "update_existing" || duplicateResolution === "merge") &&
               classification?.existingLeadId
@@ -685,18 +867,9 @@ export function makeImportLeadsCsv(
           const agentId = distAgent ?? fileAgent;
           if (agentId) assignedAgentIds.add(agentId);
 
-          const leadOwnership = await ownershipForAssignee(userLookup, agentId, {
+          const leadOwnership = ownershipForAssignee(agentsById, agentId, {
             ownerManagerId,
             ownerTeamLeadId,
-          });
-
-          const customer = await customerLookup.resolveOrCreate!({
-            organizationId,
-            fullName,
-            phone: phone || null,
-            email: email || null,
-            actorUserId: actor.actorId ?? organizationId,
-            ownerManagerId: leadOwnership.ownerManagerId,
           });
 
           const resolvedSourceId =
@@ -710,59 +883,19 @@ export function makeImportLeadsCsv(
             input.campaignId ??
             null;
 
-          const lead = await leadRepository.createWithAudit(
-            {
-              organizationId,
-              customerId: customer.id,
-              leadSourceId: resolvedSourceId,
-              currentStageId: defaultStage.id,
-              campaignId: resolvedCampaignId,
-              ownerManagerId: leadOwnership.ownerManagerId,
-              ownerTeamLeadId: leadOwnership.ownerTeamLeadId,
-              fullNameSnapshot: systemUpdates.fullNameSnapshot ?? fullName,
-              phoneSnapshot: systemUpdates.phoneSnapshot || phone || null,
-              emailSnapshot: systemUpdates.emailSnapshot || email || null,
-              initialAssignment: agentId
-                ? {
-                    assignedToUserId: agentId,
-                    assignedByUserId: actor.actorId ?? null,
-                    assignmentType: "INITIAL",
-                  }
-                : null,
-            },
-            actor,
-          );
-          if (customValues.length > 0) {
-            await fieldRepository.upsertValuesForLead(lead.id, customValues);
-          }
-          createdLeadIds.push(lead.id);
-          createdRowCount += 1;
-
-          const noteParts = [
-            notes,
-            city ? `City: ${city}` : "",
-            state ? `State: ${state}` : "",
-            `Imported from ${input.sourceFileName}${input.sheetName ? ` / ${input.sheetName}` : ""} (row ${rowNumber})`,
-            isDuplicate ? `Imported despite duplicate (${classification?.matchReason})` : "",
-          ].filter(Boolean);
-          if (noteParts.length > 0 && actor.actorId) {
-            await noteRepository.createWithAudit(
-              {
-                leadId: lead.id,
-                authorUserId: actor.actorId,
-                body: noteParts.join("\n"),
-              },
-              actor,
-            );
-          }
-
-          importRows.push({
-            importBatchId: batch.id,
+          pendingCreates.push({
             rowNumber,
-            rawData: row,
-            parseStatus: "PARSED" as const,
-            parseErrors: null,
-            resolvedCustomerId: customer.id,
+            row,
+            fullName,
+            phone,
+            email,
+            notes,
+            agentId,
+            leadOwnership,
+            resolvedSourceId,
+            resolvedCampaignId,
+            systemUpdates,
+            customValues,
           });
         } catch (error) {
           skippedInvalidCount += 1;
@@ -779,6 +912,107 @@ export function makeImportLeadsCsv(
         }
       }
 
+      if (pendingCreates.length > 0) {
+        if (!customerLookup.resolveOrCreateMany && !customerLookup.resolveOrCreate) {
+          throw new Error("Customer resolveOrCreate port is required for CSV import.");
+        }
+
+        const customers = customerLookup.resolveOrCreateMany
+          ? await customerLookup.resolveOrCreateMany(
+              pendingCreates.map((item) => ({
+                organizationId,
+                fullName: item.fullName,
+                phone: item.phone || null,
+                email: item.email || null,
+                actorUserId: actor.actorId ?? organizationId,
+                ownerManagerId: item.leadOwnership.ownerManagerId,
+              })),
+            )
+          : await Promise.all(
+              pendingCreates.map((item) =>
+                customerLookup.resolveOrCreate!({
+                  organizationId,
+                  fullName: item.fullName,
+                  phone: item.phone || null,
+                  email: item.email || null,
+                  actorUserId: actor.actorId ?? organizationId,
+                  ownerManagerId: item.leadOwnership.ownerManagerId,
+                }),
+              ),
+            );
+
+        const leadPayloads: CreateLeadData[] = pendingCreates.map((item, i) => ({
+          organizationId,
+          customerId: customers[i]!.id,
+          leadSourceId: item.resolvedSourceId,
+          currentStageId: defaultStage.id,
+          campaignId: item.resolvedCampaignId,
+          ownerManagerId: item.leadOwnership.ownerManagerId,
+          ownerTeamLeadId: item.leadOwnership.ownerTeamLeadId,
+          fullNameSnapshot: item.systemUpdates.fullNameSnapshot ?? item.fullName,
+          phoneSnapshot: item.systemUpdates.phoneSnapshot || item.phone || null,
+          emailSnapshot: item.systemUpdates.emailSnapshot || item.email || null,
+          initialAssignment: item.agentId
+            ? {
+                assignedToUserId: item.agentId,
+                assignedByUserId: actor.actorId ?? null,
+                assignmentType: "INITIAL" as const,
+              }
+            : null,
+        }));
+
+        const createdLeads = await leadRepository.createManyWithAudit(
+          leadPayloads,
+          actor,
+          batch.id,
+        );
+
+        const customFieldRows: Array<{ leadId: string; values: UpsertLeadFieldValueData[] }> = [];
+        const noteJobs: Array<Promise<unknown>> = [];
+        for (let i = 0; i < pendingCreates.length; i++) {
+          const item = pendingCreates[i]!;
+          const lead = createdLeads[i]!;
+          const customer = customers[i]!;
+          createdLeadIds.push(lead.id);
+          createdRowCount += 1;
+          if (item.customValues.length > 0) {
+            customFieldRows.push({ leadId: lead.id, values: item.customValues });
+          }
+
+          // Skip per-row provenance notes (ImportRow already records source).
+          // Only persist an explicit Notes column to keep import in seconds.
+          if (item.notes && actor.actorId) {
+            noteJobs.push(
+              noteRepository.createWithAudit(
+                {
+                  leadId: lead.id,
+                  authorUserId: actor.actorId,
+                  body: item.notes,
+                },
+                actor,
+              ),
+            );
+          }
+
+          importRows.push({
+            importBatchId: batch.id,
+            rowNumber: item.rowNumber,
+            rawData: item.row,
+            parseStatus: "PARSED",
+            parseErrors: null,
+            resolvedCustomerId: customer.id,
+          });
+        }
+
+        await Promise.all([
+          customFieldRows.length > 0
+            ? fieldRepository.createManyValues(customFieldRows)
+            : Promise.resolve(),
+          ...noteJobs,
+        ]);
+      }
+
+      importRows.sort((a, b) => a.rowNumber - b.rowNumber);
       await importRepository.createRows(importRows);
       const updated = await importRepository.updateCounts(batch.id, {
         status: "COMPLETED",
@@ -892,22 +1126,36 @@ export function makePreviewImportDuplicates(
     const phoneHeader = mapGet(mapping, "phone");
     const emailHeader = mapGet(mapping, "email");
 
+    const phoneSnapshots = new Set<string>();
+    const emailSnapshots = new Set<string>();
+    const candidates = rows.map((row, index) => {
+      const phone = mappedCell(row, phoneHeader);
+      const email = mappedCell(row, emailHeader);
+      for (const variant of phoneLookupVariants(phone)) phoneSnapshots.add(variant);
+      if (email) emailSnapshots.add(email);
+      return {
+        rowNumber: index + 1,
+        name: mappedCell(row, nameHeader),
+        phone,
+        email,
+      };
+    });
+
     const [existingLeads, stages] = await Promise.all([
-      leadRepository.list(organizationId, {
-        ...command.existingLeadsFilter,
-        limit: command.existingLeadsFilter?.limit ?? 100_000,
+      listLeadsForImportDedup(leadRepository, organizationId, {
+        baseFilter: command.existingLeadsFilter,
+        phoneSnapshots: [...phoneSnapshots],
+        emailSnapshots: [...emailSnapshots],
       }),
       catalogRepository.listStages(organizationId),
     ]);
+    const productionStages = stages.filter(
+      (stage) => !/^integration\s*test/i.test(stage.name.trim()),
+    );
     const stageById = new Map(stages.map((stage) => [stage.id, stage]));
 
     return classifyImportDuplicates({
-      rows: rows.map((row, index) => ({
-        rowNumber: index + 1,
-        name: mappedCell(row, nameHeader),
-        phone: mappedCell(row, phoneHeader),
-        email: mappedCell(row, emailHeader),
-      })),
+      rows: candidates,
       existingLeads: existingLeads.map((lead) => {
         const stage = stageById.get(lead.currentStageId);
         return {
@@ -924,7 +1172,7 @@ export function makePreviewImportDuplicates(
         };
       }),
       matchMode,
-      stages,
+      stages: productionStages,
     });
   };
 }

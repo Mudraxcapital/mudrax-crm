@@ -9,6 +9,7 @@ export function LeadsWorkspace({
   rows,
   canReassign,
   canUpdate,
+  canHardDelete = false,
   stages,
   lostReasons,
   assignees,
@@ -16,6 +17,7 @@ export function LeadsWorkspace({
   rows: LeadRow[];
   canReassign: boolean;
   canUpdate: boolean;
+  canHardDelete?: boolean;
   stages: Array<{ id: string; name: string; bucket?: string; closeOutcome?: string | null }>;
   lostReasons: Array<{ id: string; name: string }>;
   assignees: Array<{ id: string; fullName: string }>;
@@ -39,6 +41,7 @@ export function LeadsWorkspace({
                     stages={stages}
                     lostReasons={lostReasons}
                     assignees={assignees}
+                    canHardDelete={canHardDelete}
                   />
                 </div>
               </div>

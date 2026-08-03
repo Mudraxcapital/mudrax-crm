@@ -61,9 +61,12 @@ export class PrismaLeadRepository implements LeadRepository {
 
   async list(organizationId: string, filter?: ListLeadsFilter): Promise<Lead[]> {
     const where = this.buildWhere(organizationId, filter);
+    // id tie-breaker keeps order stable when many import rows share createdAt —
+    // otherwise a status update can reshuffle the row to the top of the page.
+    const createdAtDir = filter?.sortCreatedAt === "asc" ? "asc" : "desc";
     const rows = await this.prisma.lead.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: createdAtDir }, { id: "asc" }],
       // Default high enough for campaign/import workflows; UI pages should
       // still pass an explicit limit + use count() for totals.
       take: filter?.limit ?? 10_000,
@@ -208,6 +211,25 @@ export class PrismaLeadRepository implements LeadRepository {
 
     const and: Prisma.LeadWhereInput[] = [];
 
+    const phoneSnapshots = (filter?.phoneSnapshots ?? []).map((p) => p.trim()).filter(Boolean);
+    const emailSnapshots = (filter?.emailSnapshots ?? [])
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (phoneSnapshots.length > 0 || emailSnapshots.length > 0) {
+      const contactOr: Prisma.LeadWhereInput[] = [];
+      if (phoneSnapshots.length > 0) {
+        contactOr.push({ phoneSnapshot: { in: phoneSnapshots } });
+      }
+      if (emailSnapshots.length > 0) {
+        contactOr.push({
+          OR: emailSnapshots.map((email) => ({
+            emailSnapshot: { equals: email, mode: "insensitive" as const },
+          })),
+        });
+      }
+      and.push({ OR: contactOr });
+    }
+
     if (filter?.teamLeadCustomerScope) {
       const { teamLeadId, callerUserIds } = filter.teamLeadCustomerScope;
       and.push({
@@ -291,52 +313,137 @@ export class PrismaLeadRepository implements LeadRepository {
     actor: LeadAuditActor,
     correlationId?: string | null,
   ): Promise<Lead> {
-    return this.prisma.$transaction(async (tx) => {
-      const row = await tx.lead.create({
-        data: {
-          organizationId: data.organizationId,
-          customerId: data.customerId,
-          leadSourceId: data.leadSourceId,
-          currentStageId: data.currentStageId,
-          campaignId: data.campaignId ?? null,
-          ownerManagerId: data.ownerManagerId ?? null,
-          ownerTeamLeadId: data.ownerTeamLeadId ?? null,
-          fullNameSnapshot: data.fullNameSnapshot,
-          phoneSnapshot: data.phoneSnapshot ?? null,
-          emailSnapshot: data.emailSnapshot ?? null,
-          currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
-        },
-      });
-      const lead = toLead(row);
+    const [lead] = await this.createManyWithAudit([data], actor, correlationId);
+    return lead!;
+  }
 
-      if (data.initialAssignment) {
-        await tx.leadAssignment.create({
-          data: {
-            leadId: lead.id,
-            assignedToUserId: data.initialAssignment.assignedToUserId,
-            assignedByUserId: data.initialAssignment.assignedByUserId,
-            assignmentType: data.initialAssignment.assignmentType,
-          },
+  async createManyWithAudit(
+    items: CreateLeadData[],
+    actor: LeadAuditActor,
+    correlationId?: string | null,
+  ): Promise<Lead[]> {
+    if (items.length === 0) return [];
+
+    const CHUNK = 200;
+    const created: Lead[] = [];
+
+    for (let offset = 0; offset < items.length; offset += CHUNK) {
+      const chunk = items.slice(offset, offset + CHUNK);
+      const chunkLeads = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const leadRows = chunk.map((data) => {
+          const id = crypto.randomUUID();
+          return {
+            id,
+            organizationId: data.organizationId,
+            customerId: data.customerId,
+            leadSourceId: data.leadSourceId,
+            currentStageId: data.currentStageId,
+            campaignId: data.campaignId ?? null,
+            ownerManagerId: data.ownerManagerId ?? null,
+            ownerTeamLeadId: data.ownerTeamLeadId ?? null,
+            fullNameSnapshot: data.fullNameSnapshot,
+            phoneSnapshot: data.phoneSnapshot ?? null,
+            emailSnapshot: data.emailSnapshot ?? null,
+            currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
+            createdAt: now,
+            updatedAt: now,
+            initialAssignment: data.initialAssignment ?? null,
+          };
         });
-      }
 
-      await tx.leadAuditLog.create({
-        data: {
-          organizationId: lead.organizationId,
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          action: "LeadCreated",
-          targetType: TARGET_TYPE_LEAD,
-          targetId: lead.id,
-          correlationId: correlationId ?? null,
-          beforeState: undefined,
-          afterState: toAuditJson(lead),
-          recordHash: PLACEHOLDER_RECORD_HASH,
-        },
+        await tx.lead.createMany({
+          data: leadRows.map(
+            ({
+              id,
+              organizationId,
+              customerId,
+              leadSourceId,
+              currentStageId,
+              campaignId,
+              ownerManagerId,
+              ownerTeamLeadId,
+              fullNameSnapshot,
+              phoneSnapshot,
+              emailSnapshot,
+              currentAssigneeUserId,
+              createdAt,
+              updatedAt,
+            }) => ({
+              id,
+              organizationId,
+              customerId,
+              leadSourceId,
+              currentStageId,
+              campaignId,
+              ownerManagerId,
+              ownerTeamLeadId,
+              fullNameSnapshot,
+              phoneSnapshot,
+              emailSnapshot,
+              currentAssigneeUserId,
+              createdAt,
+              updatedAt,
+            }),
+          ),
+        });
+
+        const assignments = leadRows
+          .filter((row) => row.initialAssignment)
+          .map((row) => ({
+            leadId: row.id,
+            assignedToUserId: row.initialAssignment!.assignedToUserId,
+            assignedByUserId: row.initialAssignment!.assignedByUserId,
+            assignmentType: row.initialAssignment!.assignmentType,
+          }));
+        if (assignments.length > 0) {
+          await tx.leadAssignment.createMany({ data: assignments });
+        }
+
+        const leads: Lead[] = leadRows.map((row) => ({
+          id: row.id,
+          organizationId: row.organizationId,
+          customerId: row.customerId,
+          leadSourceId: row.leadSourceId,
+          currentStageId: row.currentStageId,
+          lostReasonId: null,
+          campaignId: row.campaignId,
+          currentAssigneeUserId: row.currentAssigneeUserId,
+          ownerManagerId: row.ownerManagerId,
+          ownerTeamLeadId: row.ownerTeamLeadId,
+          fullNameSnapshot: row.fullNameSnapshot,
+          phoneSnapshot: row.phoneSnapshot,
+          emailSnapshot: row.emailSnapshot,
+          nextActionAt: null,
+          nextActionType: null,
+          wonAt: null,
+          lostAt: null,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        }));
+
+        await tx.leadAuditLog.createMany({
+          data: leads.map((lead) => ({
+            organizationId: lead.organizationId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            action: "LeadCreated",
+            targetType: TARGET_TYPE_LEAD,
+            targetId: lead.id,
+            correlationId: correlationId ?? null,
+            beforeState: undefined,
+            afterState: toAuditJson(lead),
+            recordHash: PLACEHOLDER_RECORD_HASH,
+          })),
+        });
+
+        return leads;
       });
 
-      return lead;
-    });
+      created.push(...chunkLeads);
+    }
+
+    return created;
   }
 
   async updateWithAudit(
@@ -511,5 +618,93 @@ export class PrismaLeadRepository implements LeadRepository {
       take: limit,
     });
     return rows.map(toLeadAuditRecord);
+  }
+
+  async hardDeleteLeadsWithCustomers(
+    organizationId: string,
+    leadIds: string[],
+  ): Promise<{
+    deletedLeadIds: string[];
+    deletedCustomerIds: string[];
+    failed: Array<{ leadId: string; error: string }>;
+  }> {
+    const uniqueIds = [...new Set(leadIds)];
+    const deletedLeadIds: string[] = [];
+    const deletedCustomerIds: string[] = [];
+    const failed: Array<{ leadId: string; error: string }> = [];
+    const customerIdsToMaybeDelete = new Set<string>();
+
+    for (const leadId of uniqueIds) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const lead = await tx.lead.findFirst({
+            where: { id: leadId, organizationId },
+            select: { id: true, customerId: true },
+          });
+          if (!lead) {
+            throw new Error("Lead was not found.");
+          }
+
+          const loanApps = await tx.loanApplication.count({ where: { leadId } });
+          if (loanApps > 0) {
+            throw new Error("linked loan application(s) exist");
+          }
+
+          const followUps = await tx.followUp.findMany({
+            where: { leadId },
+            select: { id: true },
+          });
+          const followUpIds = followUps.map((row) => row.id);
+          if (followUpIds.length > 0) {
+            await tx.followUpReassignment.deleteMany({
+              where: { followUpId: { in: followUpIds } },
+            });
+            await tx.followUp.deleteMany({ where: { id: { in: followUpIds } } });
+          }
+
+          await tx.callAttempt.updateMany({
+            where: { leadId },
+            data: { leadId: null },
+          });
+
+          // Dialer queue rows reference Lead by UUID without cascade.
+          await tx.dialerQueueEntry.deleteMany({ where: { leadId } });
+
+          await tx.lead.delete({ where: { id: leadId } });
+          customerIdsToMaybeDelete.add(lead.customerId);
+          deletedLeadIds.push(leadId);
+        });
+      } catch (error) {
+        failed.push({
+          leadId,
+          error: error instanceof Error ? error.message : "Delete failed",
+        });
+      }
+    }
+
+    for (const customerId of customerIdsToMaybeDelete) {
+      try {
+        const remainingLeads = await this.prisma.lead.count({ where: { customerId } });
+        if (remainingLeads > 0) continue;
+
+        const [loanApps, loanAccounts, merges] = await Promise.all([
+          this.prisma.loanApplication.count({ where: { customerId } }),
+          this.prisma.loanAccount.count({ where: { customerId } }),
+          this.prisma.customerMerge.count({
+            where: {
+              OR: [{ survivingCustomerId: customerId }, { mergedAwayCustomerId: customerId }],
+            },
+          }),
+        ]);
+        if (loanApps > 0 || loanAccounts > 0 || merges > 0) continue;
+
+        await this.prisma.customer.delete({ where: { id: customerId } });
+        deletedCustomerIds.push(customerId);
+      } catch {
+        // Customer may be referenced elsewhere — leave it; leads were already removed.
+      }
+    }
+
+    return { deletedLeadIds, deletedCustomerIds, failed };
   }
 }

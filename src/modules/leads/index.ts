@@ -63,6 +63,7 @@ import {
   makeBulkAssignLeads,
   makeBulkChangeLeadStage,
   makeBulkCloseLeads,
+  makeBulkHardDeleteLeads,
 } from "./application/use-cases/bulkLeadOperations";
 import { makeMergeLeads } from "./application/use-cases/mergeLeads";
 import { makeGetKanbanBoard } from "./application/use-cases/getKanbanBoard";
@@ -192,6 +193,7 @@ export {
   bulkAssignLeadsSchema,
   bulkChangeLeadStageSchema,
   bulkCloseLeadsSchema,
+  bulkHardDeleteLeadsSchema,
   mergeLeadsSchema,
   leadFilterConfigSchema,
   type CreateSavedViewInput,
@@ -202,6 +204,7 @@ export {
   type BulkAssignLeadsInput,
   type BulkChangeLeadStageInput,
   type BulkCloseLeadsInput,
+  type BulkHardDeleteLeadsInput,
   type MergeLeadsInput,
 } from "./application/validators/productivitySchemas";
 export type { ImportLeadsSummary } from "./application/use-cases/importLeadsCsv";
@@ -330,6 +333,7 @@ export const bulkAssignLeads = makeBulkAssignLeads(
 );
 export const bulkChangeLeadStage = makeBulkChangeLeadStage(leadRepository, leadCatalogRepository);
 export const bulkCloseLeads = makeBulkCloseLeads(leadRepository, leadCatalogRepository);
+export const bulkHardDeleteLeads = makeBulkHardDeleteLeads(leadRepository);
 export const mergeLeads = makeMergeLeads(leadRepository, leadCatalogRepository);
 export const getKanbanBoard = makeGetKanbanBoard(leadRepository, leadCatalogRepository);
 export const getAssigneePortfolio = makeGetAssigneePortfolio(

@@ -137,6 +137,13 @@ export const previewImportDuplicatesSchema = z.object({
   rows: z.array(z.record(z.string(), z.string())).min(1).max(100_000),
   columnMapping: leadImportColumnMappingSchema,
   matchMode: duplicateMatchModeSchema.default("phone"),
+  /** When set, only match duplicates inside this campaign (same-campaign replace). */
+  campaignId: uuidSchema.optional(),
+  /**
+   * Creating a brand-new campaign — no CRM leads exist there yet, so skip
+   * org-wide duplicate matching (avoids closing leads in other campaigns).
+   */
+  forNewCampaign: z.boolean().optional(),
 });
 
 export const bulkLeadIdsSchema = z.object({
@@ -156,6 +163,9 @@ export const bulkCloseLeadsSchema = bulkLeadIdsSchema.extend({
   lostReasonId: uuidSchema,
 });
 
+/** Admin/Manager permanent delete — no soft-close / archive. */
+export const bulkHardDeleteLeadsSchema = bulkLeadIdsSchema;
+
 export const mergeLeadsSchema = z.object({
   survivingLeadId: uuidSchema,
   mergedAwayLeadId: uuidSchema,
@@ -170,4 +180,5 @@ export type PreviewImportDuplicatesInput = z.infer<typeof previewImportDuplicate
 export type BulkAssignLeadsInput = z.infer<typeof bulkAssignLeadsSchema>;
 export type BulkChangeLeadStageInput = z.infer<typeof bulkChangeLeadStageSchema>;
 export type BulkCloseLeadsInput = z.infer<typeof bulkCloseLeadsSchema>;
+export type BulkHardDeleteLeadsInput = z.infer<typeof bulkHardDeleteLeadsSchema>;
 export type MergeLeadsInput = z.infer<typeof mergeLeadsSchema>;

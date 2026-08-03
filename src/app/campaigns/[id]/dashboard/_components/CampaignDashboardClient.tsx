@@ -233,6 +233,16 @@ export function CampaignDashboardClient({
     });
   }
 
+  function searchLeads(raw: string) {
+    const value = raw.trim();
+    pushParams((params) => {
+      if (value) params.set("q", value);
+      else params.delete("q");
+      params.delete("leadPage");
+      params.delete("leadId");
+    });
+  }
+
   const summaryRows = useMemo(
     () => [
       ["Metric", "Value"],
@@ -289,12 +299,12 @@ export function CampaignDashboardClient({
 
   const cards: Array<{ label: string; value: string | number }> = [
     { label: "Total Leads", value: data.summary.totalLeads },
-    { label: "Fresh", value: data.summary.fresh },
-    { label: "Contacted", value: data.summary.contacted },
-    { label: "Interested", value: data.summary.interested },
+    { label: "Fresh Leads", value: data.summary.fresh },
+    { label: "Ringing Leads", value: data.summary.ringing },
+    { label: "Won", value: data.summary.won },
     { label: "Lost", value: data.summary.lost },
-    { label: "Calls Today", value: data.summary.callsToday },
     { label: "Pending Follow Ups", value: data.summary.pendingFollowUps },
+    { label: "Calls Today", value: data.summary.callsToday },
     { label: "Conversion", value: formatRate(data.summary.conversionRate) },
   ];
 
@@ -420,43 +430,83 @@ export function CampaignDashboardClient({
 
         {/* Middle — lead list */}
         <section className="mx-card flex min-h-[480px] flex-col xl:col-span-4">
-          <div className="border-b border-border px-4 py-3">
-            <p className="text-sm font-medium">
-              {data.campaign.name}
-              {data.mode === "self" ? (
-                <span className="text-muted font-normal"> · My leads</span>
-              ) : data.selectedAssigneeName ? (
-                <>
-                  {" "}
-                  <span className="text-muted">›</span> {data.selectedAssigneeName} Leads
-                </>
-              ) : (
-                <span className="text-muted font-normal"> · All assignees</span>
-              )}
-            </p>
-            <p className="text-muted mt-0.5 text-xs tabular-nums">
-              {data.leadPaging.total === 0
-                ? "0 leads"
-                : `Showing ${
-                    (data.leadPaging.page - 1) * data.leadPaging.pageSize + 1
-                  }–${
-                    (data.leadPaging.page - 1) * data.leadPaging.pageSize +
-                    data.assigneeLeads.length
-                  } of ${data.leadPaging.total}`}
-              {data.mode === "full" && !data.selectedAssigneeId
-                ? " across campaign assignees"
-                : ""}
-            </p>
+          <div className="space-y-3 border-b border-border px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">
+                {data.campaign.name}
+                {data.mode === "self" ? (
+                  <span className="text-muted font-normal"> · My leads</span>
+                ) : data.selectedAssigneeName ? (
+                  <>
+                    {" "}
+                    <span className="text-muted">›</span> {data.selectedAssigneeName} Leads
+                  </>
+                ) : (
+                  <span className="text-muted font-normal"> · All assignees</span>
+                )}
+              </p>
+              <p className="text-muted mt-0.5 text-xs tabular-nums">
+                {data.leadPaging.total === 0
+                  ? data.leadSearch
+                    ? "No leads match this search"
+                    : "0 leads"
+                  : `Showing ${
+                      (data.leadPaging.page - 1) * data.leadPaging.pageSize + 1
+                    }–${
+                      (data.leadPaging.page - 1) * data.leadPaging.pageSize +
+                      data.assigneeLeads.length
+                    } of ${data.leadPaging.total}`}
+                {data.mode === "full" && !data.selectedAssigneeId && !data.leadSearch
+                  ? " across campaign assignees"
+                  : ""}
+              </p>
+            </div>
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                searchLeads(String(form.get("q") ?? ""));
+              }}
+            >
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">Search leads</span>
+                <input
+                  type="search"
+                  name="q"
+                  key={data.leadSearch ?? ""}
+                  defaultValue={data.leadSearch ?? ""}
+                  placeholder="Search lead by name or phone"
+                  className="mx-input w-full"
+                  autoComplete="off"
+                />
+              </label>
+              <Button type="submit" size="sm" variant="secondary">
+                Search
+              </Button>
+              {data.leadSearch ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => searchLeads("")}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </form>
           </div>
 
           <div className="mx-scroll flex-1 overflow-y-auto">
             {data.assigneeLeads.length === 0 ? (
               <p className="text-muted px-4 py-10 text-center text-sm">
-                {data.mode === "self"
-                  ? "No leads assigned to you in this campaign."
-                  : data.selectedAssigneeName
-                    ? `No leads assigned to ${data.selectedAssigneeName}.`
-                    : "No assigned leads in this campaign yet."}
+                {data.leadSearch
+                  ? `No leads match “${data.leadSearch}”.`
+                  : data.mode === "self"
+                    ? "No leads assigned to you in this campaign."
+                    : data.selectedAssigneeName
+                      ? `No leads assigned to ${data.selectedAssigneeName}.`
+                      : "No assigned leads in this campaign yet."}
               </p>
             ) : (
               <ul className="divide-y divide-border">

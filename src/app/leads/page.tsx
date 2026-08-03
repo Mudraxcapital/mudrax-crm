@@ -4,6 +4,7 @@ import { requirePermission } from "@/infra/auth/session";
 import {
   getPermissionScope,
   hasPermission,
+  hasRole,
   isAssignableAgentRole,
   isCallerWorkspaceUser,
 } from "@/modules/rbac";
@@ -38,6 +39,8 @@ export default async function LeadsPage({
   const canManageViews = hasPermission(authContext, "saved_view.manage");
   const canReassign = hasPermission(authContext, "lead.reassign");
   const canUpdate = hasPermission(authContext, "lead.update");
+  const canHardDelete =
+    canUpdate && (hasRole(authContext, "Admin") || hasRole(authContext, "Manager"));
 
   const params = await searchParams;
   const search = typeof params.search === "string" ? params.search : undefined;
@@ -200,13 +203,14 @@ export default async function LeadsPage({
         }))}
         canReassign={canReassign}
         canUpdate={canUpdate}
-        stages={stages.map((stage) => ({
+        canHardDelete={canHardDelete}
+        stages={excludeTestCatalogRows(stages).map((stage) => ({
           id: stage.id,
           name: stage.name,
           bucket: stage.bucket,
           closeOutcome: stage.closeOutcome,
         }))}
-        lostReasons={lostReasons}
+        lostReasons={excludeTestCatalogRows(lostReasons)}
         assignees={assignees.map((user) => ({
           id: user.id,
           fullName: user.fullName,

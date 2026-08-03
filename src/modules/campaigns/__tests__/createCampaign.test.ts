@@ -13,7 +13,7 @@ describe("createCampaign", () => {
     createCampaign = makeCreateCampaign(repository);
   });
 
-  it("creates a Campaign in DRAFT status", async () => {
+  it("creates a Campaign in ACTIVE status", async () => {
     const dto = await createCampaign({
       organizationId: ORG_ID,
       input: { name: "Spring Push" },
@@ -21,7 +21,7 @@ describe("createCampaign", () => {
       ownerManagerId: "actor-1",
     });
 
-    expect(dto.status).toBe("DRAFT");
+    expect(dto.status).toBe("ACTIVE");
     expect(dto.name).toBe("Spring Push");
     expect(dto.ownerManagerId).toBe("actor-1");
   });

@@ -16,7 +16,7 @@ model Campaign {
   organizationId  String         @db.Uuid
   name            String         @db.VarChar(200)
   description     String?        @db.Text
-  status          CampaignStatus @default(DRAFT)
+  status          CampaignStatus @default(ACTIVE)
   startDate       DateTime?      @db.Date
   endDate         DateTime?      @db.Date
   createdByUserId String         @db.Uuid

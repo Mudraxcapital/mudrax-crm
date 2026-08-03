@@ -5,6 +5,7 @@ import {
   bulkAssignLeadsAction,
   bulkChangeLeadStageAction,
   bulkCloseLeadsAction,
+  bulkHardDeleteLeadsAction,
 } from "../controllers/productivity.actions";
 
 /** Matches bulkLeadIdsSchema.max(200). */
@@ -15,12 +16,15 @@ export function BulkLeadActions({
   stages,
   lostReasons,
   assignees,
+  canHardDelete = false,
 }: {
   /** IDs selected in the Leads table (or other UI). */
   selectedLeadIds: string[];
   stages: Array<{ id: string; name: string; bucket?: string; closeOutcome?: string | null }>;
   lostReasons: Array<{ id: string; name: string }>;
   assignees: Array<{ id: string; fullName: string }>;
+  /** Admin / Manager — permanent DB delete of leads + orphaned customers. */
+  canHardDelete?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState("");
@@ -57,8 +61,12 @@ export function BulkLeadActions({
     <section className="mx-card p-4">
       <h2 className="text-sm font-medium">Bulk operations</h2>
       <p className="text-muted mt-1 text-xs">
-        Select leads in the table above, then assign, change status, or close (soft-delete). Max{" "}
-        {BULK_LEAD_MAX} leads per action.
+        Select leads in the table above, then assign, change status
+        {canHardDelete ? ", or permanently delete" : ", or close"}. Max {BULK_LEAD_MAX} leads per
+        action.
+        {canHardDelete
+          ? " Delete removes the lead and its customer from the database."
+          : " Close is a soft-close (Closed-Lost)."}
       </p>
       <p className="mt-2 text-sm">
         {selected.length === 0
@@ -141,29 +149,51 @@ export function BulkLeadActions({
           Bulk status
         </button>
 
-        <select
-          className="rounded-lg border border-border px-2 py-1 text-sm"
-          value={lostReasonId}
-          onChange={(event) => setLostReasonId(event.target.value)}
-          aria-label="Lost reason for bulk close"
-        >
-          <option value="">— Lost reason —</option>
-          {lostReasons.map((reason) => (
-            <option key={reason.id} value={reason.id}>
-              {reason.name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="rounded-lg border border-border px-3 py-1 text-sm"
-          disabled={!canRun || !lostReasonId}
-          onClick={() => {
-            void run(bulkCloseLeadsAction, { lostReasonId });
-          }}
-        >
-          Bulk close
-        </button>
+        {canHardDelete ? (
+          <button
+            type="button"
+            className="rounded-lg border border-red-600 px-3 py-1 text-sm text-red-700"
+            disabled={!canRun}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Permanently delete ${selected.length} lead(s) and their customers from the database? This cannot be undone.`,
+                )
+              ) {
+                return;
+              }
+              void run(bulkHardDeleteLeadsAction, {});
+            }}
+          >
+            Delete permanently
+          </button>
+        ) : (
+          <>
+            <select
+              className="rounded-lg border border-border px-2 py-1 text-sm"
+              value={lostReasonId}
+              onChange={(event) => setLostReasonId(event.target.value)}
+              aria-label="Lost reason for bulk close"
+            >
+              <option value="">— Lost reason —</option>
+              {lostReasons.map((reason) => (
+                <option key={reason.id} value={reason.id}>
+                  {reason.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-1 text-sm"
+              disabled={!canRun || !lostReasonId}
+              onClick={() => {
+                void run(bulkCloseLeadsAction, { lostReasonId });
+              }}
+            >
+              Bulk close
+            </button>
+          </>
+        )}
       </div>
     </section>
   );

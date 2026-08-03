@@ -110,8 +110,8 @@ export function makeBulkChangeLeadStage(
 }
 
 /**
- * Bulk "delete" where allowed = close as Lost (Customers/Leads are never
- * hard-deleted — customers.md / leads.md).
+ * Soft-close (Closed-Lost) — kept for Team Lead workflows that should not
+ * permanently erase records.
  */
 export function makeBulkCloseLeads(
   repository: LeadRepository,
@@ -159,5 +159,29 @@ export function makeBulkCloseLeads(
       }
     }
     return result;
+  };
+}
+
+/**
+ * Admin / Manager permanent delete — removes Leads from the database and
+ * deletes orphaned Customers when no remaining Leads/loan records block it.
+ */
+export function makeBulkHardDeleteLeads(repository: LeadRepository) {
+  return async function bulkHardDeleteLeads(command: {
+    organizationId: string;
+    leadIds: string[];
+  }): Promise<BulkResult & { deletedCustomerIds: string[] }> {
+    const outcome = await repository.hardDeleteLeadsWithCustomers(
+      command.organizationId,
+      command.leadIds,
+    );
+    if (outcome.deletedLeadIds.length === 0 && outcome.failed.length > 0) {
+      throw new BulkOperationError(outcome.failed[0]!.error);
+    }
+    return {
+      succeeded: outcome.deletedLeadIds,
+      failed: outcome.failed,
+      deletedCustomerIds: outcome.deletedCustomerIds,
+    };
   };
 }

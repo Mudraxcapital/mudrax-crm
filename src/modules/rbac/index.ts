@@ -5,7 +5,10 @@
 
 import { prisma } from "@/infra/db/client";
 import { PrismaRbacRepository } from "./infrastructure/repositories/PrismaRbacRepository";
-import { makeGetAuthorizationContext } from "./application/use-cases/getAuthorizationContext";
+import {
+  invalidateAuthorizationContextCache,
+  makeGetAuthorizationContext,
+} from "./application/use-cases/getAuthorizationContext";
 import {
   makeAssignFixedRole,
   makeGetPermissionCodesForUser,
@@ -54,6 +57,7 @@ export {
 
 const rbacRepository = new PrismaRbacRepository(prisma);
 
+export { invalidateAuthorizationContextCache };
 export const getAuthorizationContext = makeGetAuthorizationContext(rbacRepository);
 export const assignFixedRole = makeAssignFixedRole(rbacRepository);
 export const listFixedRoles = makeListFixedRoles(rbacRepository);

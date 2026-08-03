@@ -5,7 +5,7 @@
 // the only file in `leads` allowed to import from `users` (ADR 0001).
 // ============================================================================
 
-import { getUser, getUserSummary, listUserSummaries } from "@/modules/users";
+import { getUser, getUserSummary, listUsers } from "@/modules/users";
 import type { UserLookupPort, UserLookupSummary } from "../../application/ports/UserLookupPort";
 
 export class UsersModuleLookupAdapter implements UserLookupPort {
@@ -37,13 +37,16 @@ export class UsersModuleLookupAdapter implements UserLookupPort {
   }
 
   async listByOrganization(organizationId: string): Promise<UserLookupSummary[]> {
-    const users = await listUserSummaries(organizationId);
+    const users = await listUsers();
     return users.map((user) => ({
       id: user.id,
-      organizationId: user.organizationId,
+      organizationId,
       status: user.status,
       fullName: user.fullName,
       email: user.email,
+      roleName: user.roleName,
+      assignedTeamLeadId: user.assignedTeamLeadId,
+      reportingManagerId: user.reportingManagerId,
     }));
   }
 }

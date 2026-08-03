@@ -49,8 +49,8 @@ const STEPS: Array<{ id: Step; label: string }> = [
   { id: "upload", label: "1. Upload" },
   { id: "mapping", label: "2. Mapping" },
   { id: "fields", label: "3. New Fields" },
-  { id: "duplicates", label: "4. Duplicates" },
-  { id: "campaign", label: "5. Campaign" },
+  { id: "campaign", label: "4. Campaign" },
+  { id: "duplicates", label: "5. Duplicates" },
   { id: "agents", label: "6. Agents" },
   { id: "distribution", label: "7. Distribution" },
   { id: "summary", label: "8. Summary" },
@@ -242,12 +242,16 @@ export function LeadImportForm({
     if (duplicateResolution === "skip_duplicates") {
       return duplicateSummary.newLeadCount;
     }
-    if (
-      duplicateResolution === "replace_selected_statuses" ||
-      duplicateResolution === "archive_and_reimport"
-    ) {
+    if (duplicateResolution === "replace_selected_statuses") {
       const selected = new Set(selectedStageIds);
-      const selectedDupes = duplicateSummary.allDuplicates.filter(
+      // Replace only re-imports checked CRM status matches — not the whole Excel.
+      return duplicateSummary.crmDuplicates.filter(
+        (row) => row.existingStageId && selected.has(row.existingStageId),
+      ).length;
+    }
+    if (duplicateResolution === "archive_and_reimport") {
+      const selected = new Set(selectedStageIds);
+      const selectedDupes = duplicateSummary.crmDuplicates.filter(
         (row) => row.existingStageId && selected.has(row.existingStageId),
       ).length;
       return duplicateSummary.newLeadCount + selectedDupes;
@@ -306,13 +310,15 @@ export function LeadImportForm({
     if (selectedSupervisor?.role === "Team Lead") {
       return selectedSupervisor.reportingManagerId ?? undefined;
     }
-    const managerIds = new Set(
-      selectedAgents
-        .map((agent) => agent.reportingManagerId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    if (managerIds.size === 1) return [...managerIds][0];
-    return undefined;
+    // All agents: campaign rows still need one Manager owner, but leads keep
+    // per-assignee ownership. Pick any Manager — do not block the import.
+    for (const agent of selectedAgents) {
+      if (agent.roleName === "Manager") return agent.id;
+    }
+    for (const agent of selectedAgents) {
+      if (agent.reportingManagerId) return agent.reportingManagerId;
+    }
+    return supervisors.find((supervisor) => supervisor.role === "Manager")?.id;
   }
 
   const distributionPreview = useMemo(() => {
@@ -422,16 +428,33 @@ export function LeadImportForm({
     });
     setUnknownFields(suggestions);
     if (suggestions.length === 0) {
-      runDuplicateCheck();
+      setStep("campaign");
+      setProgress(28);
       return;
     }
     setStep("fields");
     setProgress(22);
   }
 
+  function resolvePreviewCampaignId(): string | undefined {
+    if (campaignMode !== "existing") return undefined;
+    if (
+      !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        campaignId,
+      )
+    ) {
+      return undefined;
+    }
+    return campaignId;
+  }
+
   function runDuplicateCheck() {
     if (!nameMapped) {
       setParseError("Map Lead Name before continuing.");
+      return;
+    }
+    if (campaignMode === "existing" && !resolvePreviewCampaignId()) {
+      setParseError("Select a campaign before checking duplicates.");
       return;
     }
     setParseError(null);
@@ -445,26 +468,19 @@ export function LeadImportForm({
         rows,
         columnMapping,
         matchMode,
+        campaignId: resolvePreviewCampaignId(),
+        forNewCampaign: campaignMode === "new",
       });
       if (response.error) {
         setParseError(response.error);
         return;
       }
       setDuplicateSummary(response.summary ?? null);
-      // Pre-select statuses that have duplicates for replace/archive convenience.
-      setSelectedStageIds(
-        (response.summary?.statusGroups ?? [])
-          .filter(
-            (group) =>
-              group.count > 0 &&
-              /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-                group.stageId,
-              ),
-          )
-          .map((group) => group.stageId),
-      );
+      // Do not auto-check every status — user must pick which ones to replace
+      // (avoids "Add 738 leads" when only Ringing should be replaced).
+      setSelectedStageIds([]);
       setStep("duplicates");
-      setProgress(36);
+      setProgress(42);
     });
   }
 
@@ -524,12 +540,6 @@ export function LeadImportForm({
       if (campaignMode === "new") {
         if (!canCreateCampaign) {
           setParseError("You do not have permission to create campaigns.");
-          return;
-        }
-        if (isAllAgentsScope && !ownerManagerId) {
-          setParseError(
-            "Creating a new campaign with All agents needs at least one hierarchical agent (Manager / Team Lead / Caller under a Manager), or pick an existing campaign.",
-          );
           return;
         }
         const created = await createCampaignForImportAction({
@@ -1026,46 +1036,23 @@ export function LeadImportForm({
             <button
               type="button"
               className="mx-btn mx-btn-primary"
-              onClick={runDuplicateCheck}
-              disabled={pending}
+              onClick={() => {
+                setStep("campaign");
+                setProgress(28);
+              }}
             >
-              {pending ? "Checking…" : "Continue to duplicates"}
+              Continue to campaign
             </button>
           </div>
         </div>
       ) : null}
 
-      {step === "duplicates" && duplicateSummary ? (
-        <DuplicateReviewPanel
-          summary={duplicateSummary}
-          fileName={fileName}
-          matchMode={matchMode}
-          onMatchModeChange={setMatchMode}
-          onRecheck={runDuplicateCheck}
-          duplicateResolution={duplicateResolution}
-          onResolutionChange={setDuplicateResolution}
-          selectedStageIds={selectedStageIds}
-          onSelectedStageIdsChange={setSelectedStageIds}
-          pending={pending}
-          onBack={() => {
-            if (unknownFields.length > 0) {
-              setStep("fields");
-              setProgress(22);
-            } else {
-              setStep("mapping");
-              setProgress(14);
-            }
-          }}
-          onContinue={() => {
-            setStep("campaign");
-            setProgress(42);
-          }}
-        />
-      ) : null}
-
       {step === "campaign" ? (
         <div className="flex flex-col gap-4">
-          <p className="text-sm font-medium">Where should these leads from Excel go?</p>
+          <p className="text-sm font-medium">
+            Choose the campaign first — duplicate replace only affects leads already in that
+            campaign.
+          </p>
           <div className="flex flex-wrap gap-3 text-sm">
             <label className="flex items-center gap-2">
               <input
@@ -1193,8 +1180,13 @@ export function LeadImportForm({
               type="button"
               className="mx-btn mx-btn-secondary"
               onClick={() => {
-                setStep("duplicates");
-                setProgress(28);
+                if (unknownFields.length > 0) {
+                  setStep("fields");
+                  setProgress(22);
+                } else {
+                  setStep("mapping");
+                  setProgress(14);
+                }
               }}
             >
               Back
@@ -1203,22 +1195,40 @@ export function LeadImportForm({
               type="button"
               className="mx-btn mx-btn-primary"
               disabled={
-                campaignMode === "existing"
+                pending ||
+                (campaignMode === "existing"
                   ? !campaignId
-                  : newCampaign.name.trim().length < 2
+                  : newCampaign.name.trim().length < 2)
               }
-              onClick={() => {
-                setStep("agents");
-                setProgress(56);
-                if (selectedCampaign && selectedAgentIds.length === 0) {
-                  // Prefill nothing — user picks agents next.
-                }
-              }}
+              onClick={runDuplicateCheck}
             >
-              Continue to agents
+              {pending ? "Checking…" : "Continue to duplicates"}
             </button>
           </div>
         </div>
+      ) : null}
+
+      {step === "duplicates" && duplicateSummary ? (
+        <DuplicateReviewPanel
+          summary={duplicateSummary}
+          fileName={fileName}
+          matchMode={matchMode}
+          onMatchModeChange={setMatchMode}
+          onRecheck={runDuplicateCheck}
+          duplicateResolution={duplicateResolution}
+          onResolutionChange={setDuplicateResolution}
+          selectedStageIds={selectedStageIds}
+          onSelectedStageIdsChange={setSelectedStageIds}
+          pending={pending}
+          onBack={() => {
+            setStep("campaign");
+            setProgress(28);
+          }}
+          onContinue={() => {
+            setStep("agents");
+            setProgress(56);
+          }}
+        />
       ) : null}
 
       {step === "agents" ? (
@@ -1329,7 +1339,7 @@ export function LeadImportForm({
               type="button"
               className="mx-btn mx-btn-secondary"
               onClick={() => {
-                setStep("campaign");
+                setStep("duplicates");
                 setProgress(42);
               }}
             >

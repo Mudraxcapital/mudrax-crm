@@ -4,6 +4,7 @@
 
 import type { RbacRepository } from "../../domain/repositories/RbacRepository";
 import { FIXED_ROLES, type FixedRoleName } from "../../domain/entities/FixedRoles";
+import { invalidateAuthorizationContextCache } from "./getAuthorizationContext";
 
 export function makeAssignFixedRole(repository: RbacRepository) {
   return async function assignFixedRole(
@@ -17,6 +18,7 @@ export function makeAssignFixedRole(repository: RbacRepository) {
 
     const previous = await repository.getPrimaryRoleName(userId);
     await repository.replaceUserFixedRole(userId, roleName, assignedByUserId);
+    invalidateAuthorizationContextCache(userId);
     return {
       previousRole:
         previous && (FIXED_ROLES as readonly string[]).includes(previous)

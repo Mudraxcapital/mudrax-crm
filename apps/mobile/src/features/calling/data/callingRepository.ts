@@ -98,10 +98,11 @@ export async function logCallRecording(
     endedAt,
     providerMetadata: {
       platform: "android",
-      source: "mudrax-mobile-native",
+      source: "android-dialer-sync",
       audioSource: snapshot.audioSource,
       localFilePath: snapshot.filePath,
-      captureMode: "best-effort",
+      captureMode: "dialer-file-import",
+      sourceFileName: snapshot.sourceFileName ?? null,
     },
   };
 
@@ -118,12 +119,23 @@ export async function logCallRecording(
     snapshot.storageReference.split("/").pop() ||
     "recording.m4a";
   const uri = localPath.startsWith("file://") ? localPath : `file://${localPath}`;
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "m4a";
+  const mimeByExt: Record<string, string> = {
+    m4a: "audio/mp4",
+    mp4: "audio/mp4",
+    aac: "audio/aac",
+    amr: "audio/amr",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    "3gp": "audio/3gpp",
+    ogg: "audio/ogg",
+  };
 
   try {
     return await getApi().telephony.uploadRecordingAudio(callAttemptId, created.id, {
       uri,
       name: fileName,
-      type: "audio/mp4",
+      type: mimeByExt[ext] ?? "audio/mp4",
     });
   } catch {
     // Metadata is already saved; upload can be retried later. Keep local ref.

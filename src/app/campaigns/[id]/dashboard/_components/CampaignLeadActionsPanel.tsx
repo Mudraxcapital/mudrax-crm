@@ -16,7 +16,7 @@ import type { FollowUpFormState } from "@/modules/follow-ups/presentation/contro
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 import { Button } from "@/shared/ui/Button";
 import { Dialog } from "@/shared/ui/Dialog";
-import { DEFAULT_CALL_RECORDINGS_RETENTION_DAYS } from "@/modules/telephony";
+import { DEFAULT_CALL_RECORDINGS_RETENTION_DAYS } from "@/modules/telephony/domain/recordingRetention";
 import type { CampaignDashboardLeadDetail } from "../_lib/loadCampaignDashboard";
 
 type WorkspacePanel = "note" | "followup" | "iq" | "activity" | null;
@@ -320,13 +320,13 @@ export function CampaignLeadActionsPanel({
             {lead.recordings.length > 0 ? ` · ${lead.recordings.length}` : ""}
           </p>
           <p className="text-muted text-xs">
-            Server retention: {recordingRetentionDays} days (configurable). Put the call on
-            speakerphone on Android — otherwise recordings are often silent.
+            Server retention: {recordingRetentionDays} days (configurable). Android imports the
+            phone dialer&apos;s recording file (Samsung Phone / ODialer) after hangup.
           </p>
           {lead.recordings.length === 0 ? (
             <p className="text-muted text-sm">
               {lead.latestCallAttemptId
-                ? "Calls are logged for this lead, but no recording file was uploaded from the mobile app yet. Place the call from the Mudrax Android app with Record on."
+                ? "Calls are logged for this lead, but no dialer recording was uploaded yet. On the Mudrax Android app: enable Record all calls in Samsung Phone or ODialer, set Media Path, then place the call with Import on."
                 : "No call recordings for this lead yet."}
             </p>
           ) : (

@@ -3,6 +3,7 @@ import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { getKanbanBoard } from "@/modules/leads";
 import { visibleLeadsFilter } from "@/shared/auth/applyHierarchyListFilter";
+import { filterPipelineFocusColumns } from "@/app/leads/pipeline/_lib/pipelineFocusColumns";
 
 export async function GET(request: Request) {
   const auth = await requireApiUser(request);
@@ -25,5 +26,8 @@ export async function GET(request: Request) {
   };
 
   const board = await getKanbanBoard(current.authContext.organizationId, filter);
-  return NextResponse.json({ data: board, campaignId: campaignId ?? null });
+  return NextResponse.json({
+    data: filterPipelineFocusColumns(board),
+    campaignId: campaignId ?? null,
+  });
 }

@@ -2,6 +2,7 @@
 // src/modules/users/application/use-cases/authLookups.ts
 // ============================================================================
 
+import { createTtlCache } from "@/infra/cache/ttlCache";
 import type {
   RecordLoginAttemptInput,
   UserRepository,
@@ -19,15 +20,32 @@ export type AccountSessionCheck =
   | { ok: true; state: AccountSessionState }
   | { ok: false; reason: "disabled" | "suspended" | "session_revoked" };
 
+/** Coalesce parallel API calls that all re-check the same session. */
+const SESSION_CHECK_TTL_MS = 2_000;
+const sessionCheckCache = createTtlCache<AccountSessionCheck>(SESSION_CHECK_TTL_MS);
+
+function sessionCheckKey(
+  userId: string,
+  sessionVersionFromToken?: number | null,
+  trackedSessionId?: string | null,
+): string {
+  return `${userId}:${sessionVersionFromToken ?? ""}:${trackedSessionId ?? ""}`;
+}
+
 export function makeUserAuthUseCases(repository: UserRepository) {
   async function checkAccountSession(
     userId: string,
     sessionVersionFromToken?: number | null,
     trackedSessionId?: string | null,
   ): Promise<AccountSessionCheck> {
+    const cacheKey = sessionCheckKey(userId, sessionVersionFromToken, trackedSessionId);
+    const cached = sessionCheckCache.get(cacheKey);
+    if (cached) return cached;
+
     const state = await repository.findAccountSessionState(userId);
     if (!state) {
-      return { ok: false, reason: "session_revoked" };
+      const result: AccountSessionCheck = { ok: false, reason: "session_revoked" };
+      return result;
     }
     if (!isAccountLoginAllowed(state.status)) {
       return {
@@ -46,9 +64,13 @@ export function makeUserAuthUseCases(repository: UserRepository) {
       if (!session || session.userId !== userId || session.status !== "ACTIVE") {
         return { ok: false, reason: "session_revoked" };
       }
-      await repository.touchSessionActivity(trackedSessionId);
+      // Fire-and-forget activity touch — never blocks the request path.
+      void repository.touchSessionActivity(trackedSessionId);
     }
-    return { ok: true, state };
+
+    const result: AccountSessionCheck = { ok: true, state };
+    sessionCheckCache.set(cacheKey, result);
+    return result;
   }
 
   return {

@@ -35,7 +35,7 @@ const SYSTEM_DEFAULTS: Array<{
   validationRules?: Prisma.InputJsonValue;
 }> = [
   {
-    name: "Lead Name",
+    name: "Customer Name",
     internalKey: "full_name",
     dataType: "TEXT",
     fieldGroup: "PRIMARY",
@@ -383,6 +383,32 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
     );
   }
 
+  async createManyValues(
+    rows: Array<{ leadId: string; values: UpsertLeadFieldValueData[] }>,
+  ): Promise<void> {
+    const data = rows.flatMap(({ leadId, values }) =>
+      values.map((value) => ({
+        leadId,
+        customFieldDefinitionId: value.fieldDefinitionId,
+        valueText: value.valueText ?? null,
+        valueNumber: value.valueNumber ?? null,
+        valueDate: value.valueDate ?? null,
+        valueDateTime: value.valueDateTime ?? null,
+        valueBoolean: value.valueBoolean ?? null,
+        valueSelectOption: value.valueSelectOption ?? null,
+        valueJson: (value.valueJson ?? undefined) as Prisma.InputJsonValue | undefined,
+      })),
+    );
+    if (data.length === 0) return;
+    const CHUNK = 500;
+    for (let offset = 0; offset < data.length; offset += CHUNK) {
+      await this.prisma.leadCustomFieldValue.createMany({
+        data: data.slice(offset, offset + CHUNK),
+        skipDuplicates: true,
+      });
+    }
+  }
+
   async ensureSystemDefaults(
     organizationId: string,
     createdByUserId?: string | null,
@@ -421,5 +447,15 @@ export class PrismaLeadFieldDefinitionRepository implements LeadFieldDefinitionR
         },
       });
     }
+
+    // Rename legacy default label without overwriting admin-customized names.
+    await this.prisma.customFieldDefinition.updateMany({
+      where: {
+        organizationId,
+        internalKey: "full_name",
+        name: "Lead Name",
+      },
+      data: { name: "Customer Name" },
+    });
   }
 }
