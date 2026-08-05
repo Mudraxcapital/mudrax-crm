@@ -8,6 +8,7 @@ import {
   DuplicateUserPhoneError,
   InvalidUserHierarchyError,
   LastActiveAdminError,
+  SingleAdminLimitError,
   updateUser,
   updateUserSchema,
   UserDeleteBlockedError,
@@ -61,6 +62,7 @@ export async function updateUserAction(
       error instanceof AdminRoleProtectedError ||
       error instanceof InvalidUserHierarchyError ||
       error instanceof LastActiveAdminError ||
+      error instanceof SingleAdminLimitError ||
       error instanceof UserDeleteBlockedError ||
       error instanceof UserNotFoundError
     ) {

@@ -63,7 +63,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Seed prints login emails/passwords in the terminal (dev only).
+Open [http://mudrax.crm:3000](http://mudrax.crm:3000) (requires hosts entry → `127.0.0.1`; see Windows setup docs). Seed prints login emails/passwords in the terminal (dev only).
 
 ## 5. Verify
 

@@ -6,6 +6,7 @@ import { useBootstrapSession } from "@/features/auth/hooks/useBootstrapSession";
 import { useSessionStore } from "@/features/auth/store/sessionStore";
 import { PostCallScreen } from "@/features/calling/presentation/PostCallScreen";
 import { LeadDetailsScreen } from "@/features/leads/presentation/LeadDetailsScreen";
+import { ForceChangePasswordScreen } from "@/features/profile/presentation/ForceChangePasswordScreen";
 import { AuthNavigator } from "./AuthNavigator";
 import { MainTabs } from "./MainTabs";
 import type { RootStackParamList } from "./types";
@@ -15,6 +16,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export function RootNavigator() {
   const isHydrated = useBootstrapSession();
   const isAuthenticated = useSessionStore((s) => s.isAuthenticated);
+  const mustChangePassword = useSessionStore(
+    (s) => !!s.me?.user.mustChangePassword || !!s.session?.user?.mustChangePassword,
+  );
   const { colors, scheme } = useTheme();
 
   if (!isHydrated) {
@@ -53,7 +57,19 @@ export function RootNavigator() {
           animation: "fade",
         }}
       >
-        {isAuthenticated ? (
+        {!isAuthenticated ? (
+          <Stack.Screen
+            name="Auth"
+            component={AuthNavigator}
+            options={{ headerShown: false, animation: "none" }}
+          />
+        ) : mustChangePassword ? (
+          <Stack.Screen
+            name="ForceChangePassword"
+            component={ForceChangePasswordScreen}
+            options={{ headerShown: false, animation: "none" }}
+          />
+        ) : (
           <>
             <Stack.Screen
               name="Main"
@@ -71,12 +87,6 @@ export function RootNavigator() {
               options={{ title: "Disposition", headerBackVisible: false }}
             />
           </>
-        ) : (
-          <Stack.Screen
-            name="Auth"
-            component={AuthNavigator}
-            options={{ headerShown: false, animation: "none" }}
-          />
         )}
       </Stack.Navigator>
     </NavigationContainer>

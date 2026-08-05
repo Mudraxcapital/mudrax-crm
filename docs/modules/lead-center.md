@@ -47,5 +47,5 @@ CSV upload and bulk staged-lead operations are not part of this surface.
 - `leads` — Campaign Lead creation, duplicate classification helpers
 - `campaigns` — create campaign, assign leads
 - `customers` — identity resolution on import
-- `rbac` — `lead_center.view` / `lead_center.manage` / `lead_center.import`
+- `rbac` — `lead_center.view` / `lead_center.import`
 - `integrations` — connector configuration (no lead display)

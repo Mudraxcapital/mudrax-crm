@@ -20,7 +20,7 @@ export class AccountNotActiveError extends Error {
   constructor(status: "INACTIVE" | "SUSPENDED" | string = "INACTIVE") {
     super(
       status === "SUSPENDED"
-        ? "This account is suspended. Contact your administrator."
+        ? "This account is suspended. Contact an Admin for a password reset."
         : "This account has been disabled. Contact your administrator.",
     );
     this.name = "AccountNotActiveError";

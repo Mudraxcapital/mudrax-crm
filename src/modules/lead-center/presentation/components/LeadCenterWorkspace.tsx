@@ -58,12 +58,17 @@ export function LeadCenterWorkspace({
   canImport,
   canCreateCampaign,
   canViewIntegrations = false,
+  /** Admin must pick a Manager book before importing (Excel Import pattern). */
+  requireOwnerManager = false,
+  ownerManagers = [],
 }: {
   initialLeads: StagedLeadRow[];
   campaigns: LeadCenterCampaignOption[];
   canImport: boolean;
   canCreateCampaign: boolean;
   canViewIntegrations?: boolean;
+  requireOwnerManager?: boolean;
+  ownerManagers?: Array<{ id: string; fullName: string }>;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [sourceScope, setSourceScope] = useState<LeadCenterImportScope>("ALL");
@@ -73,6 +78,7 @@ export function LeadCenterWorkspace({
   const [allocationMethod, setAllocationMethod] = useState("EQUAL");
   const [includeExactDuplicates, setIncludeExactDuplicates] = useState(false);
   const [includeInvalid, setIncludeInvalid] = useState(false);
+  const [ownerManagerId, setOwnerManagerId] = useState("");
   const [preview, setPreview] = useState<BulkActionState["preview"]>();
   const [pending, startTransition] = useTransition();
 
@@ -81,6 +87,8 @@ export function LeadCenterWorkspace({
     return initialLeads.filter((lead) => lead.sourceCode === sourceScope);
   }, [initialLeads, sourceScope]);
 
+  const ownerManagerReady = !requireOwnerManager || Boolean(ownerManagerId);
+
   function run(
     action: (prev: BulkActionState | undefined, formData: FormData) => Promise<BulkActionState>,
     extra?: Record<string, string>,
@@ -88,6 +96,9 @@ export function LeadCenterWorkspace({
     startTransition(async () => {
       const form = new FormData();
       form.set("sourceScope", sourceScope);
+      if (requireOwnerManager && ownerManagerId) {
+        form.set("ownerManagerId", ownerManagerId);
+      }
       if (extra) {
         for (const [key, value] of Object.entries(extra)) form.set(key, value);
       }
@@ -109,6 +120,25 @@ export function LeadCenterWorkspace({
           {message ? <p className="mt-2 text-sm">{message}</p> : null}
 
           <div className="mt-3 flex flex-wrap items-end gap-2">
+            {requireOwnerManager ? (
+              <label className="text-sm">
+                <span className="text-muted mb-1 block text-xs">Owner Manager</span>
+                <select
+                  className="rounded-lg border border-border px-2 py-1 text-sm"
+                  value={ownerManagerId}
+                  onChange={(e) => setOwnerManagerId(e.target.value)}
+                  required
+                >
+                  <option value="">Select Manager…</option>
+                  {ownerManagers.map((manager) => (
+                    <option key={manager.id} value={manager.id}>
+                      {manager.fullName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
             <label className="text-sm">
               <span className="text-muted mb-1 block text-xs">Lead source</span>
               <select
@@ -198,7 +228,7 @@ export function LeadCenterWorkspace({
             <Button
               type="button"
               size="sm"
-              disabled={pending}
+              disabled={pending || !ownerManagerReady}
               onClick={() =>
                 run(previewImportAction, {
                   includeExactDuplicates: includeExactDuplicates ? "1" : "0",
@@ -211,7 +241,7 @@ export function LeadCenterWorkspace({
             <Button
               type="button"
               size="sm"
-              disabled={pending}
+              disabled={pending || !ownerManagerReady}
               onClick={() =>
                 run(importToCampaignAction, {
                   campaignMode,
@@ -226,6 +256,11 @@ export function LeadCenterWorkspace({
               {pending ? "Importing…" : "Import"}
             </Button>
           </div>
+          {requireOwnerManager && !ownerManagerId ? (
+            <p className="text-muted mt-2 text-xs">
+              Select an Owner Manager before previewing or importing.
+            </p>
+          ) : null}
 
           {preview && preview.length > 0 ? (
             <div className="mt-3 max-h-48 overflow-auto rounded border border-border text-xs">

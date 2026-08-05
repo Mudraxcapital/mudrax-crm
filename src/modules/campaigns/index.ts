@@ -18,6 +18,10 @@ import {
 import { makeAssignCampaignLeads } from "./application/use-cases/assignCampaignLeads";
 import { makeRedistributeCampaignLeads } from "./application/use-cases/redistributeCampaignLeads";
 import {
+  makeEndTemporaryCampaignReassignment,
+  makeTemporarilyReassignCampaignLeads,
+} from "./application/use-cases/temporarilyReassignCampaignLeads";
+import {
   makeCountCampaigns,
   makeGetCampaign,
   makeListCampaigns,
@@ -32,6 +36,11 @@ import {
   makeEnsurePersonalCampaign,
   PERSONAL_CAMPAIGN_NAME,
 } from "./application/use-cases/ensurePersonalCampaign";
+import {
+  makeEnsureDndCampaign,
+  DND_CAMPAIGN_NAME,
+  isDoNotDisturbCampaignName,
+} from "./application/use-cases/ensureDndCampaign";
 
 export type { Campaign, CampaignStatus } from "./domain/entities/Campaign";
 export { CAMPAIGN_STATUSES, CAMPAIGN_STATUS_TRANSITIONS } from "./domain/entities/Campaign";
@@ -74,11 +83,15 @@ export {
   changeCampaignStatusSchema,
   addCampaignMemberSchema,
   assignCampaignLeadsSchema,
+  temporaryCampaignReassignSchema,
+  endTemporaryCampaignReassignSchema,
   type CreateCampaignInput,
   type UpdateCampaignInput,
   type ChangeCampaignStatusInput,
   type AddCampaignMemberInput,
   type AssignCampaignLeadsInput,
+  type TemporaryCampaignReassignInput,
+  type EndTemporaryCampaignReassignInput,
 } from "./application/validators/campaignSchemas";
 export type { CreateCampaignCommand } from "./application/use-cases/createCampaign";
 export type { UpdateCampaignCommand } from "./application/use-cases/updateCampaign";
@@ -90,8 +103,16 @@ export type {
 export type { AssignCampaignLeadsCommand } from "./application/use-cases/assignCampaignLeads";
 export type { RedistributeCampaignLeadsCommand } from "./application/use-cases/redistributeCampaignLeads";
 export { parseCampaignDistributionMethod } from "./application/use-cases/redistributeCampaignLeads";
+export type {
+  TemporarilyReassignCampaignLeadsCommand,
+  TemporarilyReassignCampaignLeadsResult,
+  EndTemporaryCampaignReassignmentCommand,
+  EndTemporaryCampaignReassignmentResult,
+} from "./application/use-cases/temporarilyReassignCampaignLeads";
 export type { EnsurePersonalCampaignCommand } from "./application/use-cases/ensurePersonalCampaign";
 export { PERSONAL_CAMPAIGN_NAME };
+export type { EnsureDndCampaignCommand } from "./application/use-cases/ensureDndCampaign";
+export { DND_CAMPAIGN_NAME, isDoNotDisturbCampaignName };
 
 const campaignRepository = new PrismaCampaignRepository(prisma);
 const usersLookup = new UsersModuleLookupAdapter();
@@ -104,6 +125,7 @@ export const ensurePersonalCampaign = makeEnsurePersonalCampaign(
   campaignRepository,
   usersLookup,
 );
+export const ensureDndCampaign = makeEnsureDndCampaign(campaignRepository, usersLookup);
 export const addCampaignMember = makeAddCampaignMember(
   campaignRepository,
   usersLookup,
@@ -113,6 +135,15 @@ export const removeCampaignMember = makeRemoveCampaignMember(campaignRepository,
 export const listCampaignMembers = makeListCampaignMembers(campaignRepository);
 export const assignCampaignLeads = makeAssignCampaignLeads(campaignRepository, leadsLookup);
 export const redistributeCampaignLeads = makeRedistributeCampaignLeads(
+  campaignRepository,
+  leadsLookup,
+);
+export const temporarilyReassignCampaignLeads = makeTemporarilyReassignCampaignLeads(
+  campaignRepository,
+  leadsLookup,
+  usersLookup,
+);
+export const endTemporaryCampaignReassignment = makeEndTemporaryCampaignReassignment(
   campaignRepository,
   leadsLookup,
 );

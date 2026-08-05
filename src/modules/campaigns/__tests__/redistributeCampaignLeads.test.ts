@@ -3,7 +3,7 @@ import { makeCreateCampaign } from "../application/use-cases/createCampaign";
 import { makeAddCampaignMember } from "../application/use-cases/manageCampaignMembership";
 import { makeAssignCampaignLeads } from "../application/use-cases/assignCampaignLeads";
 import { FakeCampaignRepository } from "./fakeCampaignRepository";
-import { FakeLeadAssignmentPort, FakeUserLookupPort } from "./fakeLookupPorts";
+import { FakeLeadAssignmentPort, FakeUserLookupPort, fakeLeadSummary } from "./fakeLookupPorts";
 
 const ORG_ID = "org-1";
 const USER_A = "00000000-0000-0000-0000-0000000000a1";
@@ -66,13 +66,14 @@ describe("redistribute on addCampaignMember", () => {
     });
 
     for (let i = 1; i <= 6; i += 1) {
-      leadLookup.leads.set(leadId(i), {
-        id: leadId(i),
-        organizationId: ORG_ID,
-        currentStageBucket: "ACTIVE",
-        wonAt: null,
-        lostAt: null,
-      });
+      leadLookup.leads.set(
+        leadId(i),
+        fakeLeadSummary({
+          id: leadId(i),
+          organizationId: ORG_ID,
+          currentStageBucket: "ACTIVE",
+        }),
+      );
     }
 
     await assignCampaignLeads({
@@ -104,13 +105,15 @@ describe("redistribute on addCampaignMember", () => {
   });
 
   it("skips closed leads during redistribution", async () => {
-    leadLookup.leads.set(leadId(1), {
-      id: leadId(1),
-      organizationId: ORG_ID,
-      currentStageBucket: "CLOSED",
-      wonAt: new Date().toISOString(),
-      lostAt: null,
-    });
+    leadLookup.leads.set(
+      leadId(1),
+      fakeLeadSummary({
+        id: leadId(1),
+        organizationId: ORG_ID,
+        currentStageBucket: "CLOSED",
+        wonAt: new Date().toISOString(),
+      }),
+    );
 
     await addCampaignMember({
       campaignId,

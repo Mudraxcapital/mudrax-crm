@@ -10,6 +10,7 @@ import {
   DuplicateUserEmailError,
   DuplicateUserPhoneError,
   InvalidUserHierarchyError,
+  SingleAdminLimitError,
 } from "@/modules/users";
 import { formString } from "../lib/formData";
 
@@ -59,7 +60,8 @@ export async function createUserAction(
       error instanceof DuplicateUserEmailError ||
       error instanceof DuplicateUserPhoneError ||
       error instanceof AdminRoleProtectedError ||
-      error instanceof InvalidUserHierarchyError
+      error instanceof InvalidUserHierarchyError ||
+      error instanceof SingleAdminLimitError
     ) {
       return { error: error.message };
     }

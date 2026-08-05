@@ -268,6 +268,8 @@ export class FakeLeadRepository implements LeadRepository {
         lostReasonId: null,
         campaignId: data.campaignId ?? null,
         currentAssigneeUserId: data.initialAssignment?.assignedToUserId ?? null,
+        permanentAssigneeUserId: null,
+        temporaryAssigneeUntil: null,
         ownerManagerId: data.ownerManagerId ?? null,
         ownerTeamLeadId: data.ownerTeamLeadId ?? null,
         fullNameSnapshot: data.fullNameSnapshot,
@@ -325,7 +327,13 @@ export class FakeLeadRepository implements LeadRepository {
   ): Promise<Lead> {
     const existing = this.leads.get(id);
     if (!existing) throw new Error(`FakeLeadRepository: Lead ${id} not found`);
-    const updated: Lead = { ...existing, ...data, updatedAt: new Date() };
+    const { campaignId, ...stageFields } = data;
+    const updated: Lead = {
+      ...existing,
+      ...stageFields,
+      ...(campaignId !== undefined ? { campaignId } : {}),
+      updatedAt: new Date(),
+    };
     this.leads.set(id, updated);
     this.recordAudit(actor, "LeadStageChanged", id, correlationId, { ...existing }, { ...updated });
     return updated;
@@ -357,9 +365,14 @@ export class FakeLeadRepository implements LeadRepository {
     });
     this.assignments.set(id, history);
 
+    const temporaryCoverage =
+      data.temporaryCoverage === undefined ? null : data.temporaryCoverage;
+
     const updated: Lead = {
       ...existing,
       currentAssigneeUserId: data.assignedToUserId,
+      permanentAssigneeUserId: temporaryCoverage?.permanentAssigneeUserId ?? null,
+      temporaryAssigneeUntil: temporaryCoverage?.until ?? null,
       ...(data.ownership
         ? {
             ownerManagerId: data.ownership.ownerManagerId,
@@ -371,13 +384,27 @@ export class FakeLeadRepository implements LeadRepository {
     this.leads.set(id, updated);
     this.recordAudit(
       actor,
-      data.assignmentType === "INITIAL" ? "LeadAssigned" : "LeadReassigned",
+      data.assignmentType === "INITIAL"
+        ? "LeadAssigned"
+        : data.assignmentType === "TEMPORARY_REASSIGNMENT"
+          ? "LeadTemporarilyReassigned"
+          : "LeadReassigned",
       id,
       correlationId,
       { ...existing },
       { ...updated },
     );
     return updated;
+  }
+
+  async listExpiredTemporaryAssignments(organizationId: string, asOf: Date): Promise<Lead[]> {
+    return [...this.leads.values()].filter(
+      (lead) =>
+        lead.organizationId === organizationId &&
+        lead.temporaryAssigneeUntil != null &&
+        lead.temporaryAssigneeUntil.getTime() <= asOf.getTime() &&
+        lead.permanentAssigneeUserId != null,
+    );
   }
 
   async listAssignmentHistory(leadId: string): Promise<LeadAssignment[]> {

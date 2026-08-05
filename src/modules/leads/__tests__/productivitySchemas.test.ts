@@ -43,6 +43,35 @@ describe("productivitySchemas", () => {
     expect(parsed.distributionStrategy).toBe("ROUND_ROBIN");
   });
 
+  it("accepts MANUAL import with caller percentage split", () => {
+    const agentA = uuid;
+    const agentB = "22222222-2222-2222-2222-222222222222";
+    const parsed = importLeadsCsvSchema.parse({
+      leadSourceId: uuid,
+      rows: [{ Name: "Rahul", Phone: "9000000000" }],
+      columnMapping: { full_name: "Name", phone: "Phone" },
+      distributionStrategy: "MANUAL",
+      agentUserIds: [agentA, agentB],
+      percentages: { [agentA]: 60, [agentB]: 40 },
+    });
+    expect(parsed.percentages?.[agentA]).toBe(60);
+    expect(parsed.percentages?.[agentB]).toBe(40);
+  });
+
+  it("rejects MANUAL percentages that do not sum to 100", () => {
+    const agentA = uuid;
+    const agentB = "22222222-2222-2222-2222-222222222222";
+    const parsed = importLeadsCsvSchema.safeParse({
+      leadSourceId: uuid,
+      rows: [{ Name: "Rahul", Phone: "9000000000" }],
+      columnMapping: { full_name: "Name", phone: "Phone" },
+      distributionStrategy: "MANUAL",
+      agentUserIds: [agentA, agentB],
+      percentages: { [agentA]: 60, [agentB]: 30 },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it("requires selectedStageIds for replace/archive strategies", () => {
     const missing = importLeadsCsvSchema.safeParse({
       leadSourceId: uuid,

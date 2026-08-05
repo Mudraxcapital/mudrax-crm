@@ -17,7 +17,7 @@ export class PrismaLeadCatalogRepository implements LeadCatalogRepository {
 
   async listStages(organizationId: string): Promise<LeadStage[]> {
     const rows = await this.prisma.leadStage.findMany({
-      where: { organizationId },
+      where: { organizationId, isActive: true },
       orderBy: { sortOrder: "asc" },
     });
     return rows.map(toLeadStage);

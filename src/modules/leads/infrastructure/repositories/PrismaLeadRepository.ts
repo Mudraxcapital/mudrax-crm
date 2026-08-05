@@ -409,6 +409,8 @@ export class PrismaLeadRepository implements LeadRepository {
           lostReasonId: null,
           campaignId: row.campaignId,
           currentAssigneeUserId: row.currentAssigneeUserId,
+          permanentAssigneeUserId: null,
+          temporaryAssigneeUntil: null,
           ownerManagerId: row.ownerManagerId,
           ownerTeamLeadId: row.ownerTeamLeadId,
           fullNameSnapshot: row.fullNameSnapshot,
@@ -503,6 +505,7 @@ export class PrismaLeadRepository implements LeadRepository {
           lostReasonId: data.lostReasonId,
           wonAt: data.wonAt,
           lostAt: data.lostAt,
+          ...(data.campaignId !== undefined ? { campaignId: data.campaignId } : {}),
         },
       });
       const after = toLead(afterRow);
@@ -551,10 +554,15 @@ export class PrismaLeadRepository implements LeadRepository {
         },
       });
 
+      const temporaryCoverage =
+        data.temporaryCoverage === undefined ? null : data.temporaryCoverage;
+
       const afterRow = await tx.lead.update({
         where: { id },
         data: {
           currentAssigneeUserId: data.assignedToUserId,
+          permanentAssigneeUserId: temporaryCoverage?.permanentAssigneeUserId ?? null,
+          temporaryAssigneeUntil: temporaryCoverage?.until ?? null,
           ...(data.ownership
             ? {
                 ownerManagerId: data.ownership.ownerManagerId,
@@ -570,7 +578,12 @@ export class PrismaLeadRepository implements LeadRepository {
           organizationId: after.organizationId,
           actorType: actor.actorType,
           actorId: actor.actorId,
-          action: data.assignmentType === "INITIAL" ? "LeadAssigned" : "LeadReassigned",
+          action:
+            data.assignmentType === "INITIAL"
+              ? "LeadAssigned"
+              : data.assignmentType === "TEMPORARY_REASSIGNMENT"
+                ? "LeadTemporarilyReassigned"
+                : "LeadReassigned",
           targetType: TARGET_TYPE_LEAD,
           targetId: after.id,
           correlationId: correlationId ?? null,
@@ -582,6 +595,18 @@ export class PrismaLeadRepository implements LeadRepository {
 
       return after;
     });
+  }
+
+  async listExpiredTemporaryAssignments(organizationId: string, asOf: Date): Promise<Lead[]> {
+    const rows = await this.prisma.lead.findMany({
+      where: {
+        organizationId,
+        temporaryAssigneeUntil: { lte: asOf },
+        permanentAssigneeUserId: { not: null },
+      },
+      take: 5_000,
+    });
+    return rows.map(toLead);
   }
 
   async listAssignmentHistory(leadId: string): Promise<LeadAssignment[]> {

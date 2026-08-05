@@ -11,6 +11,7 @@ import {
   getUser,
   InvalidUserHierarchyError,
   LastActiveAdminError,
+  SingleAdminLimitError,
   updateUser,
   updateUserSchema,
   UserDeleteBlockedError,
@@ -34,7 +35,7 @@ export async function GET(
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!hasPermission(current.authContext, "user.view")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await context.params;
@@ -59,7 +60,7 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!hasPermission(current.authContext, "user.manage")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await context.params;
@@ -88,10 +89,13 @@ export async function PATCH(
       error instanceof AdminRoleProtectedError ||
       error instanceof InvalidUserHierarchyError ||
       error instanceof LastActiveAdminError ||
+      error instanceof SingleAdminLimitError ||
       error instanceof UserDeleteBlockedError
     ) {
       const status =
-        error instanceof InvalidUserHierarchyError || error instanceof AdminRoleProtectedError
+        error instanceof InvalidUserHierarchyError ||
+        error instanceof AdminRoleProtectedError ||
+        error instanceof SingleAdminLimitError
           ? 403
           : 400;
       return NextResponse.json({ error: error.message }, { status });
@@ -107,7 +111,7 @@ export async function DELETE(
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!canDeleteUserAccounts(current.authContext)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await context.params;

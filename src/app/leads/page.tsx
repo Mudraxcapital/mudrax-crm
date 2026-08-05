@@ -14,6 +14,7 @@ import {
   listActiveLeadFields,
   listLeads,
   listSavedViews,
+  revertExpiredTemporaryAssignments,
 } from "@/modules/leads";
 import { listCampaigns } from "@/modules/campaigns";
 import { listUserSummaries, listUsers } from "@/modules/users";
@@ -33,6 +34,12 @@ export default async function LeadsPage({
   if (isCallerWorkspaceUser(authContext)) {
     redirect("/caller/leads");
   }
+
+  // Auto-revert expired temporary (holiday) covers when staff open the leads workspace.
+  await revertExpiredTemporaryAssignments({
+    organizationId: authContext.organizationId,
+    actor: { actorType: "SYSTEM", actorId: null },
+  }).catch(() => undefined);
 
   const canCreate = hasPermission(authContext, "lead.create");
   const canImport = hasPermission(authContext, "lead.import");

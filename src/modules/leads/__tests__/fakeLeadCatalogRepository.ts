@@ -50,6 +50,16 @@ export const STAGE_LOST: LeadStage = {
   isActive: true,
 };
 
+export const STAGE_DND: LeadStage = {
+  id: "stage-dnd",
+  organizationId: ORG_ID,
+  name: "Do Not Disturb",
+  bucket: "ACTIVE",
+  closeOutcome: null,
+  sortOrder: 5,
+  isActive: true,
+};
+
 export const SOURCE_WEBSITE: LeadSource = {
   id: "source-website",
   organizationId: ORG_ID,
@@ -65,7 +75,7 @@ export const LOST_REASON_PRICE: LostReason = {
 };
 
 export class FakeLeadCatalogRepository implements LeadCatalogRepository {
-  stages = [STAGE_NEW, STAGE_CONTACTED, STAGE_WON, STAGE_LOST];
+  stages = [STAGE_NEW, STAGE_CONTACTED, STAGE_WON, STAGE_LOST, STAGE_DND];
   sources = [SOURCE_WEBSITE];
   lostReasons = [LOST_REASON_PRICE];
 

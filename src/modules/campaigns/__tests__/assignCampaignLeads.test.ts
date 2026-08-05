@@ -8,7 +8,7 @@ import {
   NoActiveMembersError,
 } from "../domain/errors/CampaignErrors";
 import { FakeCampaignRepository } from "./fakeCampaignRepository";
-import { FakeLeadAssignmentPort, FakeUserLookupPort } from "./fakeLookupPorts";
+import { FakeLeadAssignmentPort, FakeUserLookupPort, fakeLeadSummary } from "./fakeLookupPorts";
 
 const ORG_ID = "org-1";
 const USER_A = "00000000-0000-0000-0000-0000000000a1";
@@ -75,13 +75,14 @@ describe("assignCampaignLeads", () => {
     });
 
     for (let i = 1; i <= 10; i += 1) {
-      leadLookup.leads.set(leadId(i), {
-        id: leadId(i),
-        organizationId: ORG_ID,
-        currentStageBucket: "INITIAL",
-        wonAt: null,
-        lostAt: null,
-      });
+      leadLookup.leads.set(
+        leadId(i),
+        fakeLeadSummary({
+          id: leadId(i),
+          organizationId: ORG_ID,
+          currentStageBucket: "INITIAL",
+        }),
+      );
     }
   });
 
@@ -173,13 +174,14 @@ describe("assignCampaignLeads", () => {
   });
 
   it("rejects a reference to a Lead outside the Organization", async () => {
-    leadLookup.leads.set("00000000-0000-0000-0000-000000000099", {
-      id: "00000000-0000-0000-0000-000000000099",
-      organizationId: "other-org",
-      currentStageBucket: "INITIAL",
-      wonAt: null,
-      lostAt: null,
-    });
+    leadLookup.leads.set(
+      "00000000-0000-0000-0000-000000000099",
+      fakeLeadSummary({
+        id: "00000000-0000-0000-0000-000000000099",
+        organizationId: "other-org",
+        currentStageBucket: "INITIAL",
+      }),
+    );
 
     await expect(
       assignCampaignLeads({

@@ -50,13 +50,21 @@ const LEAD_STAGES: {
   { name: "Follow-up Scheduled", bucket: StageBucket.ACTIVE, sortOrder: 10 },
   { name: "Documentation In Progress", bucket: StageBucket.ACTIVE, sortOrder: 11 },
   { name: "Submitted to Bank", bucket: StageBucket.ACTIVE, sortOrder: 12 },
+  // Do Not Disturb — Active status; leads move into the Do Not Disturb campaign.
+  { name: "Do Not Disturb", bucket: StageBucket.ACTIVE, sortOrder: 13 },
+  // Closed picker is only Won / Lost — Duplicate / Invalid / No Need / Not Eligible
+  // are Lost Reasons, not separate pipeline stages.
   { name: "Won", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.WON, sortOrder: 20 },
   { name: "Lost", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 21 },
-  { name: "Duplicate", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 22 },
-  { name: "Invalid", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 23 },
-  { name: "No Need", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 24 },
-  { name: "Not Eligible", bucket: StageBucket.CLOSED, closeOutcome: CloseOutcome.LOST, sortOrder: 25 },
 ];
+
+/** Former Closed stages retired in favor of Lost Reasons — deactivated on seed. */
+const RETIRED_CLOSED_STAGE_NAMES = [
+  "Duplicate",
+  "Invalid",
+  "No Need",
+  "Not Eligible",
+] as const;
 
 const LOST_REASONS = [
   "Not Interested",
@@ -117,6 +125,7 @@ export async function seedLeadCatalogs(
         bucket: stage.bucket,
         closeOutcome: stage.closeOutcome,
         sortOrder: stage.sortOrder,
+        isActive: true,
       },
       create: {
         organizationId,
@@ -124,9 +133,23 @@ export async function seedLeadCatalogs(
         bucket: stage.bucket,
         closeOutcome: stage.closeOutcome,
         sortOrder: stage.sortOrder,
+        isActive: true,
       },
     });
     leadStageIds[stage.name] = row.id;
+  }
+
+  const retired = await prisma.leadStage.updateMany({
+    where: {
+      organizationId,
+      name: { in: [...RETIRED_CLOSED_STAGE_NAMES] },
+    },
+    data: { isActive: false },
+  });
+  if (retired.count > 0) {
+    explain(
+      `Deactivated ${retired.count} retired Closed stage(s) (Duplicate / Invalid / No Need / Not Eligible → use Lost Reasons instead).`,
+    );
   }
 
   explain(

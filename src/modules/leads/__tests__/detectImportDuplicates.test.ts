@@ -171,6 +171,26 @@ describe("classifyImportDuplicates", () => {
     expect(csv).toContain("rahul@example.com");
     expect(csv).toContain("Ringing");
   });
+
+  it("flags Do Not Disturb CRM matches for import skip", () => {
+    const result = classifyImportDuplicates({
+      matchMode: "phone",
+      existingLeads: [
+        {
+          ...existing[0]!,
+          currentStageId: "stage-dnd",
+          currentStageName: "Do Not Disturb",
+        },
+      ],
+      stages: [
+        ...stages,
+        { id: "stage-dnd", name: "Do Not Disturb", sortOrder: 13, isActive: true },
+      ],
+      rows: [{ rowNumber: 1, name: "Rahul", phone: "9876543210", email: "" }],
+    });
+    expect(result.dndSkipCount).toBe(1);
+    expect(result.exactDuplicates[0]?.isDnd).toBe(true);
+  });
 });
 
 describe("previewLeadDistribution", () => {
@@ -198,5 +218,30 @@ describe("previewLeadDistribution", () => {
       manualAssigneeUserId: "b",
     });
     expect(preview.agents.find((agent) => agent.userId === "b")?.leadCount).toBe(10);
+  });
+
+  it("splits manual assignment by caller percentages", () => {
+    const preview = previewLeadDistribution({
+      leadCount: 100,
+      strategy: "MANUAL",
+      agents,
+      percentages: { a: 50, b: 30, c: 20 },
+    });
+    expect(preview.agents.find((agent) => agent.userId === "a")?.leadCount).toBe(50);
+    expect(preview.agents.find((agent) => agent.userId === "b")?.leadCount).toBe(30);
+    expect(preview.agents.find((agent) => agent.userId === "c")?.leadCount).toBe(20);
+    expect(preview.agents.find((agent) => agent.userId === "a")?.percentage).toBe(50);
+    expect(preview.assignments).toHaveLength(100);
+  });
+
+  it("rejects percentage totals that are not 100", () => {
+    expect(() =>
+      previewLeadDistribution({
+        leadCount: 10,
+        strategy: "MANUAL",
+        agents,
+        percentages: { a: 40, b: 40 },
+      }),
+    ).toThrow(/sum to 100/);
   });
 });

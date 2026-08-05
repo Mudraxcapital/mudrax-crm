@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeLeadRepository } from "./fakeLeadRepository";
+import { FakeLeadNoteRepository } from "./fakeLeadNoteRepository";
 import {
   FakeLeadCatalogRepository,
   ORG_ID,
@@ -15,6 +16,7 @@ describe("mergeLeads", () => {
   it("closes the merged-away lead as lost duplicate", async () => {
     const repo = new FakeLeadRepository();
     const catalogs = new FakeLeadCatalogRepository();
+    const notes = new FakeLeadNoteRepository();
 
     const survivor = await repo.createWithAudit(
       {
@@ -37,7 +39,7 @@ describe("mergeLeads", () => {
       actor,
     );
 
-    const mergeLeads = makeMergeLeads(repo, catalogs);
+    const mergeLeads = makeMergeLeads(repo, catalogs, notes);
     const result = await mergeLeads({
       organizationId: ORG_ID,
       input: {
@@ -54,6 +56,7 @@ describe("mergeLeads", () => {
   it("rejects leads from different customers", async () => {
     const repo = new FakeLeadRepository();
     const catalogs = new FakeLeadCatalogRepository();
+    const notes = new FakeLeadNoteRepository();
 
     const a = await repo.createWithAudit(
       {
@@ -76,7 +79,7 @@ describe("mergeLeads", () => {
       actor,
     );
 
-    const mergeLeads = makeMergeLeads(repo, catalogs);
+    const mergeLeads = makeMergeLeads(repo, catalogs, notes);
     await expect(
       mergeLeads({
         organizationId: ORG_ID,

@@ -90,7 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/customers/duplicates",
         label: "Duplicate Detection",
         icon: "customers",
-        permissions: ["customer.merge", "customer.view"],
+        permissions: ["customer.duplicate.view"],
       },
       {
         id: "crm-followups",
@@ -98,6 +98,13 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Follow-ups",
         icon: "followups",
         permissions: ["follow_up.view"],
+      },
+      {
+        id: "crm-notification-channel",
+        href: "/notifications/inbox",
+        label: "Notification Channel",
+        icon: "notifications",
+        permissions: ["notification.view"],
       },
       {
         id: "crm-calendar",
@@ -145,6 +152,62 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: "operations",
+    label: "Operations",
+    items: [
+      {
+        href: "/telephony",
+        label: "Call Logs",
+        icon: "telephony",
+        permissions: ["telephony.dashboard.view", "call.view"],
+      },
+      {
+        href: "/documents",
+        label: "Documents",
+        icon: "documents",
+        permissions: ["documents.dashboard.view", "document.view"],
+      },
+      {
+        href: "/notifications",
+        label: "Notifications",
+        icon: "notifications",
+        permissions: ["notifications.dashboard.view"],
+      },
+      {
+        href: "/loans",
+        label: "Loans",
+        icon: "loans",
+        permissions: ["loan_application.view"],
+      },
+      {
+        href: "/banks",
+        label: "Banks",
+        icon: "org",
+        permissions: ["bank.view"],
+      },
+      {
+        href: "/loan-products",
+        label: "Loan Products",
+        icon: "loans",
+        permissions: ["loan_product.view"],
+      },
+      {
+        href: "/disbursements",
+        label: "Disbursements",
+        icon: "loans",
+        permissions: ["disbursement.view"],
+      },
+      {
+        id: "ops-activity",
+        href: "/activity",
+        label: "Activity",
+        icon: "activity",
+        // Intentionally staff-only (no extra permission) — same as Dashboard.
+        permissions: [],
+      },
+    ],
+  },
+  {
     id: "management",
     label: "Management",
     items: [
@@ -165,6 +228,24 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Integrations",
         icon: "integrations",
         permissions: ["integration.view", "integration.manage"],
+      },
+      {
+        href: "/telephony/outcomes",
+        label: "Call Outcomes",
+        icon: "telephony",
+        permissions: ["call.outcome.manage"],
+      },
+      {
+        href: "/documents/categories",
+        label: "Document Categories",
+        icon: "documents",
+        permissions: ["document.category.manage"],
+      },
+      {
+        href: "/notifications/templates",
+        label: "Notification Templates",
+        icon: "notifications",
+        permissions: ["notification.template.manage"],
       },
       { href: "/profile", label: "Profile", icon: "profile" },
     ],

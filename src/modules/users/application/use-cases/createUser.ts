@@ -13,6 +13,8 @@ import {
 } from "../../domain/errors/UserErrors";
 import type { RoleAssignmentPort } from "../ports/RoleAssignmentPort";
 import { resolveCanManageCallerAccountsForUser } from "../services/callerManageGrant";
+import { adminAssignedPasswordRole } from "../services/selfServicePasswordPolicy";
+import { assertSingleAdminSlotAvailable } from "../services/singleAdminPolicy";
 import type { CreateUserInput } from "../validators/userSchemas";
 import { assertCanAssignRole, assertFixedRole } from "../services/userRolePolicy";
 import {
@@ -40,6 +42,10 @@ export function makeCreateUser(
     const role = assertFixedRole(input.role);
     assertCanAssignRole(actorRoles, role);
     assertCanCreateRole(actorRoles, hierarchy, role);
+
+    if (role === "Admin") {
+      await assertSingleAdminSlotAvailable(repository);
+    }
 
     const email = input.email.toLowerCase();
     const phone = input.phone.trim();
@@ -86,7 +92,7 @@ export function makeCreateUser(
         assignedTeamLeadId: normalized.assignedTeamLeadId,
         reportingManagerId: normalized.reportingManagerId,
         createdByUserId: actor.actorId,
-        mustChangePassword: false,
+        mustChangePassword: adminAssignedPasswordRole(role),
         canManageCallerAccounts: resolveCanManageCallerAccountsForUser({
           role,
           requested: input.canManageCallerAccounts,

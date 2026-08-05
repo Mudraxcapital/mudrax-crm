@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/infra/auth/apiGuard";
 import { hasPermission } from "@/modules/rbac";
 import { leadCatalogs } from "@/modules/leads";
+import { filterClosedLeadStagesForPicker } from "@/modules/leads/presentation/lib/filterClosedLeadStages";
 import { excludeTestCatalogRows } from "@/shared/lib/excludeTestCatalog";
 
 export async function GET(request: Request) {
@@ -18,14 +19,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const url = new URL(request.url);
+  const currentStageId = url.searchParams.get("currentStageId");
+
   const [stagesRaw, lostReasonsRaw] = await Promise.all([
     leadCatalogs.listStages(current.authContext.organizationId),
     leadCatalogs.listLostReasons(current.authContext.organizationId),
   ]);
 
-  const stages = excludeTestCatalogRows(stagesRaw)
-    .filter((stage) => stage.isActive)
-    .map((stage) => ({
+  const stages = filterClosedLeadStagesForPicker(
+    excludeTestCatalogRows(stagesRaw).filter((stage) => stage.isActive),
+    currentStageId,
+  ).map((stage) => ({
       id: stage.id,
       name: stage.name,
       bucket: stage.bucket,

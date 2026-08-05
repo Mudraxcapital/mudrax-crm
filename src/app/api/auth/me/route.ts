@@ -24,7 +24,7 @@ export async function GET(request: Request) {
         email: session.user.email ?? "",
         fullName: session.user.fullName,
         organizationId: session.user.organizationId,
-        mustChangePassword: !!session.user.mustChangePassword,
+        mustChangePassword: !!profile.mustChangePassword,
         sessionId: session.user.sessionId ?? "",
         phone: profile.phone,
         profilePhotoUrl: profile.profilePhotoUrl,

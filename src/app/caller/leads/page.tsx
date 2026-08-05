@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireCallerWorkspace } from "@/infra/auth/session";
-import { listLeads, leadCatalogs } from "@/modules/leads";
+import { listLeads, leadCatalogs, revertExpiredTemporaryAssignments } from "@/modules/leads";
 import { listCampaignsForMember } from "@/modules/campaigns";
 import { CampaignSelector } from "@/modules/caller-workspace/presentation/components/CampaignSelector";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
@@ -15,6 +15,13 @@ export default async function CallerMyLeadsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { session, authContext } = await requireCallerWorkspace();
+
+  // Auto-revert expired temporary covers so original callers get leads back on their own.
+  await revertExpiredTemporaryAssignments({
+    organizationId: authContext.organizationId,
+    actor: { actorType: "SYSTEM", actorId: null },
+  }).catch(() => undefined);
+
   const params = await searchParams;
   const campaignIdParam = typeof params.campaignId === "string" ? params.campaignId : null;
   const stageId = typeof params.currentStageId === "string" ? params.currentStageId : undefined;

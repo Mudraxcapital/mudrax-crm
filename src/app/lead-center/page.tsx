@@ -5,6 +5,7 @@ import { hasPermission, isCallerWorkspaceUser } from "@/modules/rbac";
 import { listLeadCenterDashboard } from "@/modules/lead-center";
 import { LeadCenterWorkspace } from "@/modules/lead-center/presentation/components/LeadCenterWorkspace";
 import { listCampaigns } from "@/modules/campaigns";
+import { listUsersByRole } from "@/modules/users";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { managerBookFilter, leadHierarchyFilter } from "@/shared/auth/applyHierarchyListFilter";
 
@@ -20,16 +21,22 @@ export default async function LeadCenterPage() {
   const canImport = hasPermission(authContext, "lead_center.import");
   const canCreateCampaign = hasPermission(authContext, "campaign.manage");
   const canViewIntegrations = hasPermission(authContext, "integration.view");
+  const isAdmin = authContext.hierarchy.primaryRole === "Admin";
   const book = managerBookFilter(authContext);
   const ownership = leadHierarchyFilter(authContext);
 
-  const [dashboard, campaigns] = await Promise.all([
+  const [dashboard, campaigns, managers] = await Promise.all([
     listLeadCenterDashboard(authContext.organizationId, {
       ownerManagerId: book.ownerManagerId,
       ownerTeamLeadId: ownership.ownerTeamLeadId,
       limit: 100,
     }),
     listCampaigns(authContext.organizationId, book),
+    isAdmin && canImport
+      ? listUsersByRole("Manager").then((rows) =>
+          rows.filter((user) => user.status === "ACTIVE"),
+        )
+      : Promise.resolve([]),
   ]);
 
   const campaignOptions = campaigns
@@ -88,6 +95,11 @@ export default async function LeadCenterPage() {
         canImport={canImport}
         canCreateCampaign={canCreateCampaign}
         canViewIntegrations={canViewIntegrations}
+        requireOwnerManager={isAdmin}
+        ownerManagers={managers.map((user) => ({
+          id: user.id,
+          fullName: user.fullName,
+        }))}
       />
     </PageSection>
   );

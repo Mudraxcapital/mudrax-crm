@@ -3,7 +3,11 @@ import { makeCreateUser } from "../application/use-cases/createUser";
 import type { UserRepository } from "../domain/repositories/UserRepository";
 import type { RoleAssignmentPort } from "../application/ports/RoleAssignmentPort";
 import type { PasswordHasher } from "@/modules/auth/application/ports/PasswordHasher";
-import { AdminRoleProtectedError, DuplicateUserEmailError } from "../domain/errors/UserErrors";
+import {
+  AdminRoleProtectedError,
+  DuplicateUserEmailError,
+  SingleAdminLimitError,
+} from "../domain/errors/UserErrors";
 import type { User } from "../domain/entities/User";
 
 function user(overrides: Partial<User> = {}): User {
@@ -66,7 +70,7 @@ describe("createUser", () => {
   });
 
   it("creates a Caller with auto employee id and Team Lead", async () => {
-    const created = user();
+    const created = user({ mustChangePassword: true });
     const repository = {
       findByEmail: vi.fn().mockResolvedValue(null),
       findByPhone: vi.fn().mockResolvedValue(null),
@@ -118,14 +122,53 @@ describe("createUser", () => {
     expect(hasher.hash).toHaveBeenCalledWith("Password1!");
     expect(roles.assignFixedRole).toHaveBeenCalledWith("u1", "Caller", "admin1");
     expect(repository.createWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ mustChangePassword: true }),
+      expect.anything(),
+      undefined,
+    );
+    expect(repository.createWithAudit).toHaveBeenCalledWith(
       expect.not.objectContaining({ organizationId: expect.anything() }),
       expect.anything(),
       undefined,
     );
   });
 
+  it("rejects creating a second Admin", async () => {
+    const createUser = makeCreateUser(
+      {
+        findByEmail: vi.fn().mockResolvedValue(null),
+        findByPhone: vi.fn().mockResolvedValue(null),
+        countUsersWithRole: vi.fn().mockResolvedValue(1),
+      } as unknown as UserRepository,
+      {} as RoleAssignmentPort,
+      { hash: vi.fn() } as unknown as PasswordHasher,
+    );
+
+    await expect(
+      createUser({
+        input: {
+          fullName: "Second Admin",
+          email: "second.admin@mudraxcapital.com",
+          phone: "+919999900098",
+          password: "Password1!",
+          role: "Admin",
+          status: "ACTIVE",
+        },
+        actorRoles: ["Admin"],
+        hierarchy: {
+          primaryRole: "Admin",
+          ownerManagerId: null,
+          teamLeadId: null,
+          visibleUserIds: null,
+          unrestricted: true,
+        },
+        actor: { actorType: "USER", actorId: "admin1" },
+      }),
+    ).rejects.toBeInstanceOf(SingleAdminLimitError);
+  });
+
   it("allows Admin to create a Direct Admin Caller without a Team Lead", async () => {
-    const created = user({ assignedTeamLeadId: null });
+    const created = user({ assignedTeamLeadId: null, mustChangePassword: true });
     const repository = {
       findByEmail: vi.fn().mockResolvedValue(null),
       findByPhone: vi.fn().mockResolvedValue(null),
@@ -167,6 +210,7 @@ describe("createUser", () => {
       expect.objectContaining({
         assignedTeamLeadId: null,
         reportingManagerId: null,
+        mustChangePassword: true,
       }),
       expect.anything(),
       undefined,

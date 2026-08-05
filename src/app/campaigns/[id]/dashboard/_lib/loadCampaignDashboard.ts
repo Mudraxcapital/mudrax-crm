@@ -17,6 +17,7 @@ import {
   getLeadsByStage,
   listImportBatches,
   listLeadAuditLog,
+  listLatestLeadNoteBodies,
   listLeadNotes,
   listLeads,
   type ListLeadsFilter,
@@ -135,6 +136,8 @@ export interface CampaignDashboardLeadRow {
   lostReasonName: string | null;
   assigneeName: string;
   nextActionAt: string | null;
+  /** Latest lead note (e.g. caller Do Not Disturb reason). */
+  latestNote: string | null;
   recordings: CampaignDashboardLeadRecording[];
 }
 
@@ -747,6 +750,10 @@ export async function loadCampaignDashboard(input: {
     recordingsByLeadId.set(recording.leadId, list);
   }
 
+  const latestNoteByLeadId = await listLatestLeadNoteBodies(
+    leads.map((lead) => lead.id),
+  ).catch(() => new Map<string, string | null>());
+
   const assigneeLeads: CampaignDashboardLeadRow[] = leads.map((lead) => ({
     id: lead.id,
     fullName: lead.fullNameSnapshot,
@@ -755,6 +762,7 @@ export async function loadCampaignDashboard(input: {
     lostReasonName: lead.lostReasonName,
     assigneeName: nameFromMap(userNameById, lead.currentAssigneeUserId),
     nextActionAt: lead.nextActionAt,
+    latestNote: latestNoteByLeadId.get(lead.id) ?? null,
     recordings: recordingsByLeadId.get(lead.id) ?? [],
   }));
 

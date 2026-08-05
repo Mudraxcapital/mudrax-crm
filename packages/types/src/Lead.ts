@@ -18,6 +18,9 @@ export interface Lead {
   lostReasonName: string | null;
   campaignId: string | null;
   currentAssigneeUserId: string | null;
+  permanentAssigneeUserId?: string | null;
+  temporaryAssigneeUntil?: string | null;
+  isTemporaryAssignee?: boolean;
   ownerManagerId: string | null;
   ownerTeamLeadId: string | null;
   fullNameSnapshot: string;

@@ -38,14 +38,6 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     throw error;
   }
 
-  const creatableRoles = rolesActorMayCreate(
-    authContext.roles.map((role) => role.name),
-    hierarchy,
-  );
-  const allowedRoles = Array.from(
-    new Set<string>([...creatableRoles, ...(user.roleName ? [user.roleName] : [])]),
-  );
-
   const [
     teamLeads,
     managers,
@@ -63,6 +55,15 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     listUsers({ userIds: visibleIds ?? undefined }),
     countAssignedLeadsForUser(id),
   ]);
+
+  const creatableRoles = rolesActorMayCreate(
+    authContext.roles.map((role) => role.name),
+    hierarchy,
+  );
+  const otherAdminsExist = admins.some((admin) => admin.id !== id);
+  const allowedRoles = Array.from(
+    new Set<string>([...creatableRoles, ...(user.roleName ? [user.roleName] : [])]),
+  ).filter((role) => role !== "Admin" || user.roleName === "Admin" || !otherAdminsExist);
 
   const scopedTeamLeads = teamLeads.filter(
     (item) => !visibleIds || visibleIds.includes(item.id),

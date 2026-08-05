@@ -8,6 +8,7 @@ export const JOB_TYPES = {
   FOLLOW_UP_ESCALATION_NOTIFY: "follow-up.escalation-notify",
   NOTIFICATIONS_PROCESS_QUEUE: "notifications.process-queue",
   NOTIFICATIONS_RETRY_FAILED: "notifications.retry-failed",
+  LEADS_TEMPORARY_ASSIGNMENT_EXPIRY: "leads.temporary-assignment-expiry",
   JOBS_RETRY_FAILED: "jobs.retry-failed",
 } as const;
 

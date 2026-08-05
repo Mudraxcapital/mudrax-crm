@@ -7,6 +7,7 @@ import {
   createLoginSession,
   getUserAuthProfileByEmail,
   recordLoginAttempt,
+  registerFailedLoginAttempt,
   touchLastLogin,
 } from "@/modules/users";
 import type { PasswordHasher } from "../ports/PasswordHasher";
@@ -43,14 +44,15 @@ export function makeAuthenticateUser(passwordHasher: PasswordHasher) {
 
     const passwordMatches = await passwordHasher.verify(input.password, profile.passwordHash);
     if (!passwordMatches) {
-      await recordLoginAttempt({
+      const { suspended } = await registerFailedLoginAttempt({
         userId: profile.id,
         emailTried: email,
-        succeeded: false,
         ipAddress: input.ipAddress,
         userAgent: input.userAgent,
-        failureReason: "BAD_PASSWORD",
       });
+      if (suspended) {
+        throw new AccountNotActiveError("SUSPENDED");
+      }
       throw new InvalidCredentialsError();
     }
 

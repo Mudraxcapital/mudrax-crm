@@ -60,10 +60,19 @@ export class CannotDeleteSelfError extends Error {
 
 export class LastActiveAdminError extends Error {
   constructor(
-    message = "Cannot remove the last active Admin. Promote another Admin first.",
+    message = "Cannot remove the last active Admin. The system requires exactly one Admin.",
   ) {
     super(message);
     this.name = "LastActiveAdminError";
+  }
+}
+
+export class SingleAdminLimitError extends Error {
+  constructor(
+    message = "Only one Admin is allowed in the system. An Admin account already exists.",
+  ) {
+    super(message);
+    this.name = "SingleAdminLimitError";
   }
 }
 

@@ -108,7 +108,7 @@ export async function resetPasswordAction(
   revalidatePath("/users");
   return {
     success:
-      "Password reset. The employee can sign in with the new password. All sessions were ended.",
+      "Password reset. If the account was suspended (including login lockout), it is active again. The employee must change the temporary password on next sign-in.",
   };
 }
 

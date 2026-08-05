@@ -10,6 +10,7 @@ import { LeadStageForm } from "@/modules/leads/presentation/components/LeadStage
 import { changeLeadStageAction } from "@/modules/leads/presentation/controllers/changeLeadStage.action";
 import { addLeadNoteAction } from "@/modules/leads/presentation/controllers/addLeadNote.action";
 import type { LeadFormState } from "@/modules/leads/presentation/controllers/createLead.action";
+import { isFollowUpStageName } from "@/modules/leads/application/lib/followUpStagePolicy";
 import { FollowUpForm } from "@/modules/follow-ups/presentation/components/FollowUpForm";
 import { createFollowUpAction } from "@/modules/follow-ups/presentation/controllers/createFollowUp.action";
 import type { FollowUpFormState } from "@/modules/follow-ups/presentation/controllers/createFollowUp.action";
@@ -130,12 +131,53 @@ export function CampaignLeadActionsPanel({
     if (!leadStatusUnlocked) {
       return { error: FRESH_STAGE_LOCK_HINT };
     }
-    const result = await changeLeadStageAction(lead.id, state, formData);
-    if (!result.error) {
-      markActed();
-      router.refresh();
+
+    const stageId = String(formData.get("stageId") ?? "");
+    const targetStage = stageOptions.find((stage) => stage.id === stageId);
+    const movingToFollowUp =
+      Boolean(targetStage && isFollowUpStageName(targetStage.name)) &&
+      stageId !== lead.stageId;
+
+    if (movingToFollowUp) {
+      if (!canCreateFollowUp) {
+        return { error: "You need follow-up permission to mark a lead as Follow Up." };
+      }
+      const scheduledFor = String(formData.get("followUpScheduledFor") ?? "").trim();
+      if (!scheduledFor) {
+        return { error: "Follow-up date and time are required when marking Follow Up." };
+      }
     }
-    return result;
+
+    const result = await changeLeadStageAction(lead.id, state, formData);
+    if (result.error) return result;
+
+    if (movingToFollowUp) {
+      const followUpData = new FormData();
+      followUpData.set(
+        "triggerType",
+        String(formData.get("followUpTriggerType") || "FOLLOW_UP"),
+      );
+      followUpData.set("scheduledFor", String(formData.get("followUpScheduledFor")));
+      followUpData.set("currentAssigneeUserId", agentUserId);
+
+      const followUpResult = await createFollowUpAction(lead.id, undefined, followUpData);
+      if (followUpResult.error) {
+        return {
+          error: `Status updated, but follow-up was not scheduled: ${followUpResult.error}`,
+        };
+      }
+
+      const notes = String(formData.get("followUpNotes") ?? "").trim();
+      if (notes) {
+        const noteData = new FormData();
+        noteData.set("body", notes);
+        await addLeadNoteAction(lead.id, undefined, noteData);
+      }
+    }
+
+    markActed();
+    router.refresh();
+    return {};
   }
 
   async function noteAction(
@@ -310,7 +352,24 @@ export function CampaignLeadActionsPanel({
               lostReasons={excludeTestCatalogRows(lostReasons)}
               disabled={!leadStatusUnlocked}
               disabledHint={leadStatusUnlocked ? undefined : FRESH_STAGE_LOCK_HINT}
+              requireFollowUpSchedule={canCreateFollowUp}
             />
+          </div>
+        ) : null}
+
+        {lead.notes.length > 0 ? (
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <p className="text-muted text-xs uppercase tracking-wide">Notes</p>
+            <ul className="space-y-2 text-sm">
+              {lead.notes.map((note) => (
+                <li key={note.id} className="rounded-md border border-border/70 px-3 py-2">
+                  <p className="whitespace-pre-wrap break-words">{note.body}</p>
+                  <p className="text-muted mt-1 text-xs">
+                    {new Date(note.createdAt).toLocaleString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
@@ -395,20 +454,6 @@ export function CampaignLeadActionsPanel({
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-muted text-xs uppercase tracking-wide">Add note</p>
             <LeadNoteForm action={noteAction} submitLabel="Save note" />
-            <ul className="space-y-2 text-sm">
-              {lead.notes.length === 0 ? (
-                <li className="text-muted">No notes yet.</li>
-              ) : (
-                lead.notes.map((note) => (
-                  <li key={note.id} className="rounded-md border border-border px-3 py-2">
-                    <p>{note.body}</p>
-                    <p className="text-muted mt-1 text-xs">
-                      {new Date(note.createdAt).toLocaleString()}
-                    </p>
-                  </li>
-                ))
-              )}
-            </ul>
           </div>
         ) : null}
 

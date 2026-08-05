@@ -30,6 +30,11 @@ model Lead {
   // (leads.md); full history lives in LeadAssignment, append-only.
   currentAssigneeUserId String? @db.Uuid
 
+  /// When set with temporaryAssigneeUntil, the current assignee is a temporary
+  /// cover (e.g. holiday). permanentAssigneeUserId is who the Lead reverts to.
+  permanentAssigneeUserId String?   @db.Uuid
+  temporaryAssigneeUntil  DateTime?
+
   /// Hierarchical ownership — Manager book + Team Lead / Caller chain.
   ownerManagerId  String? @db.Uuid
   ownerTeamLeadId String? @db.Uuid
@@ -88,6 +93,7 @@ model Lead {
   @@index([organizationId, currentStageId])
   @@index([organizationId, campaignId])
   @@index([organizationId, createdAt])
+  @@index([temporaryAssigneeUntil])
   @@map("leads")
   @@schema("leads")
 }
@@ -251,6 +257,7 @@ enum AssignmentType {
   INITIAL
   CAMPAIGN_ALLOCATION
   MANUAL_REASSIGNMENT
+  TEMPORARY_REASSIGNMENT
 
   @@map("assignment_type")
   @@schema("leads")

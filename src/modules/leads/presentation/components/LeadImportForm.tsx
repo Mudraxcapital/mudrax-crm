@@ -103,7 +103,7 @@ export interface ImportCampaignOption {
 
 export function LeadImportForm({
   sources,
-  campaigns,
+  campaigns: campaignsProp,
   agents,
   canCreateCampaign,
   importableFields = [],
@@ -121,6 +121,14 @@ export function LeadImportForm({
   /** Managers and Team Leads shown when Admin must pick a scope first. */
   supervisors?: ImportSupervisorOption[];
 }) {
+  // System DND campaign is never an Excel import target.
+  const campaigns = useMemo(
+    () =>
+      campaignsProp.filter(
+        (campaign) => campaign.name.trim().toLowerCase() !== "do not disturb",
+      ),
+    [campaignsProp],
+  );
   const requiresSupervisor = actorRole === "Admin";
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState("leads.csv");
@@ -198,6 +206,8 @@ export function LeadImportForm({
     "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL"
   >("ROUND_ROBIN");
   const [manualAssigneeUserId, setManualAssigneeUserId] = useState("");
+  /** MANUAL: percent share per selected caller (must sum to 100). */
+  const [manualPercentages, setManualPercentages] = useState<Record<string, number>>({});
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<ProductivityFormState | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -305,6 +315,27 @@ export function LeadImportForm({
   const allScopedSelected =
     activeAgents.length > 0 && activeAgents.every((agent) => selectedAgentIds.includes(agent.id));
 
+  function equalPercentages(ids: string[]): Record<string, number> {
+    if (ids.length === 0) return {};
+    if (ids.length === 1) return { [ids[0]!]: 100 };
+    const base = Math.floor(100 / ids.length);
+    const remainder = 100 - base * ids.length;
+    const next: Record<string, number> = {};
+    ids.forEach((id, index) => {
+      next[id] = base + (index < remainder ? 1 : 0);
+    });
+    return next;
+  }
+
+  const manualPercentageTotal = useMemo(
+    () =>
+      selectedAgentIds.reduce((sum, id) => sum + (Number(manualPercentages[id]) || 0), 0),
+    [manualPercentages, selectedAgentIds],
+  );
+  const manualPercentagesValid =
+    distributionStrategy !== "MANUAL" ||
+    (selectedAgentIds.length > 0 && Math.round(manualPercentageTotal) === 100);
+
   function resolveOwnerManagerIdForImport(): string | undefined {
     if (selectedSupervisor?.role === "Manager") return selectedSupervisor.id;
     if (selectedSupervisor?.role === "Team Lead") {
@@ -323,24 +354,53 @@ export function LeadImportForm({
 
   const distributionPreview = useMemo(() => {
     if (selectedAgents.length === 0) return null;
-    return previewLeadDistribution({
-      leadCount: Math.max(importableCount, 0),
-      strategy: distributionStrategy,
-      agents: selectedAgents.map((agent) => ({
-        userId: agent.id,
-        fullName: agent.fullName,
-        openLeads: agent.openLeads,
-        completedLeads: agent.completedLeads,
-        availability: agent.availability,
-      })),
-      manualAssigneeUserId: manualAssigneeUserId || selectedAgents[0]?.id,
-    });
+    if (distributionStrategy === "MANUAL" && Math.round(manualPercentageTotal) !== 100) {
+      return null;
+    }
+    try {
+      return previewLeadDistribution({
+        leadCount: Math.max(importableCount, 0),
+        strategy: distributionStrategy,
+        agents: selectedAgents.map((agent) => ({
+          userId: agent.id,
+          fullName: agent.fullName,
+          openLeads: agent.openLeads,
+          completedLeads: agent.completedLeads,
+          availability: agent.availability,
+        })),
+        manualAssigneeUserId: manualAssigneeUserId || selectedAgents[0]?.id,
+        percentages:
+          distributionStrategy === "MANUAL"
+            ? Object.fromEntries(
+                selectedAgentIds.map((id) => [id, Number(manualPercentages[id]) || 0]),
+              )
+            : undefined,
+      });
+    } catch {
+      return null;
+    }
   }, [
     distributionStrategy,
     importableCount,
     manualAssigneeUserId,
+    manualPercentageTotal,
+    manualPercentages,
+    selectedAgentIds,
     selectedAgents,
   ]);
+
+  useEffect(() => {
+    if (selectedAgentIds.length === 0) {
+      setManualPercentages({});
+      return;
+    }
+    setManualPercentages((current) => {
+      const hasAll = selectedAgentIds.every((id) => typeof current[id] === "number");
+      const extras = Object.keys(current).some((id) => !selectedAgentIds.includes(id));
+      if (hasAll && !extras) return current;
+      return equalPercentages(selectedAgentIds);
+    });
+  }, [selectedAgentIds]);
 
   function applyParsedTable(table: {
     headers: string[];
@@ -494,13 +554,21 @@ export function LeadImportForm({
     if (allScopedSelected) {
       setSelectedAgentIds([]);
       setManualAssigneeUserId("");
+      setManualPercentages({});
       return;
     }
     const ids = activeAgents.map((agent) => agent.id);
     setSelectedAgentIds(ids);
+    setManualPercentages(equalPercentages(ids));
     if (!manualAssigneeUserId && ids[0]) {
       setManualAssigneeUserId(ids[0]);
     }
+  }
+
+  function setCallerPercentage(userId: string, raw: string) {
+    const parsed = Number(raw);
+    const value = Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0;
+    setManualPercentages((current) => ({ ...current, [userId]: value }));
   }
 
   function runImport() {
@@ -523,6 +591,10 @@ export function LeadImportForm({
     }
     if (selectedAgentIds.length === 0) {
       setParseError("Select at least one caller.");
+      return;
+    }
+    if (distributionStrategy === "MANUAL" && Math.round(manualPercentageTotal) !== 100) {
+      setParseError("Manual assignment percentages must sum to 100%.");
       return;
     }
     setParseError(null);
@@ -580,8 +652,14 @@ export function LeadImportForm({
         agentUserIds: selectedAgentIds,
         distributionStrategy,
         manualAssigneeUserId:
-          distributionStrategy === "MANUAL"
+          distributionStrategy === "MANUAL" && selectedAgentIds.length === 1
             ? manualAssigneeUserId || selectedAgentIds[0]
+            : undefined,
+        percentages:
+          distributionStrategy === "MANUAL"
+            ? Object.fromEntries(
+                selectedAgentIds.map((id) => [id, Number(manualPercentages[id]) || 0]),
+              )
             : undefined,
         ownerManagerId,
         allowMixedManagers: isAllAgentsScope,
@@ -1384,20 +1462,57 @@ export function LeadImportForm({
             </select>
           </label>
           {distributionStrategy === "MANUAL" ? (
-            <label className="text-sm">
-              Assign all to
-              <select
-                className="mx-input mt-1 w-full"
-                value={manualAssigneeUserId}
-                onChange={(event) => setManualAssigneeUserId(event.target.value)}
-              >
+            <div className="rounded-lg border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">Percentage division by caller</p>
+                  <p className="text-muted mt-0.5 text-xs">
+                    Set how many percent of importable leads each selected caller receives. Total
+                    must be 100%.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mx-btn mx-btn-secondary text-xs"
+                  onClick={() => setManualPercentages(equalPercentages(selectedAgentIds))}
+                >
+                  Split equally
+                </button>
+              </div>
+              <ul className="mt-3 space-y-2">
                 {selectedAgents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.fullName}
-                  </option>
+                  <li
+                    key={agent.id}
+                    className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 last:border-0"
+                  >
+                    <span className="text-sm">{agent.fullName}</span>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        className="mx-input w-20"
+                        value={manualPercentages[agent.id] ?? 0}
+                        onChange={(event) => setCallerPercentage(agent.id, event.target.value)}
+                        aria-label={`Percent for ${agent.fullName}`}
+                      />
+                      <span className="text-muted">%</span>
+                    </label>
+                  </li>
                 ))}
-              </select>
-            </label>
+              </ul>
+              <p
+                className={`mt-3 text-sm ${
+                  Math.round(manualPercentageTotal) === 100 ? "text-success" : "text-danger"
+                }`}
+              >
+                Total: {manualPercentageTotal}%
+                {Math.round(manualPercentageTotal) === 100
+                  ? " · ready"
+                  : " · must equal 100%"}
+              </p>
+            </div>
           ) : null}
 
           {distributionPreview ? (
@@ -1411,7 +1526,10 @@ export function LeadImportForm({
                   .map((agent) => (
                     <li key={agent.userId} className="flex justify-between border-b border-border pb-2 last:border-0">
                       <span>{agent.fullName}</span>
-                      <span className="font-medium">{agent.leadCount} leads</span>
+                      <span className="font-medium">
+                        {agent.percentage != null ? `${agent.percentage}% · ` : ""}
+                        {agent.leadCount} leads
+                      </span>
                     </li>
                   ))}
               </ul>
@@ -1434,7 +1552,7 @@ export function LeadImportForm({
               type="button"
               className="mx-btn mx-btn-primary"
               onClick={runImport}
-              disabled={pending || selectedAgentIds.length === 0}
+              disabled={pending || selectedAgentIds.length === 0 || !manualPercentagesValid}
             >
               {pending ? "Adding…" : `Add ${importableCount} lead(s) from Excel`}
             </button>

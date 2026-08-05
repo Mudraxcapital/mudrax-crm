@@ -24,6 +24,10 @@ export interface LeadDto {
   lostReasonName: string | null;
   campaignId: string | null;
   currentAssigneeUserId: string | null;
+  permanentAssigneeUserId: string | null;
+  temporaryAssigneeUntil: string | null;
+  /** True when a temporary cover is active and not yet expired. */
+  isTemporaryAssignee: boolean;
   ownerManagerId: string | null;
   ownerTeamLeadId: string | null;
   fullNameSnapshot: string;
@@ -65,6 +69,13 @@ export function toLeadDto(lead: Lead, catalogs: LeadCatalogLookups): LeadDto {
     lostReasonName: lostReason?.name ?? null,
     campaignId: lead.campaignId,
     currentAssigneeUserId: lead.currentAssigneeUserId,
+    permanentAssigneeUserId: lead.permanentAssigneeUserId,
+    temporaryAssigneeUntil: lead.temporaryAssigneeUntil
+      ? lead.temporaryAssigneeUntil.toISOString()
+      : null,
+    isTemporaryAssignee: Boolean(
+      lead.temporaryAssigneeUntil && lead.temporaryAssigneeUntil.getTime() > Date.now(),
+    ),
     ownerManagerId: lead.ownerManagerId,
     ownerTeamLeadId: lead.ownerTeamLeadId,
     fullNameSnapshot: lead.fullNameSnapshot,

@@ -51,7 +51,7 @@ export function FollowUpForm({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="scheduledFor" className="mx-label">
-            Scheduled for
+            Scheduled for <span className="text-danger">*</span>
           </label>
           <input
             id="scheduledFor"
@@ -60,6 +60,11 @@ export function FollowUpForm({
             required
             className={inputClass}
           />
+          <p className="text-muted text-xs">
+            At this time you get a CRM popup + notification. If unanswered the next day it goes to
+            your Team Lead; if the Team Lead also does not respond the following day it goes to
+            Manager and Admin.
+          </p>
         </div>
       </div>
 

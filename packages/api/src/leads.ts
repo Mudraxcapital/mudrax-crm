@@ -21,6 +21,8 @@ export interface ListLeadsParams {
 export interface ChangeLeadStageInput {
   stageId: string;
   lostReasonId?: string;
+  /** Required when the target stage is Closed-Lost. */
+  note?: string;
 }
 
 export interface LeadsApi {

@@ -20,6 +20,7 @@ import {
 import {
   CampaignNotFoundError,
   getCampaign,
+  isDoNotDisturbCampaignName,
   listCampaignsForMember,
   type CampaignDto,
 } from "@/modules/campaigns";
@@ -54,6 +55,12 @@ export async function authorizeCampaignDashboard(input: {
   const canViewCampaigns = hasPermission(authContext, "campaign.view");
   const callerOnly = isCallerWorkspaceUser(authContext);
   const primaryRole = authContext.hierarchy.primaryRole;
+  const isDnd = isDoNotDisturbCampaignName(campaign.name);
+
+  // Do Not Disturb is Admin / Manager / Team Lead only — never Caller.
+  if (isDnd && callerOnly) {
+    return null;
+  }
 
   // Admin / Manager with campaign.view — Managers may open any campaign;
   // hierarchy filters apply to leads/calls/analytics inside the loader.
@@ -68,17 +75,19 @@ export async function authorizeCampaignDashboard(input: {
   }
 
   // Team Lead with campaign.view — manager book + (created | self/caller member).
+  // DND is visible to Team Leads in the manager book without membership.
   if (canViewCampaigns && primaryRole === "Team Lead") {
     if (!assertOwnsManagerData(authContext.hierarchy, campaign.ownerManagerId)) {
       return null;
     }
-    if (await teamLeadHasCampaignMembership(authContext, campaign)) {
+    if (isDnd || (await teamLeadHasCampaignMembership(authContext, campaign))) {
       return { campaign, mode: "full" };
     }
     return null;
   }
 
   // Caller (or membership-only) — campaign must be one they belong to.
+  // listCampaignsForMember already excludes DND.
   const memberships = await listCampaignsForMember(authContext.userId);
   if (!memberships.some((item) => item.id === campaignId)) {
     return null;

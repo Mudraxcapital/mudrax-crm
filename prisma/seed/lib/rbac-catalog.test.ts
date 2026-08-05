@@ -37,6 +37,26 @@ describe("user management permissions", () => {
     expect(roles).toEqual(["Admin", "Manager"]);
   });
 
+  it("grants customer.duplicate.view from Manager upward", () => {
+    const roles = computeRoleGrants()
+      .filter((grant) => grant.permissionCode === "customer.duplicate.view")
+      .map((grant) => grant.role)
+      .sort();
+    expect(roles).toEqual(["Admin", "Manager"]);
+  });
+
+  it("does not keep unimplemented Admin-only catalog codes", () => {
+    for (const code of [
+      "api_key.manage",
+      "user.impersonate",
+      "permission.view",
+      "audit.view",
+      "lead_center.manage",
+    ] as const) {
+      expect(PERMISSION_CATALOG.find((p) => p.code === code)).toBeUndefined();
+    }
+  });
+
   it("does not grant User Management permissions to Caller", () => {
     const callerGrants = computeRoleGrants().filter(
       (grant) =>

@@ -7,23 +7,47 @@
 // assignment by calling `leads`.assignLead, tagged with campaignAssignmentId.
 // ============================================================================
 
-import { assignLead, getLead, listLeads } from "@/modules/leads";
+import {
+  assignLead,
+  getLead,
+  listLeads,
+  revertTemporaryLeadAssignment,
+  temporarilyAssignLead,
+} from "@/modules/leads";
 import type {
   LeadAssignmentLookupSummary,
   LeadAssignmentPort,
 } from "../../application/ports/LeadAssignmentPort";
 
+function toSummary(lead: {
+  id: string;
+  organizationId: string;
+  currentAssigneeUserId: string | null;
+  permanentAssigneeUserId: string | null;
+  temporaryAssigneeUntil: string | null;
+  isTemporaryAssignee: boolean;
+  currentStageBucket: "INITIAL" | "ACTIVE" | "CLOSED";
+  wonAt: string | null;
+  lostAt: string | null;
+}): LeadAssignmentLookupSummary {
+  return {
+    id: lead.id,
+    organizationId: lead.organizationId,
+    currentAssigneeUserId: lead.currentAssigneeUserId,
+    permanentAssigneeUserId: lead.permanentAssigneeUserId,
+    temporaryAssigneeUntil: lead.temporaryAssigneeUntil,
+    isTemporaryAssignee: lead.isTemporaryAssignee,
+    currentStageBucket: lead.currentStageBucket,
+    wonAt: lead.wonAt,
+    lostAt: lead.lostAt,
+  };
+}
+
 export class LeadsModuleLookupAdapter implements LeadAssignmentPort {
   async findById(leadId: string): Promise<LeadAssignmentLookupSummary | null> {
     try {
       const lead = await getLead(leadId);
-      return {
-        id: lead.id,
-        organizationId: lead.organizationId,
-        currentStageBucket: lead.currentStageBucket,
-        wonAt: lead.wonAt,
-        lostAt: lead.lostAt,
-      };
+      return toSummary(lead);
     } catch {
       return null;
     }
@@ -36,13 +60,7 @@ export class LeadsModuleLookupAdapter implements LeadAssignmentPort {
     // Campaign redistribution / assignment must see the full lead set — never
     // the UI list default of 50.
     const leads = await listLeads(organizationId, { campaignId, limit: 100_000 });
-    return leads.map((lead) => ({
-      id: lead.id,
-      organizationId: lead.organizationId,
-      currentStageBucket: lead.currentStageBucket,
-      wonAt: lead.wonAt,
-      lostAt: lead.lostAt,
-    }));
+    return leads.map(toSummary);
   }
 
   async assign(
@@ -56,6 +74,27 @@ export class LeadsModuleLookupAdapter implements LeadAssignmentPort {
       input: { assignedToUserId },
       actor: { actorType: actorId ? "USER" : "SYSTEM", actorId },
       campaignAssignmentId,
+    });
+  }
+
+  async temporarilyAssign(
+    leadId: string,
+    assignedToUserId: string,
+    durationDays: number,
+    actorId: string | null,
+  ): Promise<void> {
+    await temporarilyAssignLead({
+      id: leadId,
+      assignedToUserId,
+      durationDays,
+      actor: { actorType: actorId ? "USER" : "SYSTEM", actorId },
+    });
+  }
+
+  async revertTemporary(leadId: string, actorId: string | null): Promise<void> {
+    await revertTemporaryLeadAssignment({
+      id: leadId,
+      actor: { actorType: actorId ? "USER" : "SYSTEM", actorId },
     });
   }
 }

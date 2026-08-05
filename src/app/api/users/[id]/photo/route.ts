@@ -21,7 +21,7 @@ export async function GET(request: Request,
     hasPermission(current.authContext, "user.view") ||
     canViewUserId(current.authContext.hierarchy, id);
   if (!isSelf && !canViewOthers) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {

@@ -8,13 +8,11 @@ export const PERMISSION_CODES = [
   "user.manage",
   "user.delete",
   "user.reset_password",
-  "api_key.manage",
-  "user.impersonate",
-  "permission.view",
   "customer.view",
   "customer.create",
   "customer.update",
   "customer.merge",
+  "customer.duplicate.view",
   "customer.identifier.unmask",
   "lead.view",
   "lead.create",
@@ -26,7 +24,6 @@ export const PERMISSION_CODES = [
   "lead.import",
   "custom_field.manage",
   "lead_center.view",
-  "lead_center.manage",
   "lead_center.import",
   "integration.view",
   "integration.manage",
@@ -88,7 +85,6 @@ export const PERMISSION_CODES = [
   "dashboard.manage",
   "export.create",
   "analytics_dataset.manage",
-  "audit.view",
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];

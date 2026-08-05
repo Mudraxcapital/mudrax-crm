@@ -26,6 +26,8 @@ function templateCodeFor(kind: FollowUpNotificationIntent["kind"]) {
       return SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_TL;
     case "ESCALATION_MANAGER":
       return SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_MANAGER;
+    case "ESCALATION_ADMIN":
+      return SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_ADMIN;
   }
 }
 
@@ -91,11 +93,11 @@ export const followUpLifecycleHandler: JobHandler = {
 
     let notified = 0;
     for (const intent of result.notifications) {
-      const ok = await dispatchNotification(
-        ctx,
-        intent,
-        JOB_TYPES.FOLLOW_UP_ESCALATION_NOTIFY,
-      );
+      const jobType =
+        intent.kind === "REMINDER"
+          ? JOB_TYPES.FOLLOW_UP_REMINDER
+          : JOB_TYPES.FOLLOW_UP_ESCALATION_NOTIFY;
+      const ok = await dispatchNotification(ctx, intent, jobType);
       if (ok) notified += 1;
     }
 
@@ -109,7 +111,7 @@ export const followUpLifecycleHandler: JobHandler = {
         markedDue: result.markedDue.length,
         markedMissed: result.markedMissed.length,
         escalated: result.escalated.length,
-        escalationNotifications: notified,
+        notifications: notified,
       },
     };
   },
@@ -123,6 +125,7 @@ export const followUpReminderHandler: JobHandler = {
     const reminders = await listFollowUpReminders({
       organizationId: ctx.organizationId,
       day,
+      now: ctx.now,
     });
 
     let sent = 0;

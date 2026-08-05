@@ -2,8 +2,7 @@
 // src/modules/follow-ups/application/use-cases/processFollowUpLifecycle.ts
 //
 // Background-job facing use-cases: mark due, mark overdue/missed, escalate
-// to Team Lead / Manager. Business rules mirror BRD §11 and follow-ups.md;
-// timing is timezone-aware via the caller-supplied day bounds.
+// Caller → Team Lead (next calendar day) → Manager + Admin (next day after TL).
 // ============================================================================
 
 import type { FollowUpRepository } from "../../domain/repositories/FollowUpRepository";
@@ -21,7 +20,7 @@ export interface DayBounds {
   dayEnd: Date;
   /** Calendar date key YYYY-MM-DD in the organization timezone. */
   dateKey: string;
-  /** Start of yesterday (for FOLLOW_UP next-day TL escalation). */
+  /** Start of yesterday (for reminder date keys). */
   previousDayStart: Date;
   /** Exclusive end of yesterday. */
   previousDayEnd: Date;
@@ -32,7 +31,8 @@ export interface DayBounds {
 export type FollowUpNotificationKind =
   | "REMINDER"
   | "ESCALATION_TEAM_LEAD"
-  | "ESCALATION_MANAGER";
+  | "ESCALATION_MANAGER"
+  | "ESCALATION_ADMIN";
 
 export interface FollowUpNotificationIntent {
   kind: FollowUpNotificationKind;
@@ -41,7 +41,7 @@ export interface FollowUpNotificationIntent {
   triggerType: FollowUp["triggerType"];
   scheduledFor: string;
   leadId: string;
-  /** Idempotency suffix — typically a calendar date key. */
+  /** Idempotency suffix — typically a calendar date key + escalation step. */
   dateKey: string;
 }
 
@@ -92,7 +92,7 @@ export function makeProcessFollowUpLifecycle(
     const escalated: FollowUpDto[] = [];
     const notifications: FollowUpNotificationIntent[] = [];
 
-    // 1) SCHEDULED → DUE when scheduledFor has arrived.
+    // 1) SCHEDULED → DUE when scheduledFor has arrived + notify assignee.
     const dueCandidates = await repository.listDueCandidates(organizationId, {
       dueBy: now,
       statuses: ["SCHEDULED"],
@@ -100,17 +100,28 @@ export function makeProcessFollowUpLifecycle(
     });
     for (const followUp of dueCandidates) {
       const updated = await repository.markDueWithAudit(followUp.id, actor, correlationId);
-      if (updated.status === "DUE") markedDue.push(toFollowUpDto(updated));
+      if (updated.status === "DUE") {
+        markedDue.push(toFollowUpDto(updated));
+        notifications.push({
+          kind: "REMINDER",
+          followUpId: updated.id,
+          recipientUserId: updated.currentAssigneeUserId,
+          triggerType: updated.triggerType,
+          scheduledFor: updated.scheduledFor.toISOString(),
+          leadId: updated.leadId,
+          dateKey: `${day.dateKey}:due`,
+        });
+      }
     }
 
-    // 2) Mark overdue/missed.
+    // 2) Mark missed once the scheduled calendar day has ended.
     const openDue = await repository.listDueCandidates(organizationId, {
-      dueBy: now,
+      dueBy: day.previousDayEnd,
       statuses: ["SCHEDULED", "DUE"],
       limit,
     });
     for (const followUp of openDue) {
-      if (!shouldMarkMissed(followUp, day, now)) continue;
+      if (followUp.scheduledFor >= day.dayStart) continue;
       const updated = await repository.markMissedWithAudit(
         followUp.id,
         actor,
@@ -120,23 +131,23 @@ export function makeProcessFollowUpLifecycle(
       if (updated.status === "MISSED") markedMissed.push(toFollowUpDto(updated));
     }
 
-    // 3) Escalate FOLLOW_UP to Team Lead the next day after a missed schedule.
-    const followUpEscalationCandidates = await repository.listDueCandidates(organizationId, {
+    // 3) Caller unanswered into the next calendar day → Team Lead.
+    const tlCandidates = await repository.listDueCandidates(organizationId, {
       dueBy: day.previousDayEnd,
-      statuses: ["MISSED", "DUE"],
-      triggerType: "FOLLOW_UP",
+      statuses: ["DUE", "MISSED", "SCHEDULED"],
       notEscalated: true,
       limit,
     });
-    for (const followUp of followUpEscalationCandidates) {
+    for (const followUp of tlCandidates) {
       if (followUp.scheduledFor >= day.dayStart) continue;
       const result = await escalateToTeamLead(
         repository,
         userLookup,
         followUp,
-        day.dateKey,
+        `${day.dateKey}:tl`,
         actor,
         correlationId,
+        now,
       );
       if (result) {
         escalated.push(result.dto);
@@ -144,28 +155,25 @@ export function makeProcessFollowUpLifecycle(
       }
     }
 
-    // 4) Escalate CALL_LATER to Team Lead + Manager when missed.
-    const callLaterCandidates = await repository.listDueCandidates(organizationId, {
+    // 4) Team Lead unanswered into the next calendar day → Manager + Admins.
+    const managerCandidates = await repository.listDueCandidates(organizationId, {
       dueBy: now,
-      statuses: ["MISSED", "DUE", "SCHEDULED"],
-      triggerType: "CALL_LATER",
-      notEscalated: true,
+      statuses: ["ESCALATED", "MISSED", "DUE"],
       limit,
     });
-    for (const followUp of callLaterCandidates) {
-      if (followUp.scheduledFor > now) continue;
-      let current = followUp;
-      if (current.status !== "MISSED" && current.status !== "ESCALATED") {
-        current = await repository.markMissedWithAudit(current.id, actor, correlationId, now);
-        if (current.status === "MISSED") markedMissed.push(toFollowUpDto(current));
-      }
-      const result = await escalateCallLater(
+    for (const followUp of managerCandidates) {
+      if (!followUp.escalatedAt || !followUp.escalatedToUserId) continue;
+      // TL had at least one full calendar day after escalation.
+      if (followUp.escalatedAt >= day.dayStart) continue;
+      const result = await escalateToManagerAndAdmins(
         repository,
         userLookup,
-        current,
-        day.dateKey,
+        followUp,
+        organizationId,
+        `${day.dateKey}:mgr`,
         actor,
         correlationId,
+        now,
       );
       if (result) {
         escalated.push(result.dto);
@@ -177,13 +185,6 @@ export function makeProcessFollowUpLifecycle(
   };
 }
 
-function shouldMarkMissed(followUp: FollowUp, day: DayBounds, now: Date): boolean {
-  if (followUp.triggerType === "CALL_LATER") {
-    return followUp.scheduledFor <= now;
-  }
-  return followUp.scheduledFor < day.dayStart;
-}
-
 async function escalateToTeamLead(
   repository: FollowUpRepository,
   userLookup: UserLookupPort,
@@ -191,6 +192,7 @@ async function escalateToTeamLead(
   dateKey: string,
   actor: FollowUpAuditActor,
   correlationId: string | null,
+  now: Date,
 ): Promise<{ dto: FollowUpDto; notifications: FollowUpNotificationIntent[] } | null> {
   if (followUp.escalatedAt) return null;
   const hierarchy = userLookup.findHierarchy
@@ -199,12 +201,14 @@ async function escalateToTeamLead(
   const { teamLeadId, managerId } = resolveEscalationTargets(hierarchy);
   const escalatedToUserId = teamLeadId ?? managerId;
   if (!escalatedToUserId) return null;
+  if (escalatedToUserId === followUp.currentAssigneeUserId) return null;
 
   const updated = await repository.escalateWithAudit(
     followUp.id,
-    { escalatedToUserId, markEscalated: true },
+    { escalatedToUserId, markEscalated: true, reassignToEscalatedUser: true },
     actor,
     correlationId,
+    now,
   );
   return {
     dto: toFollowUpDto(updated),
@@ -222,45 +226,79 @@ async function escalateToTeamLead(
   };
 }
 
-async function escalateCallLater(
+async function escalateToManagerAndAdmins(
   repository: FollowUpRepository,
   userLookup: UserLookupPort,
   followUp: FollowUp,
+  organizationId: string,
   dateKey: string,
   actor: FollowUpAuditActor,
   correlationId: string | null,
+  now: Date,
 ): Promise<{ dto: FollowUpDto; notifications: FollowUpNotificationIntent[] } | null> {
-  if (followUp.escalatedAt) return null;
+  if (!followUp.escalatedToUserId) return null;
+
   const hierarchy = userLookup.findHierarchy
     ? await userLookup.findHierarchy(followUp.currentAssigneeUserId)
     : null;
-  const { teamLeadId, managerId } = resolveEscalationTargets(hierarchy);
-  const primary = teamLeadId ?? managerId;
-  if (!primary) return null;
+  const managerId = hierarchy?.reportingManagerId ?? null;
+  const adminIds = userLookup.listActiveAdminIds
+    ? await userLookup.listActiveAdminIds(organizationId)
+    : [];
+
+  const primaryAssignee =
+    managerId && managerId !== followUp.currentAssigneeUserId
+      ? managerId
+      : adminIds.find((id) => id !== followUp.currentAssigneeUserId) ?? null;
+
+  if (!primaryAssignee) return null;
+  // Already escalated to manager/admin level.
+  if (followUp.escalatedToUserId === primaryAssignee) return null;
+  if (managerId && followUp.escalatedToUserId === managerId) return null;
 
   const updated = await repository.escalateWithAudit(
     followUp.id,
-    { escalatedToUserId: primary, markEscalated: true },
+    { escalatedToUserId: primaryAssignee, markEscalated: true, reassignToEscalatedUser: true },
     actor,
     correlationId,
+    now,
   );
 
-  const notifications: FollowUpNotificationIntent[] = [
-    {
-      kind: "ESCALATION_TEAM_LEAD",
-      followUpId: updated.id,
-      recipientUserId: primary,
-      triggerType: updated.triggerType,
-      scheduledFor: updated.scheduledFor.toISOString(),
-      leadId: updated.leadId,
-      dateKey,
-    },
-  ];
-  if (managerId && managerId !== primary) {
+  const notifications: FollowUpNotificationIntent[] = [];
+  const notified = new Set<string>();
+
+  if (managerId) {
     notifications.push({
       kind: "ESCALATION_MANAGER",
       followUpId: updated.id,
       recipientUserId: managerId,
+      triggerType: updated.triggerType,
+      scheduledFor: updated.scheduledFor.toISOString(),
+      leadId: updated.leadId,
+      dateKey,
+    });
+    notified.add(managerId);
+  }
+
+  for (const adminId of adminIds) {
+    if (notified.has(adminId)) continue;
+    notifications.push({
+      kind: "ESCALATION_ADMIN",
+      followUpId: updated.id,
+      recipientUserId: adminId,
+      triggerType: updated.triggerType,
+      scheduledFor: updated.scheduledFor.toISOString(),
+      leadId: updated.leadId,
+      dateKey,
+    });
+    notified.add(adminId);
+  }
+
+  if (notifications.length === 0) {
+    notifications.push({
+      kind: "ESCALATION_MANAGER",
+      followUpId: updated.id,
+      recipientUserId: primaryAssignee,
       triggerType: updated.triggerType,
       scheduledFor: updated.scheduledFor.toISOString(),
       leadId: updated.leadId,
@@ -271,21 +309,25 @@ async function escalateCallLater(
   return { dto: toFollowUpDto(updated), notifications };
 }
 
-/** Reminder candidates: open Follow-ups scheduled for "today" in org timezone. */
+/** Reminder candidates: open Follow-ups that are due now (scheduledFor <= now). */
 export function makeListFollowUpReminders(repository: FollowUpRepository) {
   return async function listFollowUpReminders(input: {
     organizationId: string;
     day: DayBounds;
+    now?: Date;
     limit?: number;
   }): Promise<FollowUpNotificationIntent[]> {
+    const now = input.now ?? new Date();
     const open = await repository.list(input.organizationId, {
       scheduledFrom: input.day.dayStart,
       scheduledTo: new Date(input.day.dayEnd.getTime() - 1),
       limit: input.limit ?? 200,
     });
     return open
-      .filter((followUp) =>
-        ["SCHEDULED", "DUE", "MISSED", "ESCALATED"].includes(followUp.status),
+      .filter(
+        (followUp) =>
+          ["SCHEDULED", "DUE", "MISSED", "ESCALATED"].includes(followUp.status) &&
+          followUp.scheduledFor.getTime() <= now.getTime(),
       )
       .map((followUp) => ({
         kind: "REMINDER" as const,
@@ -294,7 +336,7 @@ export function makeListFollowUpReminders(repository: FollowUpRepository) {
         triggerType: followUp.triggerType,
         scheduledFor: followUp.scheduledFor.toISOString(),
         leadId: followUp.leadId,
-        dateKey: input.day.dateKey,
+        dateKey: `${input.day.dateKey}:reminder`,
       }));
   };
 }

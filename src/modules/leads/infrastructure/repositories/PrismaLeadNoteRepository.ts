@@ -34,6 +34,24 @@ export class PrismaLeadNoteRepository implements LeadNoteRepository {
     return rows.map(toLeadNote);
   }
 
+  async listLatestBodyByLeadIds(leadIds: string[]): Promise<Map<string, string | null>> {
+    const unique = [...new Set(leadIds.filter(Boolean))];
+    const result = new Map<string, string | null>();
+    if (unique.length === 0) return result;
+
+    const rows = await this.prisma.leadNote.findMany({
+      where: { leadId: { in: unique } },
+      orderBy: { createdAt: "desc" },
+      select: { leadId: true, body: true },
+    });
+
+    for (const row of rows) {
+      if (result.has(row.leadId)) continue;
+      result.set(row.leadId, row.body?.trim() || null);
+    }
+    return result;
+  }
+
   async createWithAudit(
     data: CreateLeadNoteData,
     actor: LeadAuditActor,

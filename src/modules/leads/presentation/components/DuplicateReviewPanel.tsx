@@ -9,6 +9,7 @@ import {
   buildDuplicateReportCsv,
   IN_FILE_DUPLICATE_STAGE_ID,
 } from "../../application/use-cases/detectImportDuplicates";
+import { isDoNotDisturbStageName } from "../../application/lib/doNotDisturbPolicy";
 
 function formatRelativeUpdate(iso: string | null): string {
   if (!iso) return "—";
@@ -129,6 +130,7 @@ export function DuplicateReviewPanel({
     const next = new Set(selectedStageIds);
     for (const group of filteredGroups) {
       if (group.stageId === IN_FILE_DUPLICATE_STAGE_ID) continue;
+      if (isDoNotDisturbStageName(group.stageName)) continue;
       next.add(group.stageId);
     }
     onSelectedStageIdsChange([...next]);
@@ -169,7 +171,18 @@ export function DuplicateReviewPanel({
         </button>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+      {summary.dndSkipCount > 0 ? (
+        <p
+          role="status"
+          className="rounded-lg border border-danger/30 bg-danger-muted px-4 py-3 text-sm"
+        >
+          <span className="font-bold">{summary.dndSkipCount}</span>{" "}
+          {summary.dndSkipCount === 1 ? "lead is" : "leads are"} already{" "}
+          <span className="font-bold">Do Not Disturb</span> in CRM and will be skipped.
+        </p>
+      ) : null}
+
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-lg border border-border p-3">
           <dt className="text-muted">Excel Rows</dt>
           <dd className="text-lg font-semibold tabular-nums">{summary.totalRows}</dd>
@@ -178,6 +191,12 @@ export function DuplicateReviewPanel({
           <dt className="text-muted">Already in CRM</dt>
           <dd className="text-lg font-semibold text-danger tabular-nums">
             {summary.alreadyExisting}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <dt className="text-muted">Already DND</dt>
+          <dd className="text-lg font-semibold text-danger tabular-nums">
+            {summary.dndSkipCount}
           </dd>
         </div>
         <div className="rounded-lg border border-border p-3">
@@ -240,6 +259,7 @@ export function DuplicateReviewPanel({
           {filteredGroups.map((group) => {
             const isOpen = Boolean(expanded[group.stageId]);
             const isInFileGroup = group.stageId === IN_FILE_DUPLICATE_STAGE_ID;
+            const isDndGroup = isDoNotDisturbStageName(group.stageName);
             return (
               <li key={group.stageId} className="px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -247,19 +267,25 @@ export function DuplicateReviewPanel({
                     <input
                       type="checkbox"
                       className="mt-1"
-                      checked={selectedSet.has(group.stageId)}
+                      checked={isDndGroup ? false : selectedSet.has(group.stageId)}
                       onChange={() => toggleStage(group.stageId)}
-                      disabled={isInFileGroup || (!needsStatuses && group.count === 0)}
+                      disabled={
+                        isInFileGroup ||
+                        isDndGroup ||
+                        (!needsStatuses && group.count === 0)
+                      }
                     />
                     <span className="min-w-0">
-                      <span className="font-medium">
+                      <span className={isDndGroup ? "font-bold" : "font-medium"}>
                         {group.stageName}{" "}
                         <span className="text-muted font-normal">({group.count})</span>
                       </span>
                       <span className="text-muted mt-1 block text-xs">
-                        {isInFileGroup
-                          ? `${group.count} repeated row${group.count === 1 ? "" : "s"} inside this Excel file`
-                          : `${group.count} lead${group.count === 1 ? "" : "s"} already in CRM · Last updated ${formatRelativeUpdate(group.latestUpdatedAt)}`}
+                        {isDndGroup
+                          ? `${group.count} already Do Not Disturb in CRM — always skipped`
+                          : isInFileGroup
+                            ? `${group.count} repeated row${group.count === 1 ? "" : "s"} inside this Excel file`
+                            : `${group.count} lead${group.count === 1 ? "" : "s"} already in CRM · Last updated ${formatRelativeUpdate(group.latestUpdatedAt)}`}
                       </span>
                     </span>
                   </label>

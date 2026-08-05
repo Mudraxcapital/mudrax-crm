@@ -22,7 +22,7 @@ export default async function ActivityTimelinePage() {
 
   const activity =
     includeLeads || includeFollowUps || includeCampaigns || includeCalls
-      ? await listUnifiedTimeline(authContext.organizationId, unrestricted ? 50 : 200, {
+      ? await listUnifiedTimeline(authContext.organizationId, 200, {
           includeLeads,
           includeFollowUps,
           includeCampaigns,

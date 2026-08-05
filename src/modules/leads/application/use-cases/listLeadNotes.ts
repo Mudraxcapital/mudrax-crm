@@ -11,3 +11,12 @@ export function makeListLeadNotes(repository: LeadNoteRepository) {
     return notes.map(toLeadNoteDto);
   };
 }
+
+/** Latest note body per lead id — single batched repository call. */
+export function makeListLatestLeadNoteBodies(repository: LeadNoteRepository) {
+  return async function listLatestLeadNoteBodies(
+    leadIds: string[],
+  ): Promise<Map<string, string | null>> {
+    return repository.listLatestBodyByLeadIds(leadIds);
+  };
+}

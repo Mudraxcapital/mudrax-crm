@@ -12,12 +12,23 @@ export interface CampaignLeadRow {
   currentStageName: string;
   assignedAgent: string;
   assignedAgentUserId: string | null;
+  /** When true, show a "temp" marker next to the assignee name. */
+  isTemporaryAssignee?: boolean;
   campaignId: string;
   nextActionAt: string | null;
   priority: string;
+  /** Latest note body (shown for Do Not Disturb and when provided). */
+  latestNote?: string | null;
 }
 
-export function CampaignLeadsTable({ rows }: { rows: CampaignLeadRow[] }) {
+export function CampaignLeadsTable({
+  rows,
+  showNotes = false,
+}: {
+  rows: CampaignLeadRow[];
+  /** When true, show the latest caller/staff note column. */
+  showNotes?: boolean;
+}) {
   const router = useRouter();
 
   const columns: DataColumn<CampaignLeadRow>[] = [
@@ -52,18 +63,40 @@ export function CampaignLeadsTable({ rows }: { rows: CampaignLeadRow[] }) {
       accessor: (r) => r.assignedAgent,
       cell: (r) =>
         r.assignedAgentUserId ? (
-          <Link
-            href={`/users/${r.assignedAgentUserId}/assigned?campaignId=${encodeURIComponent(r.campaignId)}`}
-            className="text-accent hover:underline underline-offset-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {r.assignedAgent}
-          </Link>
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              href={`/users/${r.assignedAgentUserId}/assigned?campaignId=${encodeURIComponent(r.campaignId)}`}
+              className="text-accent hover:underline underline-offset-4"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {r.assignedAgent}
+            </Link>
+            {r.isTemporaryAssignee ? (
+              <Badge tone="warning" className="uppercase tracking-wide">
+                temp
+              </Badge>
+            ) : null}
+          </span>
         ) : (
           r.assignedAgent
         ),
       minWidth: 140,
     },
+    ...(showNotes
+      ? [
+          {
+            id: "latestNote",
+            header: "Note",
+            accessor: (r: CampaignLeadRow) => r.latestNote ?? "",
+            cell: (r: CampaignLeadRow) => (
+              <span className="line-clamp-2 max-w-[280px] whitespace-pre-wrap">
+                {r.latestNote?.trim() ? r.latestNote : "—"}
+              </span>
+            ),
+            minWidth: 200,
+          } satisfies DataColumn<CampaignLeadRow>,
+        ]
+      : []),
     {
       id: "nextActionAt",
       header: "Next Follow-up",

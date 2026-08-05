@@ -16,6 +16,7 @@
 import "dotenv/config";
 import { createSeedClient } from "./lib/client";
 import { section, explain } from "./lib/logger";
+import { ensureDoNotDisturb } from "./ensure-dnd";
 
 async function truncateBestEffort(
   prisma: ReturnType<typeof createSeedClient>,
@@ -210,6 +211,11 @@ async function main(): Promise<void> {
 
   section("Wiping campaigns, leads, customers, import history");
 
+  section("Restoring Do Not Disturb stage + campaign");
+  const dnd = await ensureDoNotDisturb(prisma);
+  explain(`Do Not Disturb stage: ${dnd.stageId}`);
+  explain(`Do Not Disturb campaign: ${dnd.campaignId}`);
+
   const after = {
     users: await prisma.user.count(),
     roles: await prisma.role.count(),
@@ -226,7 +232,7 @@ async function main(): Promise<void> {
     "Preserved: Users (Admin/Manager/Team Lead/Caller), Roles, Permissions, Auth, Organization, Settings, Lead catalogs, Field definitions.",
   );
   explain(
-    "Deleted: Customers, Leads, Campaigns, Memberships, Assignments, Imports, Notes, Follow-ups, Calls, Loans, Documents, Analytics runs.",
+    "Deleted: Customers, Leads, Campaigns (except restored Do Not Disturb), Memberships, Assignments, Imports, Notes, Follow-ups, Calls, Loans, Documents, Analytics runs.",
   );
 
   if (after.users !== before.users) {

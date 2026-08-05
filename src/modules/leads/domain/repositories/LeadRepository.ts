@@ -39,6 +39,8 @@ export interface ChangeLeadStageData {
   lostReasonId: string | null;
   wonAt: Date | null;
   lostAt: Date | null;
+  /** When set (e.g. Do Not Disturb), moves the lead into that campaign. */
+  campaignId?: string | null;
 }
 
 export interface AssignLeadData {
@@ -54,6 +56,14 @@ export interface AssignLeadData {
     ownerManagerId: string | null;
     ownerTeamLeadId: string | null;
   };
+  /**
+   * Temporary holiday/cover assignment. Pass an object to mark temp coverage;
+   * pass null/omit to clear (permanent reassignment).
+   */
+  temporaryCoverage?: {
+    permanentAssigneeUserId: string;
+    until: Date;
+  } | null;
 }
 
 export interface ListLeadsFilter {
@@ -197,6 +207,9 @@ export interface LeadRepository {
     actor: LeadAuditActor,
     correlationId?: string | null,
   ): Promise<Lead>;
+
+  /** Leads whose temporary cover has expired (temporaryAssigneeUntil <= asOf). */
+  listExpiredTemporaryAssignments(organizationId: string, asOf: Date): Promise<Lead[]>;
 
   listAssignmentHistory(leadId: string): Promise<LeadAssignment[]>;
 

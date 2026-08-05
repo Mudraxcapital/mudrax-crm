@@ -2,7 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/infra/auth/session";
 import { hasPermission, isAssignableAgentRole, isCallerWorkspaceUser } from "@/modules/rbac";
-import { listCampaigns, listCampaignMembers, getCampaignStatistics } from "@/modules/campaigns";
+import {
+  DND_CAMPAIGN_NAME,
+  listCampaigns,
+  listCampaignMembers,
+  getCampaignStatistics,
+} from "@/modules/campaigns";
 import {
   leadCatalogs,
   listActiveLeadFields,
@@ -50,8 +55,14 @@ export default async function LeadImportPage() {
   ]);
   const importableFields = activeFields.filter((field) => field.isImportable);
 
+  // Do Not Disturb is a system holding campaign — never a target for Excel import.
+  const importTargetCampaigns = campaigns.filter(
+    (campaign) =>
+      campaign.name.trim().toLowerCase() !== DND_CAMPAIGN_NAME.toLowerCase(),
+  );
+
   const campaignOptions = await Promise.all(
-    campaigns.map(async (campaign) => {
+    importTargetCampaigns.map(async (campaign) => {
       const [members, stats, leadCount] = await Promise.all([
         listCampaignMembers(campaign.id),
         getCampaignStatistics(campaign.id),

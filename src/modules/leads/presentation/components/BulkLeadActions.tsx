@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   bulkAssignLeadsAction,
   bulkChangeLeadStageAction,
   bulkCloseLeadsAction,
   bulkHardDeleteLeadsAction,
 } from "../controllers/productivity.actions";
+import { isWonOrLostStageName } from "../lib/filterClosedLeadStages";
+import { isDoNotDisturbStageName } from "../../application/lib/doNotDisturbPolicy";
 
 /** Matches bulkLeadIdsSchema.max(200). */
 export const BULK_LEAD_MAX = 200;
@@ -30,13 +32,27 @@ export function BulkLeadActions({
   const [assigneeId, setAssigneeId] = useState("");
   const [stageId, setStageId] = useState("");
   const [lostReasonId, setLostReasonId] = useState(lostReasons[0]?.id ?? "");
+  const [lostNote, setLostNote] = useState("");
 
   const selected = selectedLeadIds;
   const overLimit = selected.length > BULK_LEAD_MAX;
   const canRun = selected.length > 0 && !overLimit;
-  const selectedStage = stages.find((stage) => stage.id === stageId);
+  const pickerStages = useMemo(
+    () =>
+      stages.filter(
+        (stage) =>
+          stage.bucket !== "CLOSED" || isWonOrLostStageName(stage.name),
+      ),
+    [stages],
+  );
+  const selectedStage = pickerStages.find((stage) => stage.id === stageId);
   const stageNeedsLostReason =
     selectedStage?.bucket === "CLOSED" && selectedStage.closeOutcome === "LOST";
+  const stageNeedsDndNote = Boolean(
+    selectedStage && isDoNotDisturbStageName(selectedStage.name),
+  );
+  const stageNeedsNote = stageNeedsLostReason || stageNeedsDndNote;
+  const lostNoteReady = lostNote.trim().length > 0;
 
   async function run(
     action: (prev: undefined, formData: FormData) => Promise<{ error?: string; success?: string }>,
@@ -113,8 +129,13 @@ export function BulkLeadActions({
           <option value="" disabled>
             Stage
           </option>
-          {stages.map((stage) => (
-            <option key={stage.id} value={stage.id}>
+          {pickerStages.map((stage) => (
+            <option
+              key={stage.id}
+              value={stage.id}
+              className={isDoNotDisturbStageName(stage.name) ? "font-bold" : undefined}
+              style={isDoNotDisturbStageName(stage.name) ? { fontWeight: 700 } : undefined}
+            >
               {stage.name}
             </option>
           ))}
@@ -134,14 +155,37 @@ export function BulkLeadActions({
             ))}
           </select>
         ) : null}
+        {stageNeedsNote ? (
+          <input
+            type="text"
+            className="rounded-lg border border-border px-2 py-1 text-sm min-w-[12rem]"
+            value={lostNote}
+            onChange={(event) => setLostNote(event.target.value)}
+            placeholder={
+              stageNeedsDndNote ? "DND note (required)" : "Lost note (required)"
+            }
+            aria-label={
+              stageNeedsDndNote ? "Do Not Disturb note for bulk stage" : "Lost note for bulk stage"
+            }
+            maxLength={4000}
+          />
+        ) : null}
         <button
           type="button"
           className="rounded-lg border border-border px-3 py-1 text-sm"
-          disabled={!canRun || !stageId || (stageNeedsLostReason && !lostReasonId)}
+          disabled={
+            !canRun ||
+            !stageId ||
+            (stageNeedsLostReason && (!lostReasonId || !lostNoteReady)) ||
+            (stageNeedsDndNote && !lostNoteReady)
+          }
           onClick={() => {
             const extra: Record<string, string> = { stageId };
             if (stageNeedsLostReason && lostReasonId) {
               extra.lostReasonId = lostReasonId;
+              extra.note = lostNote.trim();
+            } else if (stageNeedsDndNote) {
+              extra.note = lostNote.trim();
             }
             void run(bulkChangeLeadStageAction, extra);
           }}
@@ -182,12 +226,24 @@ export function BulkLeadActions({
                 </option>
               ))}
             </select>
+            <input
+              type="text"
+              className="rounded-lg border border-border px-2 py-1 text-sm min-w-[12rem]"
+              value={lostNote}
+              onChange={(event) => setLostNote(event.target.value)}
+              placeholder="Lost note (required)"
+              aria-label="Lost note for bulk close"
+              maxLength={4000}
+            />
             <button
               type="button"
               className="rounded-lg border border-border px-3 py-1 text-sm"
-              disabled={!canRun || !lostReasonId}
+              disabled={!canRun || !lostReasonId || !lostNoteReady}
               onClick={() => {
-                void run(bulkCloseLeadsAction, { lostReasonId });
+                void run(bulkCloseLeadsAction, {
+                  lostReasonId,
+                  note: lostNote.trim(),
+                });
               }}
             >
               Bulk close

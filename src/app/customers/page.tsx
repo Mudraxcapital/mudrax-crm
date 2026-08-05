@@ -13,10 +13,8 @@ import { CustomersTable } from "./_components/CustomersTable";
 export default async function CustomersPage() {
   const { authContext } = await requirePermission("customer.view");
   const canCreate = hasPermission(authContext, "customer.create");
-  const canViewDuplicates =
-    hasPermission(authContext, "customer.duplicate.view") ||
-    hasPermission(authContext, "customer.merge");
-  const listOptions = await resolveCustomerListOptions(authContext, { limit: 10_000 });
+  const canViewDuplicates = hasPermission(authContext, "customer.duplicate.view");
+  const listOptions = await resolveCustomerListOptions(authContext, { limit: 500 });
 
   const [customers, totalCount] = await Promise.all([
     listCustomers(authContext.organizationId, listOptions),

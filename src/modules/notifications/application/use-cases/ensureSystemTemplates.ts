@@ -12,6 +12,7 @@ export const SYSTEM_TEMPLATE_CODES = {
   FOLLOW_UP_REMINDER: "system.follow_up.reminder",
   FOLLOW_UP_ESCALATION_TL: "system.follow_up.escalation_team_lead",
   FOLLOW_UP_ESCALATION_MANAGER: "system.follow_up.escalation_manager",
+  FOLLOW_UP_ESCALATION_ADMIN: "system.follow_up.escalation_admin",
 } as const;
 
 export type SystemTemplateCode =
@@ -26,18 +27,23 @@ const TEMPLATE_SPECS: Array<{
 }> = [
   {
     code: SYSTEM_TEMPLATE_CODES.FOLLOW_UP_REMINDER,
-    subject: "Follow-up reminder",
-    body: "Reminder: {{triggerType}} for lead {{leadId}} is scheduled for {{scheduledFor}}.",
+    subject: "Follow-up is due",
+    body: "A customer follow-up is due ({{scheduledFor}}). Please complete it.",
   },
   {
     code: SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_TL,
-    subject: "Follow-up escalated to Team Lead",
-    body: "Escalation: {{triggerType}} {{followUpId}} (lead {{leadId}}) was not actioned. Scheduled for {{scheduledFor}}.",
+    subject: "Follow-up needs Team Lead attention",
+    body: "The Caller did not complete this follow-up by the next day (scheduled {{scheduledFor}}).",
   },
   {
     code: SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_MANAGER,
-    subject: "Follow-up escalated to Manager",
-    body: "Escalation: Call Later {{followUpId}} (lead {{leadId}}) was missed. Scheduled for {{scheduledFor}}.",
+    subject: "Follow-up needs Manager attention",
+    body: "The Team Lead did not complete this follow-up by the next day (scheduled {{scheduledFor}}).",
+  },
+  {
+    code: SYSTEM_TEMPLATE_CODES.FOLLOW_UP_ESCALATION_ADMIN,
+    subject: "Follow-up needs Manager attention",
+    body: "The Team Lead did not complete this follow-up by the next day (scheduled {{scheduledFor}}).",
   },
 ];
 

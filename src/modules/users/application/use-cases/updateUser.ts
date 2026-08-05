@@ -27,6 +27,7 @@ import {
   normalizeHierarchyOnUpdate,
 } from "../services/userHierarchyPolicy";
 import { assertKeepsActiveAdmin } from "../services/lastAdminPolicy";
+import { assertSingleAdminSlotAvailable } from "../services/singleAdminPolicy";
 import { assertActiveHierarchyTarget } from "../services/activeHierarchyTarget";
 import {
   assertActorMayReassignCallersToDirectAdmin,
@@ -126,6 +127,10 @@ export function makeUpdateUser(
       nextStatus: input.status,
       nextRole,
     });
+
+    if (roleChanged && nextRole === "Admin") {
+      await assertSingleAdminSlotAvailable(repository);
+    }
 
     // Pre-validate hierarchy reassignment targets (execution is atomic below).
     let reassignCallersToTeamLeadId: string | null = null;

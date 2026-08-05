@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.view")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const isAdmin = hasRole(current.authContext, "Admin");

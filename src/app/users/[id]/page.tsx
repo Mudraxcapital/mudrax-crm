@@ -208,6 +208,9 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
             <Row label="Phone" value={user.phone ?? "—"} />
             <Row label="Role" value={user.roleName ?? "—"} />
             <Row label="Account status" value={accountStatusLabel(user.displayStatus)} />
+            {user.lockedReason ? (
+              <Row label="Lock reason" value={user.lockedReason} />
+            ) : null}
             <Row label="Employee ID" value={user.employeeId} mono />
             <Row
               label="Last login"

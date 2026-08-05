@@ -17,6 +17,11 @@
 import { redirect } from "next/navigation";
 import { AuthError, CredentialsSignin } from "next-auth";
 import { signIn } from "@/infra/auth";
+import {
+  assertAdminLoginAllowed,
+  clearAdminLoginFailures,
+  recordAdminLoginFailure,
+} from "../../application/services/adminLoginProtection";
 import { loginSchema } from "../../application/validators/loginSchema";
 
 export interface LoginActionState {
@@ -27,7 +32,7 @@ const GENERIC_ERROR = "Invalid email or password. Please try again.";
 const ACCOUNT_DISABLED_ERROR =
   "Your account has been disabled. Contact your administrator.";
 const ACCOUNT_SUSPENDED_ERROR =
-  "Your account has been suspended. Contact your administrator.";
+  "Your account has been suspended. Contact an Admin for a password reset.";
 const RATE_LIMIT_ERROR =
   "Too many login attempts. Please wait a minute and try again.";
 
@@ -49,10 +54,12 @@ export async function loginAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  const email = parsed.data.email.toLowerCase();
+
   try {
     const { checkRateLimit } = await import("@/infra/redis/rateLimit");
     const rate = await checkRateLimit({
-      key: `login:${parsed.data.email.toLowerCase()}`,
+      key: `login:${email}`,
       limit: LOGIN_RATE_LIMIT,
       windowSeconds: LOGIN_RATE_WINDOW_SECONDS,
     });
@@ -61,6 +68,15 @@ export async function loginAction(
     }
   } catch {
     // Redis optional — never block login if the limiter cannot load.
+  }
+
+  try {
+    const adminGate = await assertAdminLoginAllowed(email);
+    if (adminGate.blocked) {
+      return { error: adminGate.error };
+    }
+  } catch {
+    // Admin protection is best-effort; generic limiter still applies.
   }
 
   try {
@@ -80,9 +96,11 @@ export async function loginAction(
       if (code === "account_suspended") {
         return { error: ACCOUNT_SUSPENDED_ERROR };
       }
+      await recordAdminLoginFailure(email).catch(() => undefined);
       return { error: GENERIC_ERROR };
     }
 
+    await clearAdminLoginFailures(email).catch(() => undefined);
     redirect(parsed.data.callbackUrl);
   } catch (error) {
     if (error instanceof CredentialsSignin) {
@@ -92,9 +110,11 @@ export async function loginAction(
       if (error.code === "account_suspended") {
         return { error: ACCOUNT_SUSPENDED_ERROR };
       }
+      await recordAdminLoginFailure(email).catch(() => undefined);
       return { error: GENERIC_ERROR };
     }
     if (error instanceof AuthError) {
+      await recordAdminLoginFailure(email).catch(() => undefined);
       return { error: GENERIC_ERROR };
     }
     // Next.js `redirect()` throws an internal signal — never swallow it.

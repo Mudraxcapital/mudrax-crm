@@ -27,6 +27,8 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const status = url.searchParams.get("status") ?? undefined;
+  const mine =
+    url.searchParams.get("mine") === "1" || url.searchParams.get("mine") === "true";
   const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_PAGE_SIZE);
   const offsetRaw = Number(url.searchParams.get("offset") ?? 0);
   const limit = Number.isFinite(limitRaw)
@@ -34,19 +36,28 @@ export async function GET(request: Request) {
     : DEFAULT_PAGE_SIZE;
   const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
 
-  const filter = notificationRecipientFilter(current.authContext, {
-    permissionCode: "notification.view",
-    actorUserId: current.session.user.id,
-    status: status as never,
-    limit,
-    offset,
-  });
+  // Personal Notification Channel: always the signed-in recipient (all 4 roles).
+  const filter = mine
+    ? {
+        recipientType: "USER" as const,
+        recipientId: current.session.user.id,
+        ...(status ? { status: status as never } : {}),
+        limit,
+        offset,
+      }
+    : notificationRecipientFilter(current.authContext, {
+        permissionCode: "notification.view",
+        actorUserId: current.session.user.id,
+        status: status as never,
+        limit,
+        offset,
+      });
 
   const notifications = await listNotifications(
     current.authContext.organizationId,
     filter as Parameters<typeof listNotifications>[1],
   );
-  return NextResponse.json({ data: notifications, meta: { limit, offset } });
+  return NextResponse.json({ data: notifications, meta: { limit, offset, mine } });
 }
 
 export async function POST(request: Request) {

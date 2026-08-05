@@ -247,6 +247,9 @@ export class FakeFollowUpRepository implements FollowUpRepository {
       status: data.markEscalated === false ? existing.status : "ESCALATED",
       escalatedAt: escalatedAt ?? new Date(),
       escalatedToUserId: data.escalatedToUserId,
+      currentAssigneeUserId: data.reassignToEscalatedUser
+        ? data.escalatedToUserId
+        : existing.currentAssigneeUserId,
       updatedAt: new Date(),
     };
     this.followUps.set(id, updated);

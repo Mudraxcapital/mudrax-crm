@@ -12,6 +12,9 @@ import { filterNavGroups, isNavActive, navItemKey, NAV_GROUPS } from "./nav";
 import { callerNavAsNavGroups } from "./callerNav";
 import { NavIconSvg } from "./NavIcons";
 import { LoginDurationTimer } from "@/modules/caller-workspace/presentation/components/LoginDurationTimer";
+import { NotificationBell } from "@/modules/notifications/presentation/components/NotificationBell";
+import { InAppNotificationPopup } from "@/modules/notifications/presentation/components/InAppNotificationPopup";
+import { FollowUpDuePopup } from "@/modules/follow-ups/presentation/components/FollowUpDuePopup";
 
 const BARE_PREFIXES = [
   "/login",
@@ -22,6 +25,7 @@ const BARE_PREFIXES = [
 ];
 
 export interface AppShellUser {
+  id: string;
   fullName: string;
   email: string;
   roles: string[];
@@ -230,6 +234,7 @@ function ShellFrame({
                 dayStartedAt={user.dayStartedAt}
               />
             ) : null}
+            <NotificationBell inboxHref="/notifications/inbox" />
             <ThemeToggle />
             <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-sunken/50 px-2.5 py-1.5 sm:flex">
               <div className="bg-accent/15 text-accent flex size-7 items-center justify-center rounded-full text-[11px] font-semibold">
@@ -249,6 +254,11 @@ function ShellFrame({
         <main className="mx-page flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[var(--content-max)]">{children}</div>
         </main>
+        <FollowUpDuePopup
+          userId={user.id}
+          isCallerWorkspace={user.isCallerWorkspace === true}
+        />
+        <InAppNotificationPopup inboxHref="/notifications/inbox" />
       </div>
     </div>
   );

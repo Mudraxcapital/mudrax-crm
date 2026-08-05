@@ -11,6 +11,10 @@
 export interface LeadAssignmentLookupSummary {
   id: string;
   organizationId: string;
+  currentAssigneeUserId: string | null;
+  permanentAssigneeUserId: string | null;
+  temporaryAssigneeUntil: string | null;
+  isTemporaryAssignee: boolean;
   currentStageBucket: "INITIAL" | "ACTIVE" | "CLOSED";
   wonAt: string | null;
   lostAt: string | null;
@@ -30,4 +34,15 @@ export interface LeadAssignmentPort {
     actorId: string | null,
     campaignAssignmentId: string,
   ): Promise<void>;
+
+  /** Temporary holiday/cover assignment via `leads`.temporarilyAssignLead. */
+  temporarilyAssign(
+    leadId: string,
+    assignedToUserId: string,
+    durationDays: number,
+    actorId: string | null,
+  ): Promise<void>;
+
+  /** End temporary cover early via `leads`.revertTemporaryLeadAssignment. */
+  revertTemporary(leadId: string, actorId: string | null): Promise<void>;
 }

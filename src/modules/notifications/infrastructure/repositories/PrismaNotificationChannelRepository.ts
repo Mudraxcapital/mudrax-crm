@@ -23,7 +23,7 @@ export class PrismaNotificationChannelRepository implements NotificationChannelR
 
   async getOrCreateWithNullProvider(
     organizationId: string,
-    channelType: "EMAIL" | "SMS" | "WHATSAPP",
+    channelType: "EMAIL" | "SMS" | "WHATSAPP" | "IN_APP",
   ): Promise<{ channel: NotificationChannel; provider: Provider }> {
     const channelRow = await this.prisma.notificationChannel.upsert({
       where: { organizationId_channelType: { organizationId, channelType } },
@@ -64,7 +64,12 @@ export class PrismaNotificationChannelRepository implements NotificationChannelR
     organizationId: string,
     channelType: ChannelType,
   ): Promise<Provider | null> {
-    if (channelType !== "EMAIL" && channelType !== "SMS" && channelType !== "WHATSAPP") {
+    if (
+      channelType !== "EMAIL" &&
+      channelType !== "SMS" &&
+      channelType !== "WHATSAPP" &&
+      channelType !== "IN_APP"
+    ) {
       return null;
     }
     const { provider } = await this.getOrCreateWithNullProvider(organizationId, channelType);

@@ -279,6 +279,7 @@ export function CampaignDashboardClient({
       Assignee: lead.assigneeName,
       Status: lead.stageName,
       "Lost reason": lead.lostReasonName ?? "",
+      Note: lead.latestNote ?? "",
     }));
     if (leads.length > 0) {
       XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(leads), "Leads");
@@ -534,6 +535,11 @@ export function CampaignDashboardClient({
                             {lead.lostReasonName ? ` · ${lead.lostReasonName}` : ""}
                           </Badge>
                         </span>
+                        {lead.latestNote ? (
+                          <span className="text-muted line-clamp-2 text-[11px]">
+                            Note: {lead.latestNote}
+                          </span>
+                        ) : null}
                         {lead.recordings.length > 0 ? (
                           <span className="text-muted text-[11px]">
                             {lead.recordings.length} recording

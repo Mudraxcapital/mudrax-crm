@@ -24,7 +24,18 @@ export class FakeLeadNoteRepository implements LeadNoteRepository {
   }
 
   async listByLead(leadId: string): Promise<LeadNote[]> {
-    return [...this.notes.values()].filter((note) => note.leadId === leadId);
+    return [...this.notes.values()]
+      .filter((note) => note.leadId === leadId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async listLatestBodyByLeadIds(leadIds: string[]): Promise<Map<string, string | null>> {
+    const result = new Map<string, string | null>();
+    for (const leadId of new Set(leadIds)) {
+      const notes = await this.listByLead(leadId);
+      if (notes[0]) result.set(leadId, notes[0].body?.trim() || null);
+    }
+    return result;
   }
 
   async createWithAudit(

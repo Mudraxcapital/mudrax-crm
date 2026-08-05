@@ -14,7 +14,6 @@ async function main() {
 
   const codes = [
     "lead_center.view",
-    "lead_center.manage",
     "lead_center.import",
     "integration.view",
     "integration.manage",

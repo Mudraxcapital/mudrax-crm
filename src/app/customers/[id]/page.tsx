@@ -40,9 +40,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   const canUpdate = hasPermission(authContext, "customer.update");
   const canMerge = hasPermission(authContext, "customer.merge");
-  const canViewDuplicates =
-    hasPermission(authContext, "customer.duplicate.view") ||
-    hasPermission(authContext, "customer.merge");
+  const canViewDuplicates = hasPermission(authContext, "customer.duplicate.view");
   const canViewLoans = hasPermission(authContext, "loan_application.view");
   const canViewDocs = hasPermission(authContext, "document.view");
   const canViewCalls = hasPermission(authContext, "call.view");

@@ -1,4 +1,7 @@
 import type { LeadStage } from "@/modules/leads";
+import {
+  filterClosedLeadStagesForPicker,
+} from "@/modules/leads/presentation/lib/filterClosedLeadStages";
 
 /** Active stages removed from the caller disposition dropdown. */
 const HIDDEN_ACTIVE_STAGE_PATTERNS = [
@@ -19,18 +22,15 @@ export function filterCallerLeadStages(
   stages: LeadStage[],
   currentStageId?: string | null,
 ): LeadStage[] {
-  const filtered = stages.filter((stage) => {
+  const withoutHiddenActive = stages.filter((stage) => {
     if (currentStageId && stage.id === currentStageId) return true;
-    if (stage.bucket === "CLOSED") {
-      const name = stage.name.trim();
-      return /^won$/i.test(name) || /^lost$/i.test(name);
-    }
     if (stage.bucket === "ACTIVE") {
       return !HIDDEN_ACTIVE_STAGE_PATTERNS.some((pattern) => pattern.test(stage.name.trim()));
     }
     return true;
   });
 
+  const filtered = filterClosedLeadStagesForPicker(withoutHiddenActive, currentStageId);
   return filtered.length > 0 ? filtered : stages;
 }
 

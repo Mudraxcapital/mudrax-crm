@@ -34,6 +34,7 @@ export class FakeLeadLookupPort implements LeadLookupPort, LeadNextActionPort {
 export class FakeUserLookupPort implements UserLookupPort {
   users = new Map<string, UserLookupSummary>();
   hierarchy = new Map<string, UserHierarchyLookup>();
+  adminIdsByOrg = new Map<string, string[]>();
 
   async findById(userId: string): Promise<UserLookupSummary | null> {
     return this.users.get(userId) ?? null;
@@ -41,5 +42,9 @@ export class FakeUserLookupPort implements UserLookupPort {
 
   async findHierarchy(userId: string): Promise<UserHierarchyLookup | null> {
     return this.hierarchy.get(userId) ?? null;
+  }
+
+  async listActiveAdminIds(organizationId: string): Promise<string[]> {
+    return this.adminIdsByOrg.get(organizationId) ?? [];
   }
 }

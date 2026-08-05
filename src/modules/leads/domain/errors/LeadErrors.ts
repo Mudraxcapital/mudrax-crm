@@ -47,6 +47,22 @@ export class LostReasonRequiredError extends Error {
   }
 }
 
+/** Thrown when a Lead is moved into Closed-Lost without a compulsory note. */
+export class LostNoteRequiredError extends Error {
+  constructor() {
+    super("A note is required when marking a Lead as Lost.");
+    this.name = "LostNoteRequiredError";
+  }
+}
+
+/** Thrown when a Lead is moved into Do Not Disturb without a compulsory note. */
+export class DndNoteRequiredError extends Error {
+  constructor() {
+    super("A note is required when marking a Lead as Do Not Disturb.");
+    this.name = "DndNoteRequiredError";
+  }
+}
+
 /** Reopening a closed Lead is not supported (leads.md). */
 export class LeadAlreadyClosedError extends Error {
   constructor(id: string) {
@@ -61,6 +77,14 @@ export class InvalidAssigneeReferenceError extends Error {
       `User ${userId} was not found in this Organization; a Lead can only be assigned to an existing, active User.`,
     );
     this.name = "InvalidAssigneeReferenceError";
+  }
+}
+
+/** Temporary holiday/cover assignment input is invalid. */
+export class InvalidTemporaryAssignmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidTemporaryAssignmentError";
   }
 }
 

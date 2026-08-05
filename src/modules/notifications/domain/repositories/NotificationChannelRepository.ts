@@ -16,7 +16,7 @@ export interface NotificationChannelRepository {
 
   getOrCreateWithNullProvider(
     organizationId: string,
-    channelType: "EMAIL" | "SMS" | "WHATSAPP",
+    channelType: "EMAIL" | "SMS" | "WHATSAPP" | "IN_APP",
   ): Promise<{ channel: NotificationChannel; provider: Provider }>;
 
   findActiveProvider(organizationId: string, channelType: ChannelType): Promise<Provider | null>;

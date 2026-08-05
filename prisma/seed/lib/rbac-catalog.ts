@@ -95,33 +95,10 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "user.reset_password",
     module: "users",
     description:
-      "Admin-only: reset password for Managers, Team Leads, and Callers (not other Admins or self). Does not force a password change on next login.",
+      "Admin-only: reset password for Managers, Team Leads, and Callers (not other Admins or self). Forces a password change on next login.",
     minRole: "Admin",
     systemOnly: true,
   },
-  {
-    code: "api_key.manage",
-    module: "users",
-    description: "Issue and revoke API Keys for inbound integrations.",
-    minRole: "Admin",
-  },
-  {
-    code: "user.impersonate",
-    module: "users",
-    description: "Temporarily act as another User for support/debugging (Audit-logged).",
-    minRole: "Admin",
-    systemOnly: true,
-  },
-
-  // rbac — fixed four roles; Admin may view permission catalog only ----------
-  {
-    code: "permission.view",
-    module: "rbac",
-    description: "View the Permission catalog (roles are fixed — not editable).",
-    minRole: "Admin",
-    systemOnly: true,
-  },
-
   // customers --------------------------------------------------------------
   {
     code: "customer.view",
@@ -145,6 +122,13 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     code: "customer.merge",
     module: "customers",
     description: "Merge two duplicate Customer identities.",
+    minRole: "Manager",
+  },
+  {
+    code: "customer.duplicate.view",
+    module: "customers",
+    description:
+      "View Duplicate Detection candidates, run detection, and dismiss matches (merge still requires customer.merge).",
     minRole: "Manager",
   },
   {
@@ -207,12 +191,6 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: "lead_center",
     description: "View Lead Center buckets and staged inbound leads.",
     minRole: "Team Lead",
-  },
-  {
-    code: "lead_center.manage",
-    module: "lead_center",
-    description: "Review, tag, archive, merge, and bulk-operate staged leads in Lead Center.",
-    minRole: "Manager",
   },
   {
     code: "lead_center.import",
@@ -613,15 +591,8 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
     systemOnly: true,
   },
 
-  // audit (cross-cutting; owning tables live in documents / notifications / ai_core)
-  {
-    code: "audit.view",
-    module: "audit",
-    description:
-      "Read-only access to Audit Trail / Communication Log / AI Audit Log — never write or delete (platform-contracts.md §4).",
-    minRole: "Admin",
-    systemOnly: true,
-  },
+  // audit.view / user.impersonate / api_key.manage / permission.view /
+  // lead_center.manage intentionally omitted — no production UI or API wiring yet.
 ];
 
 export interface RoleGrant {

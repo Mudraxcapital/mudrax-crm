@@ -22,6 +22,7 @@ import {
   retryFailedNotificationsHandler,
 } from "./handlers/notificationHandlers";
 import { retryFailedJobsHandler } from "./handlers/retryFailedJobsHandler";
+import { temporaryAssignmentExpiryHandler } from "./handlers/temporaryAssignmentHandler";
 import { DEFAULT_TIMEZONE, minuteKey } from "./timezone";
 import type { JobHandler, JobHandlerResult } from "./types";
 
@@ -33,6 +34,7 @@ const HANDLERS: JobHandler[] = [
   followUpReminderHandler,
   processNotificationQueueHandler,
   retryFailedNotificationsHandler,
+  temporaryAssignmentExpiryHandler,
   retryFailedJobsHandler,
 ];
 

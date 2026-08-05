@@ -29,7 +29,7 @@ function messageForReason(reason: SessionEndReason): { title: string; descriptio
       return {
         title: "Account suspended",
         description:
-          "Your account has been suspended. Please contact your administrator for help.",
+          "Your account has been suspended. Contact an Admin for a password reset.",
       };
     default:
       return {

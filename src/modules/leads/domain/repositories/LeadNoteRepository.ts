@@ -17,6 +17,11 @@ export interface CreateLeadNoteData {
 export interface LeadNoteRepository {
   findById(id: string): Promise<LeadNote | null>;
   listByLead(leadId: string): Promise<LeadNote[]>;
+  /**
+   * Latest note body per lead (one round-trip). Missing leads are omitted.
+   * Order among ties: newest `createdAt` wins.
+   */
+  listLatestBodyByLeadIds(leadIds: string[]): Promise<Map<string, string | null>>;
 
   /** Creates the Lead Note and a "note added" Audit Record atomically. */
   createWithAudit(

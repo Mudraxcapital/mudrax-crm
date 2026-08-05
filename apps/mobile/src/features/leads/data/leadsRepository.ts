@@ -95,7 +95,7 @@ export function addLeadNote(leadId: string, body: string) {
 
 export function changeLeadStage(
   leadId: string,
-  input: { stageId: string; lostReasonId?: string },
+  input: { stageId: string; lostReasonId?: string; note?: string },
 ) {
   return getApi().leads.changeStage(leadId, input);
 }

@@ -15,7 +15,7 @@ interface LoginPageProps {
 const ACCOUNT_DISABLED_BANNER =
   "Your account has been disabled. Please contact your administrator.";
 const ACCOUNT_SUSPENDED_BANNER =
-  "Your account has been suspended. Please contact your administrator.";
+  "Your account has been suspended. Contact an Admin for a password reset.";
 const SESSION_EXPIRED_BANNER =
   "Your session expired. Please sign in again.";
 const PASSWORD_CHANGED_BANNER =

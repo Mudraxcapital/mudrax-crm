@@ -15,6 +15,7 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
+  ForceChangePassword: undefined;
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   LeadDetails: { leadId: string; campaignId?: string };
   PostCall: {

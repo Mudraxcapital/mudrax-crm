@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "32mb",
     },
   },
+  // Local/prod canonical hostname (hosts file or company DNS → this app).
+  // Prevents Next.js from blocking Server Actions / HMR from non-localhost.
+  allowedDevOrigins: ["mudrax.crm", "staging.mudrax.crm"],
   // Keep Node-only clients out of the Turbopack/webpack graph for
   // instrumentation and Server Actions.
   serverExternalPackages: ["redis", "@redis/client", "pg", "@prisma/adapter-pg"],

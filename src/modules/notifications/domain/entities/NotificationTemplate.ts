@@ -11,8 +11,11 @@
 export const CHANNEL_TYPES = ["EMAIL", "SMS", "WHATSAPP", "PUSH", "IN_APP", "WEBHOOK"] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 
-/** Channels in scope for this reduced Notifications implementation. */
-export const SENDABLE_CHANNEL_TYPES = ["EMAIL", "SMS", "WHATSAPP"] as const;
+/**
+ * Channels the send / queue path can deliver today.
+ * EMAIL/SMS/WhatsApp use the Null provider stub; IN_APP is the CRM bell/inbox.
+ */
+export const SENDABLE_CHANNEL_TYPES = ["EMAIL", "SMS", "WHATSAPP", "IN_APP"] as const;
 export type SendableChannelType = (typeof SENDABLE_CHANNEL_TYPES)[number];
 
 export function isSendableChannelType(value: string): value is SendableChannelType {

@@ -136,6 +136,81 @@ export class PrismaUserRepository implements UserRepository {
     });
   }
 
+  async countConsecutiveFailedPasswordAttempts(userId: string): Promise<number> {
+    const recent = await this.prisma.loginAttempt.findMany({
+      where: { userId },
+      orderBy: { occurredAt: "desc" },
+      take: 20,
+      select: { succeeded: true, failureReason: true },
+    });
+
+    let count = 0;
+    for (const row of recent) {
+      if (row.succeeded) break;
+      if (row.failureReason === "BAD_PASSWORD") {
+        count += 1;
+        continue;
+      }
+      break;
+    }
+    return count;
+  }
+
+  async suspendForLoginLockout(
+    userId: string,
+    meta: { reason: string; ipAddress?: string | null },
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.user.findUnique({ where: { id: userId } });
+      if (!before || before.status !== "ACTIVE") return;
+
+      const row = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: "SUSPENDED",
+          lockedUntil: null,
+          lockedReason: meta.reason.slice(0, 200),
+          sessionVersion: { increment: 1 },
+        },
+      });
+
+      await tx.userSession.updateMany({
+        where: { userId, status: "ACTIVE" },
+        data: {
+          status: "REVOKED",
+          revokedAt: new Date(),
+          logoutAt: new Date(),
+          revokeReason: "LOGIN_LOCKOUT",
+        },
+      });
+
+      await tx.userAuditLog.create({
+        data: {
+          id: randomUUID(),
+          actorType: "SYSTEM",
+          actorId: null,
+          action: "Account Suspended (Login Lockout)",
+          targetType: TARGET_TYPE_USER,
+          targetId: userId,
+          correlationId: null,
+          beforeState: {
+            status: before.status,
+            sessionVersion: before.sessionVersion,
+            lockedReason: before.lockedReason,
+          },
+          afterState: {
+            status: row.status,
+            sessionVersion: row.sessionVersion,
+            lockedReason: row.lockedReason,
+            reason: meta.reason,
+            ipAddress: meta.ipAddress ?? null,
+          },
+          recordHash: PLACEHOLDER_RECORD_HASH,
+        },
+      });
+    });
+  }
+
   async touchLastLogin(userId: string): Promise<void> {
     await this.prisma.user.update({
       where: { id: userId },
@@ -609,6 +684,16 @@ export class PrismaUserRepository implements UserRepository {
     return result.count;
   }
 
+  async countUsersWithRole(
+    roleName: string,
+    excludingUserId?: string | null,
+  ): Promise<number> {
+    const ids = await this.userIdsWithRole(roleName);
+    const unique = new Set(ids);
+    if (excludingUserId) unique.delete(excludingUserId);
+    return unique.size;
+  }
+
   async assertKeepsActiveAdminLocked(targetUserId: string): Promise<void> {
     await this.prisma.$transaction(
       async (tx) => {
@@ -853,6 +938,7 @@ export class PrismaUserRepository implements UserRepository {
     options?: {
       mustChangePassword?: boolean;
       clearMustChangePassword?: boolean;
+      reactivateIfSuspended?: boolean;
       action?: string;
       ipAddress?: string | null;
     },
@@ -863,6 +949,8 @@ export class PrismaUserRepository implements UserRepository {
       const mustChangePassword = options?.clearMustChangePassword
         ? false
         : (options?.mustChangePassword ?? false);
+      const reactivate =
+        options?.reactivateIfSuspended === true && before.status === "SUSPENDED";
       const actionName =
         options?.action ??
         (options?.clearMustChangePassword ? "Password Changed (Self)" : "Password Reset (Admin)");
@@ -871,10 +959,25 @@ export class PrismaUserRepository implements UserRepository {
         data: {
           passwordHash,
           mustChangePassword,
+          ...(reactivate
+            ? {
+                status: "ACTIVE" as const,
+                lockedUntil: null,
+                lockedReason: null,
+              }
+            : options?.reactivateIfSuspended
+              ? { lockedUntil: null, lockedReason: null }
+              : {}),
           updatedByUserId: actor.actorId,
           sessionVersion: { increment: 1 },
         },
       });
+      // Clear failed attempts so the lockout counter resets after Admin recovery.
+      if (options?.reactivateIfSuspended) {
+        await tx.loginAttempt.deleteMany({
+          where: { userId: id, succeeded: false },
+        });
+      }
       await tx.userSession.updateMany({
         where: { userId: id, status: "ACTIVE" },
         data: {
@@ -896,11 +999,16 @@ export class PrismaUserRepository implements UserRepository {
           beforeState: {
             mustChangePassword: before.mustChangePassword,
             sessionVersion: before.sessionVersion,
+            status: before.status,
+            lockedReason: before.lockedReason,
           },
           afterState: {
             mustChangePassword,
             sessionsInvalidated: true,
             forcePasswordChange: mustChangePassword,
+            reactivatedFromSuspension: reactivate,
+            status: reactivate ? "ACTIVE" : before.status,
+            lockedReason: null,
             ipAddress: options?.ipAddress ?? null,
           },
           recordHash: PLACEHOLDER_RECORD_HASH,
@@ -1099,14 +1207,23 @@ export class PrismaUserRepository implements UserRepository {
         if (!before) return;
         if (before.status === status) return;
 
+        const clearingLockout = status === "ACTIVE" && before.status === "SUSPENDED";
         const row = await tx.user.update({
           where: { id },
           data: {
             status,
+            ...(clearingLockout
+              ? { lockedUntil: null, lockedReason: null }
+              : {}),
             updatedByUserId: actor.actorId,
             sessionVersion: { increment: 1 },
           },
         });
+        if (clearingLockout) {
+          await tx.loginAttempt.deleteMany({
+            where: { userId: id, succeeded: false },
+          });
+        }
         await tx.userSession.updateMany({
           where: { userId: id, status: "ACTIVE" },
           data: {
@@ -1129,6 +1246,7 @@ export class PrismaUserRepository implements UserRepository {
             beforeState: {
               status: before.status,
               sessionVersion: before.sessionVersion,
+              lockedReason: before.lockedReason,
             },
             afterState: {
               status: user.status,

@@ -86,6 +86,16 @@ export interface UserRepository {
     userId: string,
   ): Promise<import("../entities/UserAuthProfile").AccountSessionState | null>;
   recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void>;
+  /**
+   * Consecutive BAD_PASSWORD failures since the last successful login attempt.
+   * Used by the Manager / Team Lead / Caller lockout policy.
+   */
+  countConsecutiveFailedPasswordAttempts(userId: string): Promise<number>;
+  /** Suspend + audit after repeated failed logins (SYSTEM actor). */
+  suspendForLoginLockout(
+    userId: string,
+    meta: { reason: string; ipAddress?: string | null },
+  ): Promise<void>;
   touchLastLogin(userId: string): Promise<void>;
 
   findSummaryById(id: string): Promise<UserSummary | null>;
@@ -117,6 +127,11 @@ export interface UserRepository {
    */
   assertKeepsActiveAdminLocked(targetUserId: string): Promise<void>;
 
+  /**
+   * Count users holding `roleName` (any status). Optional exclude for promote checks.
+   */
+  countUsersWithRole(roleName: string, excludingUserId?: string | null): Promise<number>;
+
   list(filter?: ListUsersFilter): Promise<UserListItem[]>;
   count(filter?: ListUsersFilter): Promise<number>;
 
@@ -142,6 +157,8 @@ export interface UserRepository {
     options?: {
       mustChangePassword?: boolean;
       clearMustChangePassword?: boolean;
+      /** Admin reset after lockout — restore ACTIVE and clear lock fields. */
+      reactivateIfSuspended?: boolean;
       action?: string;
       ipAddress?: string | null;
     },

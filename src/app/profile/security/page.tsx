@@ -1,23 +1,16 @@
-import { redirect } from "next/navigation";
 import { requireAuth } from "@/infra/auth/session";
-import { getUser, roleMaySelfServiceChangePassword } from "@/modules/users";
 import { ChangePasswordForm } from "@/modules/auth/presentation/components/ChangePasswordForm";
 import { PageHeader, PageSection } from "@/shared/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/shared/ui/Card";
 
 export default async function ProfileSecurityPage() {
-  const { session } = await requireAuth();
-  const user = await getUser(session.user.id);
-
-  if (!roleMaySelfServiceChangePassword(user.roleName)) {
-    redirect("/profile");
-  }
+  await requireAuth();
 
   return (
     <PageSection>
       <PageHeader
         title="Security"
-        description="Change your own password. Administrative resets are handled separately in User Management."
+        description="Change your own password. Administrative resets for Managers, Team Leads, and Callers are handled in User Management."
         breadcrumbs={[
           { label: "Profile", href: "/profile" },
           { label: "Security" },

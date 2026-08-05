@@ -73,8 +73,8 @@ export function UserForm({
             className={inputClass}
           />
           <p className="text-muted text-xs">
-            At least 8 characters with uppercase, lowercase, and a number. The employee can sign in
-            with this password immediately — no forced change on first login.
+            At least 8 characters with uppercase, lowercase, and a number. Managers, Team Leads, and
+            Callers must change this temporary password on first sign-in.
           </p>
         </Field>
         <Field label="Role *" htmlFor="role">

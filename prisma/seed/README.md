@@ -46,7 +46,7 @@ runs:
 |---|------|------|-----|
 | 1 | `01-organization.ts` | 1 Organization, 2 Regions, 3 Branches, 5 Departments, 4 Teams | Requirement #2. The single canonical company scope (`platform-contracts.md` §5) everything else's `organizationId` points at. |
 | 2 | `02-rbac.ts` | 4 Roles, ~70 Permissions, Role→Permission grants | Requirement #3. Canonical Caller/Team Leader/Manager/Admin hierarchy from ADR 0002, with Data Scopes (Self/Team/Branch/Organization/System) per `platform-contracts.md` §2. See `lib/rbac-catalog.ts` for the full catalog and the `minRole`/`systemOnly` grant-computation rules. |
-| 3 | `03-admin-user.ts` | 1 User (`admin@mudraxcapital.com`), granted the Admin Role | Requirement #4. The single bootstrap account. |
+| 3 | `03-admin-user.ts` | 1 User (`SEED_ADMIN_EMAIL`, default `admin@localhost.dev`), granted the Admin Role | Requirement #4. The single bootstrap account. |
 | 4 | `04-lead-catalogs.ts` | Lead Source, Lead Stage, Lost Reason, Call Feedback Status, Tag, 2 Custom Field Definitions | Requirement #1. Every one of these is documented in `prisma/models/leads.prisma` as an admin-configurable catalog, never a hardcoded enum. |
 | 5 | `05-loan-catalogs.ts` | Loan Product Type, Application Status, Loan Status, EMI Pay Status | Requirement #1. The loan-lifecycle status vocabulary, spanning `loan_products`, `loan_applications`, and `loan_accounts` — three catalogs the schema keeps "permanently distinct" by design. |
 | 6 | `06-banks.ts` | 3 Banks, 3 Bank Branches, 3 Commission Policy Versions | Requirement #1 / lending-partner master data `loan_applications`/`loan_accounts` reference by id. |
@@ -68,24 +68,31 @@ task, not an extension of "seed the catalogs and a demo pipeline."
 
 ## Bootstrap Administrator credentials (DEV-ONLY)
 
-```
-Email:    aarush.taluja1@gmail.com
-Password: Sairam@123
+Defaults (override with env vars before seeding):
 
-Roster: 1 Admin, 1 Manager, 3 Team Leads, 9 Callers (3 per Team Lead).
-Non-admin demo password: Mudrax@User2026!
+```
+SEED_ADMIN_EMAIL=admin@localhost.dev
+SEED_ADMIN_PASSWORD=ChangeMe-Admin-Dev-Only!
+SEED_DEMO_PASSWORD=ChangeMe-User-Dev-Only!
 ```
 
-This password is hashed with `lib/security.ts`'s `hashSeedPassword`, which
+```
+Email:    $SEED_ADMIN_EMAIL (default admin@localhost.dev)
+Password: $SEED_ADMIN_PASSWORD (default ChangeMe-Admin-Dev-Only!)
+
+Roster: 1 Admin, 1 Manager, 2 Team Leads, Callers under TLs + Direct Admin freelancers.
+Non-admin demo password: $SEED_DEMO_PASSWORD
+```
+
+Passwords are hashed with `lib/security.ts`'s `hashSeedPassword`, which
 uses the same bcrypt strategy `src/modules/auth`
-(`BcryptPasswordHasher`) verifies against — so this account can actually
-sign in once the app is running (see `docs/adr/0002-users-and-enterprise-rbac.md`
-and `src/modules/auth/README.md`). It remains a **DEV-ONLY, publicly
-documented, fixed credential**:
+(`BcryptPasswordHasher`) verifies against — so seeded accounts can sign in
+locally (see `docs/adr/0002-users-and-enterprise-rbac.md` and
+`src/modules/auth/README.md`). These remain **DEV-ONLY placeholders**:
 
 1. Never run this seed script against a non-local/shared environment.
-2. Treat this password as compromised by definition (it is committed to
-   git) and rotate it immediately in any environment where it matters.
+2. Set `SEED_*` env vars for any shared staging database; never reuse
+   production passwords in seed.
 
 ## Files
 

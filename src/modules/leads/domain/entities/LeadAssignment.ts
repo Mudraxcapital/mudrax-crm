@@ -5,7 +5,12 @@
 // ownership changed (leads.md). `leads` is the sole owner and sole writer.
 // ============================================================================
 
-export const ASSIGNMENT_TYPES = ["INITIAL", "CAMPAIGN_ALLOCATION", "MANUAL_REASSIGNMENT"] as const;
+export const ASSIGNMENT_TYPES = [
+  "INITIAL",
+  "CAMPAIGN_ALLOCATION",
+  "MANUAL_REASSIGNMENT",
+  "TEMPORARY_REASSIGNMENT",
+] as const;
 export type AssignmentType = (typeof ASSIGNMENT_TYPES)[number];
 
 export interface LeadAssignment {

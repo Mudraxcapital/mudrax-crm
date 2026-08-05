@@ -67,8 +67,30 @@ export const assignCampaignLeadsSchema = z
     },
   );
 
+export const temporaryCampaignReassignSchema = z
+  .object({
+    fromUserId: uuidSchema,
+    toUserId: uuidSchema,
+    durationDays: z.coerce
+      .number()
+      .int("Duration must be a whole number of days.")
+      .min(1, "Duration must be at least 1 day.")
+      .max(90, "Duration cannot exceed 90 days."),
+  })
+  .refine((input) => input.fromUserId !== input.toUserId, {
+    message: "Temporary caller must be different from the caller on leave.",
+    path: ["toUserId"],
+  });
+
+export const endTemporaryCampaignReassignSchema = z.object({
+  /** Permanent (on-leave) caller whose temporary covers should end. */
+  fromUserId: uuidSchema,
+});
+
 export type CreateCampaignInput = z.infer<typeof createCampaignSchema>;
 export type UpdateCampaignInput = z.infer<typeof updateCampaignSchema>;
 export type ChangeCampaignStatusInput = z.infer<typeof changeCampaignStatusSchema>;
 export type AddCampaignMemberInput = z.infer<typeof addCampaignMemberSchema>;
 export type AssignCampaignLeadsInput = z.infer<typeof assignCampaignLeadsSchema>;
+export type TemporaryCampaignReassignInput = z.infer<typeof temporaryCampaignReassignSchema>;
+export type EndTemporaryCampaignReassignInput = z.infer<typeof endTemporaryCampaignReassignSchema>;

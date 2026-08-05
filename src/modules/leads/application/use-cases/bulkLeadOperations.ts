@@ -8,6 +8,7 @@
 
 import type { LeadRepository } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
+import type { LeadNoteRepository } from "../../domain/repositories/LeadNoteRepository";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
 import type { UserLookupPort } from "../ports/UserLookupPort";
 import {
@@ -17,6 +18,7 @@ import {
   InvalidLostReasonReferenceError,
   LeadAlreadyClosedError,
   LeadNotFoundError,
+  LostNoteRequiredError,
   LostReasonRequiredError,
 } from "../../domain/errors/LeadErrors";
 import type {
@@ -74,8 +76,9 @@ export function makeBulkAssignLeads(
 export function makeBulkChangeLeadStage(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  noteRepository: LeadNoteRepository,
 ) {
-  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository);
+  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository, noteRepository);
 
   return async function bulkChangeLeadStage(command: {
     organizationId: string;
@@ -94,6 +97,7 @@ export function makeBulkChangeLeadStage(
           input: {
             stageId: command.input.stageId,
             lostReasonId: command.input.lostReasonId,
+            note: command.input.note,
           },
           actor: command.actor,
         });
@@ -116,8 +120,9 @@ export function makeBulkChangeLeadStage(
 export function makeBulkCloseLeads(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  noteRepository: LeadNoteRepository,
 ) {
-  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository);
+  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository, noteRepository);
 
   return async function bulkCloseLeads(command: {
     organizationId: string;
@@ -137,7 +142,11 @@ export function makeBulkCloseLeads(
       try {
         await changeLeadStage({
           id: leadId,
-          input: { stageId: lostStage.id, lostReasonId: command.input.lostReasonId },
+          input: {
+            stageId: lostStage.id,
+            lostReasonId: command.input.lostReasonId,
+            note: command.input.note,
+          },
           actor: command.actor,
         });
         result.succeeded.push(leadId);
@@ -145,6 +154,7 @@ export function makeBulkCloseLeads(
         if (
           error instanceof LeadAlreadyClosedError ||
           error instanceof LostReasonRequiredError ||
+          error instanceof LostNoteRequiredError ||
           error instanceof InvalidLostReasonReferenceError ||
           error instanceof InvalidAssigneeReferenceError ||
           error instanceof LeadNotFoundError

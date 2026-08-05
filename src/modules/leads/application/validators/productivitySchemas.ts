@@ -107,6 +107,11 @@ export const importLeadsCsvSchema = z
     agentUserIds: z.array(uuidSchema).max(200).optional(),
     distributionStrategy: importDistributionStrategySchema.optional(),
     manualAssigneeUserId: uuidSchema.optional(),
+    /**
+     * MANUAL percentage split per caller (must sum to 100 when provided).
+     * Keys are agent user ids.
+     */
+    percentages: z.record(uuidSchema, z.coerce.number().min(0).max(100)).optional(),
   })
   .refine((input) => Boolean(input.csvText?.trim()) || (input.rows && input.rows.length > 0), {
     message: "Excel/CSV rows or file content is required.",
@@ -116,10 +121,37 @@ export const importLeadsCsvSchema = z
     (input) =>
       input.distributionStrategy !== "MANUAL" ||
       Boolean(input.manualAssigneeUserId) ||
-      (input.agentUserIds?.length ?? 0) === 1,
+      (input.agentUserIds?.length ?? 0) === 1 ||
+      Object.keys(input.percentages ?? {}).length > 0,
     {
-      message: "Manual distribution requires an assignee.",
+      message: "Manual distribution requires an assignee or percentage split.",
       path: ["manualAssigneeUserId"],
+    },
+  )
+  .refine(
+    (input) => {
+      const percentages = input.percentages;
+      if (!percentages || Object.keys(percentages).length === 0) return true;
+      const total = Object.values(percentages).reduce((sum, value) => sum + value, 0);
+      return Math.round(total) === 100;
+    },
+    {
+      message: "Caller percentages must sum to 100.",
+      path: ["percentages"],
+    },
+  )
+  .refine(
+    (input) => {
+      if (input.distributionStrategy !== "MANUAL") return true;
+      const percentages = input.percentages;
+      if (!percentages || Object.keys(percentages).length === 0) return true;
+      const agents = new Set(input.agentUserIds ?? []);
+      if (agents.size === 0) return true;
+      return Object.keys(percentages).every((userId) => agents.has(userId));
+    },
+    {
+      message: "Percentage keys must match selected callers.",
+      path: ["percentages"],
     },
   )
   .refine(
@@ -157,10 +189,12 @@ export const bulkAssignLeadsSchema = bulkLeadIdsSchema.extend({
 export const bulkChangeLeadStageSchema = bulkLeadIdsSchema.extend({
   stageId: uuidSchema,
   lostReasonId: uuidSchema.optional(),
+  note: z.string().trim().min(1).max(4000).optional(),
 });
 
 export const bulkCloseLeadsSchema = bulkLeadIdsSchema.extend({
   lostReasonId: uuidSchema,
+  note: z.string().trim().min(1, "A note is required when closing leads as Lost.").max(4000),
 });
 
 /** Admin/Manager permanent delete — no soft-close / archive. */

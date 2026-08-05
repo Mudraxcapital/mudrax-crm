@@ -20,6 +20,7 @@ import {
 
 export interface CampaignFormState {
   error?: string;
+  success?: string;
 }
 
 export async function createCampaignAction(

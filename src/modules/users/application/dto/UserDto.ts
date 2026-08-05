@@ -17,6 +17,7 @@ export interface UserDto {
   status: UserStatus;
   displayStatus: UserStatus;
   mustChangePassword: boolean;
+  lockedReason: string | null;
   profilePhotoUrl: string | null;
   assignedTeamLeadId: string | null;
   reportingManagerId: string | null;
@@ -104,6 +105,7 @@ export function toUserDto(
     status: user.status,
     displayStatus: accountDisplayStatus(user.status),
     mustChangePassword: user.mustChangePassword,
+    lockedReason: user.lockedReason,
     profilePhotoUrl: user.profilePhotoUrl,
     assignedTeamLeadId: user.assignedTeamLeadId,
     reportingManagerId: user.reportingManagerId,

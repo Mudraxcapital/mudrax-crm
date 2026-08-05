@@ -6,6 +6,7 @@ import type { CampaignRepository } from "../../domain/repositories/CampaignRepos
 import { CampaignNotFoundError } from "../../domain/errors/CampaignErrors";
 import { toCampaignDto, type CampaignDto } from "../dto/CampaignDto";
 import { PERSONAL_CAMPAIGN_NAME } from "./ensurePersonalCampaign";
+import { isDoNotDisturbCampaignName } from "./ensureDndCampaign";
 
 export function makeGetCampaign(repository: CampaignRepository) {
   return async function getCampaign(id: string): Promise<CampaignDto> {
@@ -40,7 +41,10 @@ export function makeListCampaignsForMember(repository: CampaignRepository) {
     const campaigns = loaded
       .filter(
         (campaign): campaign is NonNullable<typeof campaign> =>
-          campaign != null && (campaign.status === "ACTIVE" || campaign.status === "PAUSED"),
+          campaign != null &&
+          (campaign.status === "ACTIVE" || campaign.status === "PAUSED") &&
+          // Callers never see the system Do Not Disturb campaign (Admin/Manager/TL only).
+          !isDoNotDisturbCampaignName(campaign.name),
       )
       .map(toCampaignDto);
     // Personal Campaign first so Caller/app defaults land on single-add leads.

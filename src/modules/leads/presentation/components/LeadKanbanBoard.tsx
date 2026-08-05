@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { KanbanColumn } from "@/modules/leads";
+import { isDoNotDisturbStageName } from "../../application/lib/doNotDisturbPolicy";
 import { changeLeadStageKanbanAction } from "../controllers/productivity.actions";
 import { cn } from "@/shared/ui/cn";
 
@@ -34,11 +35,13 @@ export function LeadKanbanBoard({
   );
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const [pendingLostDrop, setPendingLostDrop] = useState<{
+  const [pendingNoteDrop, setPendingNoteDrop] = useState<{
     leadId: string;
     stageId: string;
+    kind: "lost" | "dnd";
   } | null>(null);
   const [lostReasonId, setLostReasonId] = useState("");
+  const [lostNote, setLostNote] = useState("");
 
   function updateBoardScrollState() {
     const board = boardRef.current;
@@ -91,12 +94,18 @@ export function LeadKanbanBoard({
     chip?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }
 
-  function commitStageChange(leadId: string, stageId: string, reasonId?: string) {
+  function commitStageChange(
+    leadId: string,
+    stageId: string,
+    reasonId?: string,
+    note?: string,
+  ) {
     startTransition(async () => {
       const result = await changeLeadStageKanbanAction({
         leadId,
         stageId,
         lostReasonId: reasonId,
+        note,
       });
       if (result.error) {
         setError(result.error);
@@ -106,12 +115,13 @@ export function LeadKanbanBoard({
       }
       setDraggingLeadId(null);
       setOverStageId(null);
-      setPendingLostDrop(null);
+      setPendingNoteDrop(null);
       setLostReasonId("");
+      setLostNote("");
     });
   }
 
-  function onDrop(stageId: string, closeOutcome: string | null) {
+  function onDrop(stageId: string, closeOutcome: string | null, stageName: string) {
     if (!draggingLeadId) return;
     if (closeOutcome === "LOST") {
       if (lostReasons.length === 0) {
@@ -120,9 +130,17 @@ export function LeadKanbanBoard({
         setOverStageId(null);
         return;
       }
-      // Require explicit Lost Reason — never silently default.
-      setPendingLostDrop({ leadId: draggingLeadId, stageId });
+      // Require explicit Lost Reason + note — never silently default.
+      setPendingNoteDrop({ leadId: draggingLeadId, stageId, kind: "lost" });
       setLostReasonId("");
+      setLostNote("");
+      setError(null);
+      return;
+    }
+    if (isDoNotDisturbStageName(stageName)) {
+      setPendingNoteDrop({ leadId: draggingLeadId, stageId, kind: "dnd" });
+      setLostReasonId("");
+      setLostNote("");
       setError(null);
       return;
     }
@@ -138,42 +156,70 @@ export function LeadKanbanBoard({
       ) : null}
       {pending ? <p className="text-muted text-xs">Updating stage…</p> : null}
 
-      {pendingLostDrop ? (
+      {pendingNoteDrop ? (
         <div
           role="dialog"
-          aria-labelledby="kanban-lost-reason-title"
+          aria-labelledby="kanban-note-drop-title"
           className="mx-card border-accent/30 flex flex-col gap-3 border p-4"
         >
-          <h3 id="kanban-lost-reason-title" className="text-sm font-medium">
-            Select a Lost Reason
+          <h3 id="kanban-note-drop-title" className="text-sm font-medium">
+            {pendingNoteDrop.kind === "dnd" ? (
+              <span className="font-bold">Mark as Do Not Disturb</span>
+            ) : (
+              "Mark as Lost"
+            )}
           </h3>
           <p className="text-muted text-xs">
-            Closed-Lost requires a Lost Reason — same as the Lead detail workflow.
+            {pendingNoteDrop.kind === "dnd"
+              ? "Do Not Disturb requires a note. The lead moves into the Do Not Disturb campaign."
+              : "Closed-Lost requires a Lost Reason and a note — same as the campaign dashboard."}
           </p>
-          <select
+          {pendingNoteDrop.kind === "lost" ? (
+            <select
+              className="mx-input"
+              value={lostReasonId}
+              onChange={(event) => setLostReasonId(event.target.value)}
+              aria-label="Lost reason"
+            >
+              <option value="">— Select a reason —</option>
+              {lostReasons.map((reason) => (
+                <option key={reason.id} value={reason.id}>
+                  {reason.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <textarea
             className="mx-input"
-            value={lostReasonId}
-            onChange={(event) => setLostReasonId(event.target.value)}
-            aria-label="Lost reason"
-          >
-            <option value="">— Select a reason —</option>
-            {lostReasons.map((reason) => (
-              <option key={reason.id} value={reason.id}>
-                {reason.name}
-              </option>
-            ))}
-          </select>
+            value={lostNote}
+            onChange={(event) => setLostNote(event.target.value)}
+            rows={3}
+            maxLength={4000}
+            required
+            placeholder={
+              pendingNoteDrop.kind === "dnd"
+                ? "Explain why this lead should not be contacted…"
+                : "Explain why this lead was lost…"
+            }
+            aria-label={pendingNoteDrop.kind === "dnd" ? "Do Not Disturb note" : "Lost note"}
+          />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               className="bg-foreground text-background rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60"
-              disabled={!lostReasonId || pending}
+              disabled={
+                (pendingNoteDrop.kind === "lost" && !lostReasonId) ||
+                !lostNote.trim() ||
+                pending
+              }
               onClick={() => {
-                if (!lostReasonId || !pendingLostDrop) return;
+                if (!lostNote.trim() || !pendingNoteDrop) return;
+                if (pendingNoteDrop.kind === "lost" && !lostReasonId) return;
                 commitStageChange(
-                  pendingLostDrop.leadId,
-                  pendingLostDrop.stageId,
-                  lostReasonId,
+                  pendingNoteDrop.leadId,
+                  pendingNoteDrop.stageId,
+                  pendingNoteDrop.kind === "lost" ? lostReasonId : undefined,
+                  lostNote.trim(),
                 );
               }}
             >
@@ -184,8 +230,9 @@ export function LeadKanbanBoard({
               className="rounded-lg border border-border px-4 py-2 text-sm"
               disabled={pending}
               onClick={() => {
-                setPendingLostDrop(null);
+                setPendingNoteDrop(null);
                 setLostReasonId("");
+                setLostNote("");
                 setDraggingLeadId(null);
                 setOverStageId(null);
               }}
@@ -228,7 +275,14 @@ export function LeadKanbanBoard({
                       : "border-border bg-surface text-muted hover:border-accent/40 hover:text-foreground",
                   )}
                 >
-                  <span className="font-medium">{column.stageName}</span>
+                  <span
+                    className={cn(
+                      "font-medium",
+                      isDoNotDisturbStageName(column.stageName) && "font-bold",
+                    )}
+                  >
+                    {column.stageName}
+                  </span>
                   <span className="ml-1.5 tabular-nums opacity-70">{column.totalCount}</span>
                 </button>
               );
@@ -260,11 +314,18 @@ export function LeadKanbanBoard({
               setOverStageId(column.stageId);
             }}
             onDragLeave={() => setOverStageId((id) => (id === column.stageId ? null : id))}
-            onDrop={() => onDrop(column.stageId, column.closeOutcome)}
+            onDrop={() => onDrop(column.stageId, column.closeOutcome, column.stageName)}
           >
             <header className="sticky top-0 z-[1] border-b border-border bg-surface/95 px-3 py-2.5 backdrop-blur-sm">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold tracking-tight">{column.stageName}</h2>
+                <h2
+                  className={cn(
+                    "text-sm font-semibold tracking-tight",
+                    isDoNotDisturbStageName(column.stageName) && "font-bold",
+                  )}
+                >
+                  {column.stageName}
+                </h2>
                 <span className="bg-surface text-muted rounded-md border border-border px-1.5 py-0.5 text-[11px] tabular-nums">
                   {column.totalCount}
                 </span>

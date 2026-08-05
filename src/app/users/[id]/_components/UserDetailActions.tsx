@@ -163,17 +163,17 @@ export function UserDetailActions({
         open={resetOpen}
         onClose={() => setResetOpen(false)}
         title="Reset password"
-        description="Set a new password the employee can use immediately. All sessions end immediately."
+        description="Set a temporary password. Also reactivates accounts suspended by login lockout. The employee must change it on next sign-in. All sessions end immediately."
       >
         <form action={resetFormAction} className="flex flex-col gap-3">
           {resetState.error ? <p className="text-sm text-danger">{resetState.error}</p> : null}
           {resetState.success ? <p className="text-sm text-success">{resetState.success}</p> : null}
           <label className="flex flex-col gap-1.5">
-            <span className="mx-label">New password</span>
+            <span className="mx-label">Temporary password</span>
             <input name="password" type="password" required minLength={8} className="mx-input" />
             <span className="text-muted text-xs">
-              At least 8 characters with uppercase, lowercase, and a number. No forced change on next
-              login.
+              At least 8 characters with uppercase, lowercase, and a number. The employee must change
+              this password before using the CRM.
             </span>
           </label>
           <Button type="submit" disabled={resetPending}>

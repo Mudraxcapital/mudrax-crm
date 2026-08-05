@@ -4,6 +4,7 @@ import {
   assignCampaignLeadsSchema,
   changeCampaignStatusSchema,
   createCampaignSchema,
+  temporaryCampaignReassignSchema,
   updateCampaignSchema,
 } from "../application/validators/campaignSchemas";
 
@@ -107,5 +108,34 @@ describe("assignCampaignLeadsSchema", () => {
         manualAssigneeUserId: VALID_UUID,
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("temporaryCampaignReassignSchema", () => {
+  it("accepts a valid temporary cover", () => {
+    expect(
+      temporaryCampaignReassignSchema.safeParse({
+        fromUserId: VALID_UUID,
+        toUserId: VALID_UUID_2,
+        durationDays: 7,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects same caller and duration out of range", () => {
+    expect(
+      temporaryCampaignReassignSchema.safeParse({
+        fromUserId: VALID_UUID,
+        toUserId: VALID_UUID,
+        durationDays: 7,
+      }).success,
+    ).toBe(false);
+    expect(
+      temporaryCampaignReassignSchema.safeParse({
+        fromUserId: VALID_UUID,
+        toUserId: VALID_UUID_2,
+        durationDays: 0,
+      }).success,
+    ).toBe(false);
   });
 });

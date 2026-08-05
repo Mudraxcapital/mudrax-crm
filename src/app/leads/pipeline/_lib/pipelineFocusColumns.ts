@@ -1,11 +1,11 @@
 // ============================================================================
-// Pipeline board shows a focused stage set — Fresh / Ringing / Lost / Won.
+// Pipeline board shows a focused stage set — Fresh / Ringing / Follow Up / Lost / Won.
 // ============================================================================
 
 import type { KanbanColumn } from "@/modules/leads";
 
 /** Display order for the minimal pipeline board. */
-const PIPELINE_FOCUS_STAGE_ORDER = ["fresh", "ringing", "lost", "won"] as const;
+const PIPELINE_FOCUS_STAGE_ORDER = ["fresh", "ringing", "follow up", "lost", "won"] as const;
 
 export function filterPipelineFocusColumns(columns: KanbanColumn[]): KanbanColumn[] {
   const order = new Map<string, number>(

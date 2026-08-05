@@ -5,7 +5,10 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { PATHNAME_HEADER, callerWorkspaceRedirect, isCallerAllowedPath } from "@/infra/auth/callerAccess";
 import { getCurrentUser } from "@/infra/auth/session";
 import { isCallerWorkspaceUser, isInternalStaff } from "@/modules/rbac";
-import { getDailyLoginDuration } from "@/modules/users";
+import {
+  getDailyLoginDuration,
+  isForcedPasswordChangeAllowedPath,
+} from "@/modules/users";
 import { ThemeProvider } from "@/shared/ui/ThemeProvider";
 import { ToastProvider } from "@/shared/ui/Toast";
 import { AppShell } from "./_components/AppShell";
@@ -43,6 +46,13 @@ export default async function RootLayout({
   const headerStore = await headers();
   const pathname = headerStore.get(PATHNAME_HEADER) ?? "/";
 
+  if (
+    current?.session.user.mustChangePassword &&
+    !isForcedPasswordChangeAllowedPath(pathname)
+  ) {
+    redirect("/change-password");
+  }
+
   if (current && callerWorkspace) {
     const remap = callerWorkspaceRedirect(pathname);
     if (remap && remap !== pathname) {
@@ -63,6 +73,7 @@ export default async function RootLayout({
 
   const user = current
     ? {
+        id: current.session.user.id,
         fullName: current.session.user.fullName,
         email: current.session.user.email ?? "",
         roles: current.authContext.roles.map((role) => role.name),

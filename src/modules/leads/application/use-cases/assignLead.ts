@@ -86,6 +86,7 @@ export function makeAssignLead(
 
     const ownership = await resolveAssigneeOwnership(userLookup, user);
 
+    // Permanent (non-temp) assignment always clears temporary cover metadata.
     const updated = await repository.assignWithAudit(
       id,
       {
@@ -94,6 +95,7 @@ export function makeAssignLead(
         assignmentType,
         campaignAssignmentId: campaignAssignmentId ?? null,
         ownership,
+        temporaryCoverage: null,
       },
       actor,
       correlationId,

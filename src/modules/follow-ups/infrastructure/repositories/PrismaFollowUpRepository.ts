@@ -369,6 +369,9 @@ export class PrismaFollowUpRepository implements FollowUpRepository {
           status: data.markEscalated === false ? before.status : "ESCALATED",
           escalatedAt: at,
           escalatedToUserId: data.escalatedToUserId,
+          ...(data.reassignToEscalatedUser
+            ? { currentAssigneeUserId: data.escalatedToUserId }
+            : {}),
         },
       });
       const after = toFollowUp(afterRow);

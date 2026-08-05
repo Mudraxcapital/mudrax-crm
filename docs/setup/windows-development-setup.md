@@ -37,6 +37,25 @@ paths and scripts behave the same as the rest of the team.
 
 3. Phone and PC on the same Wi‑Fi. Point `apps/mobile/.env` `EXPO_PUBLIC_API_URL` at your PC’s LAN IP (`ipconfig`), not `localhost`.
 
+## Canonical hostname (`mudrax.crm`)
+
+Local and production use the same host name:
+
+| Environment | URL |
+| --- | --- |
+| Local | `http://mudrax.crm:3000` |
+| Production | `https://mudrax.crm` |
+
+On this machine, add to `C:\Windows\System32\drivers\etc\hosts` (Admin Notepad):
+
+```text
+127.0.0.1	mudrax.crm
+```
+
+Then open `http://mudrax.crm:3000`. Keep `APP_URL` / `AUTH_URL` in `.env` aligned with that origin.
+
+For production, point company DNS (or the Linux server’s hosts file) at the CRM host and terminate TLS in Nginx — same hostname, `https://`.
+
 ## Everyday commands (PowerShell)
 
 ```powershell

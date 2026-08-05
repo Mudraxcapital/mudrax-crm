@@ -10,6 +10,7 @@ import {
   InvalidUserHierarchyError,
   listUsers,
   listUsersQuerySchema,
+  SingleAdminLimitError,
 } from "@/modules/users";
 
 export async function GET(request: Request) {
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.view")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const url = new URL(request.url);
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
   const { current } = auth;
   if (!current || !hasPermission(current.authContext, "user.manage")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -66,10 +67,13 @@ export async function POST(request: Request) {
       error instanceof DuplicateUserEmailError ||
       error instanceof DuplicateUserPhoneError ||
       error instanceof AdminRoleProtectedError ||
-      error instanceof InvalidUserHierarchyError
+      error instanceof InvalidUserHierarchyError ||
+      error instanceof SingleAdminLimitError
     ) {
       const status =
-        error instanceof InvalidUserHierarchyError || error instanceof AdminRoleProtectedError
+        error instanceof InvalidUserHierarchyError ||
+        error instanceof AdminRoleProtectedError ||
+        error instanceof SingleAdminLimitError
           ? 403
           : 400;
       return NextResponse.json({ error: error.message }, { status });

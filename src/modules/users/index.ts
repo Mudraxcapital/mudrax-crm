@@ -32,6 +32,7 @@ import {
 } from "./application/use-cases/manageSessions";
 import { makeGetDailyLoginDuration } from "./application/use-cases/getDailyLoginDuration";
 import { makeChangeOwnPassword } from "./application/use-cases/changeOwnPassword";
+import { makeRegisterFailedLoginAttempt } from "./application/use-cases/registerFailedLoginAttempt";
 import { makeUpdateProfilePhoto } from "./application/use-cases/updateProfilePhoto";
 import { makeExportUsers } from "./application/use-cases/exportUsers";
 
@@ -85,6 +86,7 @@ export {
   InvalidUserHierarchyError,
   CannotDeleteSelfError,
   LastActiveAdminError,
+  SingleAdminLimitError,
   UserDeleteBlockedError,
 } from "./domain/errors/UserErrors";
 export {
@@ -98,7 +100,13 @@ export {
 export {
   roleMaySelfServiceChangePassword,
   adminAssignedPasswordRole,
+  isForcedPasswordChangeAllowedPath,
 } from "./application/services/selfServicePasswordPolicy";
+export {
+  LOGIN_LOCKOUT_THRESHOLD,
+  LOGIN_LOCKOUT_REASON,
+  roleSubjectToLoginLockout,
+} from "./application/services/loginLockoutPolicy";
 export {
   canChangeCallerAccountStatus,
   canDeleteUserAccounts,
@@ -150,6 +158,10 @@ export const getDailyLoginDuration = makeGetDailyLoginDuration(userRepository);
 export const revokeUserSession = makeRevokeUserSession(userRepository, roleAssignment);
 export const revokeAllUserSessions = makeRevokeAllUserSessions(userRepository, roleAssignment);
 export const changeOwnPassword = makeChangeOwnPassword(userRepository, passwordHasher, roleAssignment);
+export const registerFailedLoginAttempt = makeRegisterFailedLoginAttempt(
+  userRepository,
+  roleAssignment,
+);
 export const updateProfilePhoto = makeUpdateProfilePhoto(
   userRepository,
   roleAssignment,

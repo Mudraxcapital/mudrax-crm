@@ -13,9 +13,13 @@ import { explain, section, summary } from "../lib/logger";
 import type { OrganizationSeedResult } from "./01-organization";
 import type { RoleName } from "../lib/rbac-catalog";
 
-export const ADMIN_EMAIL = "aarush.taluja1@gmail.com";
-export const ADMIN_DEV_PASSWORD = "Sairam@123";
-export const DEMO_USER_PASSWORD = "Mudrax@User2026!";
+/** Dev-only placeholders — override via SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD / SEED_DEMO_PASSWORD. */
+export const ADMIN_EMAIL =
+  process.env.SEED_ADMIN_EMAIL?.trim() || "admin@localhost.dev";
+export const ADMIN_DEV_PASSWORD =
+  process.env.SEED_ADMIN_PASSWORD?.trim() || "ChangeMe-Admin-Dev-Only!";
+export const DEMO_USER_PASSWORD =
+  process.env.SEED_DEMO_PASSWORD?.trim() || "ChangeMe-User-Dev-Only!";
 
 export interface DemoUserSeed {
   role: RoleName;

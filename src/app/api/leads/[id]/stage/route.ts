@@ -10,9 +10,11 @@ import { hasPermission } from "@/modules/rbac";
 import {
   changeLeadStage,
   changeLeadStageSchema,
+  DndNoteRequiredError,
   InvalidLeadStageReferenceError,
   InvalidLostReasonReferenceError,
   LeadAlreadyClosedError,
+  LostNoteRequiredError,
   LostReasonRequiredError,
 } from "@/modules/leads";
 import {
@@ -61,7 +63,9 @@ export async function POST(request: Request, { params }: RouteParams) {
       error instanceof InvalidLeadStageReferenceError ||
       error instanceof InvalidLostReasonReferenceError ||
       error instanceof LeadAlreadyClosedError ||
-      error instanceof LostReasonRequiredError
+      error instanceof LostReasonRequiredError ||
+      error instanceof LostNoteRequiredError ||
+      error instanceof DndNoteRequiredError
     ) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }

@@ -6,7 +6,7 @@ import {
   listCampaigns,
 } from "@/modules/campaigns";
 import { countLeads } from "@/modules/leads";
-import { listUsers } from "@/modules/users";
+import { listUsers, listUsersByRole } from "@/modules/users";
 import { CampaignForm } from "@/modules/campaigns/presentation/components/CampaignForm";
 import { createCampaignAction } from "@/modules/campaigns/presentation/controllers/createCampaign.action";
 import { filterCampaignsForStaffAccess } from "@/shared/auth/assertCanAccessCampaign";
@@ -18,6 +18,7 @@ import { CampaignsTable } from "./_components/CampaignsTable";
 export default async function CampaignsPage() {
   const { authContext } = await requirePermission("campaign.view");
   const canManage = hasPermission(authContext, "campaign.manage");
+  const isAdmin = authContext.hierarchy.primaryRole === "Admin";
   // Managers may list all org campaigns; lead/call data stays hierarchy-scoped
   // inside each Campaign Dashboard. Admin is already unrestricted.
   const book =
@@ -25,9 +26,14 @@ export default async function CampaignsPage() {
       ? {}
       : managerBookFilter(authContext);
   const leadFilter = leadHierarchyFilter(authContext);
-  const [rawCampaigns, users] = await Promise.all([
+  const [rawCampaigns, users, managers] = await Promise.all([
     listCampaigns(authContext.organizationId, book),
     listUsers({ status: "ACTIVE", limit: 5_000 }),
+    isAdmin && canManage
+      ? listUsersByRole("Manager").then((rows) =>
+          rows.filter((user) => user.status === "ACTIVE"),
+        )
+      : Promise.resolve([]),
   ]);
   const campaigns = await filterCampaignsForStaffAccess(authContext, rawCampaigns);
 
@@ -38,6 +44,10 @@ export default async function CampaignsPage() {
       id: user.id,
       fullName: user.roleName ? `${user.fullName} (${user.roleName})` : user.fullName,
     }));
+  const ownerManagers = managers.map((user) => ({
+    id: user.id,
+    fullName: user.fullName,
+  }));
 
   const rows = await Promise.all(
     campaigns.map(async (campaign) => {
@@ -81,7 +91,12 @@ export default async function CampaignsPage() {
               description="Set source, priority, agents, and a distribution strategy."
               width="lg"
             >
-              <CampaignForm action={createCampaignAction} agents={assignableAgents} />
+              <CampaignForm
+                action={createCampaignAction}
+                agents={assignableAgents}
+                requireOwnerManager={isAdmin}
+                ownerManagers={ownerManagers}
+              />
             </CreatePanel>
           ) : null
         }

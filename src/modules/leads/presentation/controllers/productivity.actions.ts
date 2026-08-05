@@ -148,6 +148,8 @@ export async function importLeadsFileAction(input: {
   agentUserIds?: string[];
   distributionStrategy?: "ROUND_ROBIN" | "EQUAL" | "RANDOM" | "MANUAL";
   manualAssigneeUserId?: string;
+  /** MANUAL percentage split per caller (must sum to 100). */
+  percentages?: Record<string, number>;
   /** Admin-selected Manager (or resolved from Team Lead / callers). */
   ownerManagerId?: string;
   /** When true (All agents), allow assignees across Manager books. */
@@ -156,7 +158,7 @@ export async function importLeadsFileAction(input: {
   dynamicFields?: DynamicFieldCreateInput[];
 }): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.import");
-  const { listCampaigns } = await import("@/modules/campaigns");
+  const { listCampaigns, DND_CAMPAIGN_NAME } = await import("@/modules/campaigns");
   const {
     createLeadField,
     LeadFieldKeyConflictError,
@@ -253,6 +255,14 @@ export async function importLeadsFileAction(input: {
       .filter((id): id is string => Boolean(id)),
     distributionStrategy: input.distributionStrategy,
     manualAssigneeUserId: cleanId(input.manualAssigneeUserId),
+    percentages:
+      input.distributionStrategy === "MANUAL" && input.percentages
+        ? Object.fromEntries(
+            Object.entries(input.percentages)
+              .map(([userId, value]) => [cleanId(userId), Number(value)] as const)
+              .filter((entry): entry is [string, number] => Boolean(entry[0])),
+          )
+        : undefined,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -266,8 +276,17 @@ export async function importLeadsFileAction(input: {
   const campaigns = await listCampaigns(authContext.organizationId, book);
   const campaignNameToId: Record<string, string> = {};
   for (const campaign of campaigns) {
+    if (campaign.name.trim().toLowerCase() === DND_CAMPAIGN_NAME.toLowerCase()) continue;
     campaignNameToId[campaign.name] = campaign.id;
     campaignNameToId[campaign.name.toLowerCase()] = campaign.id;
+  }
+  const dndCampaign = campaigns.find(
+    (campaign) => campaign.name.trim().toLowerCase() === DND_CAMPAIGN_NAME.toLowerCase(),
+  );
+  if (dndCampaign && parsed.data.campaignId === dndCampaign.id) {
+    return {
+      error: `"${DND_CAMPAIGN_NAME}" is a system campaign and cannot be used for Excel import.`,
+    };
   }
 
   try {
@@ -402,9 +421,14 @@ export async function createCampaignForImportAction(input: {
   ownerManagerId?: string;
 }): Promise<{ error?: string; campaignId?: string }> {
   const { session, authContext } = await requirePermission("campaign.manage");
-  const { createCampaign, createCampaignSchema, addCampaignMember } = await import(
-    "@/modules/campaigns"
-  );
+  const { createCampaign, createCampaignSchema, addCampaignMember, DND_CAMPAIGN_NAME } =
+    await import("@/modules/campaigns");
+
+  if (input.name.trim().toLowerCase() === DND_CAMPAIGN_NAME.toLowerCase()) {
+    return {
+      error: `"${DND_CAMPAIGN_NAME}" is a system campaign and cannot be used for Excel import.`,
+    };
+  }
 
   const descriptionParts = [
     input.description?.trim(),
@@ -515,10 +539,12 @@ export async function bulkChangeLeadStageAction(
 ): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.update");
   const leadIds = formData.getAll("leadIds").map(String).filter(Boolean);
+  const noteRaw = formData.get("note");
   const parsed = bulkChangeLeadStageSchema.safeParse({
     leadIds,
     stageId: formData.get("stageId"),
     lostReasonId: formData.get("lostReasonId") || undefined,
+    note: typeof noteRaw === "string" && noteRaw.trim() ? noteRaw : undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -552,9 +578,11 @@ export async function bulkCloseLeadsAction(
 ): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.update");
   const leadIds = formData.getAll("leadIds").map(String).filter(Boolean);
+  const closeNoteRaw = formData.get("note");
   const parsed = bulkCloseLeadsSchema.safeParse({
     leadIds,
     lostReasonId: formData.get("lostReasonId"),
+    note: typeof closeNoteRaw === "string" ? closeNoteRaw : "",
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
@@ -669,6 +697,7 @@ export async function changeLeadStageKanbanAction(input: {
   leadId: string;
   stageId: string;
   lostReasonId?: string;
+  note?: string;
 }): Promise<ProductivityFormState> {
   const { session, authContext } = await requirePermission("lead.update");
   try {
@@ -688,6 +717,7 @@ export async function changeLeadStageKanbanAction(input: {
       leadIds: [input.leadId],
       stageId: input.stageId,
       lostReasonId: input.lostReasonId,
+      note: input.note,
     },
     actor: { actorType: "USER", actorId: session.user.id },
   });

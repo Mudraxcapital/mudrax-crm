@@ -11,10 +11,12 @@ import { revalidatePath } from "next/cache";
 import {
   changeLeadStage,
   changeLeadStageSchema,
+  DndNoteRequiredError,
   InvalidLeadStageReferenceError,
   InvalidLostReasonReferenceError,
   LeadAlreadyClosedError,
   LeadNotFoundError,
+  LostNoteRequiredError,
   LostReasonRequiredError,
 } from "@/modules/leads";
 import { requirePermission } from "@/infra/auth/session";
@@ -32,9 +34,11 @@ export async function changeLeadStageAction(
 ): Promise<LeadFormState> {
   const { session, authContext } = await requirePermission("lead.update");
 
+  const noteRaw = formData.get("note");
   const parsed = changeLeadStageSchema.safeParse({
     stageId: formData.get("stageId"),
     lostReasonId: formData.get("lostReasonId") || undefined,
+    note: typeof noteRaw === "string" && noteRaw.trim() ? noteRaw : undefined,
   });
 
   if (!parsed.success) {
@@ -61,6 +65,8 @@ export async function changeLeadStageAction(
       error instanceof InvalidLostReasonReferenceError ||
       error instanceof LeadAlreadyClosedError ||
       error instanceof LostReasonRequiredError ||
+      error instanceof LostNoteRequiredError ||
+      error instanceof DndNoteRequiredError ||
       error instanceof LeadAccessDeniedError
     ) {
       return { error: error.message };

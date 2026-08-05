@@ -28,6 +28,7 @@ import {
   DEMO_USERS,
 } from "./steps/03-admin-user";
 import { seedLeadCatalogs } from "./steps/04-lead-catalogs";
+import { seedDndCampaign } from "./steps/04b-dnd-campaign";
 import { seedLoanCatalogs } from "./steps/05-loan-catalogs";
 import { seedBanks } from "./steps/06-banks";
 import { seedLoanProducts } from "./steps/07-loan-products";
@@ -56,6 +57,12 @@ async function main(): Promise<void> {
   const admin = await seedAdminUser(prisma, org, rbac.roleIds);
 
   const leadCatalogs = await seedLeadCatalogs(prisma, org.organizationId);
+  await seedDndCampaign(
+    prisma,
+    org.organizationId,
+    admin.userIds.Manager,
+    admin.adminUserId,
+  );
   const loanCatalogs = await seedLoanCatalogs(prisma, org.organizationId);
   const banks = await seedBanks(prisma, org.organizationId, admin.adminUserId);
   const loanProductIds = await seedLoanProducts(

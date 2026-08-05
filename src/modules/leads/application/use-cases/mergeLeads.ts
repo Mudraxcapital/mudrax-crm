@@ -9,6 +9,7 @@
 
 import type { LeadRepository } from "../../domain/repositories/LeadRepository";
 import type { LeadCatalogRepository } from "../../domain/repositories/LeadCatalogRepository";
+import type { LeadNoteRepository } from "../../domain/repositories/LeadNoteRepository";
 import type { LeadAuditActor } from "../../domain/entities/LeadAuditRecord";
 import {
   LeadAlreadyClosedError,
@@ -24,8 +25,9 @@ import { makeChangeLeadStage } from "./changeLeadStage";
 export function makeMergeLeads(
   repository: LeadRepository,
   catalogRepository: LeadCatalogRepository,
+  noteRepository: LeadNoteRepository,
 ) {
-  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository);
+  const changeLeadStage = makeChangeLeadStage(repository, catalogRepository, noteRepository);
 
   return async function mergeLeads(command: {
     organizationId: string;
@@ -77,7 +79,11 @@ export function makeMergeLeads(
     // Stage-change audit on the merged-away Lead carries correlationId = survivor.
     await changeLeadStage({
       id: mergedAway.id,
-      input: { stageId: lostStage.id, lostReasonId },
+      input: {
+        stageId: lostStage.id,
+        lostReasonId,
+        note: `Merged into lead ${surviving.id} (duplicate close).`,
+      },
       actor,
       correlationId: surviving.id,
     });

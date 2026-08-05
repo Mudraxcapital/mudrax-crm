@@ -180,6 +180,12 @@ export function PostCallScreen() {
     [stages, selectedStageId],
   );
   const needsLostReason = selectedStage?.closeOutcome === "LOST";
+  const needsDndNote = Boolean(
+    selectedStage &&
+      (/^do\s*not\s*disturb$/i.test(selectedStage.name.trim()) ||
+        /^dnd$/i.test(selectedStage.name.trim())),
+  );
+  const needsRequiredNote = needsLostReason || needsDndNote;
   const callResultMeta = CALL_RESULT_OPTIONS.find((o) => o.value === callResult);
   const isConnected = Boolean(callResultMeta?.connected);
   const timing = splitCallTiming({
@@ -200,6 +206,14 @@ export function PostCallScreen() {
       setError("Select a lost reason.");
       return;
     }
+    if (needsLostReason && !values.notes.trim()) {
+      setError("A note is required when marking a lead as Lost.");
+      return;
+    }
+    if (needsDndNote && !values.notes.trim()) {
+      setError("A note is required when marking a lead as Do Not Disturb.");
+      return;
+    }
 
     setSubmitting(goNext ? "next" : "save");
     setError(null);
@@ -207,8 +221,8 @@ export function PostCallScreen() {
     const failures: string[] = [];
 
     try {
-      // Notes + follow-up first (before a possible Closed stage change).
-      if (values.notes.trim()) {
+      // Optional note for non-Lost/DND stages. Required notes are saved via changeLeadStage.
+      if (!needsRequiredNote && values.notes.trim()) {
         try {
           await addLeadNote(leadId, values.notes.trim());
         } catch (err) {
@@ -236,6 +250,7 @@ export function PostCallScreen() {
         await changeLeadStage(leadId, {
           stageId: values.stageId,
           lostReasonId: needsLostReason ? values.lostReasonId : undefined,
+          note: needsRequiredNote ? values.notes.trim() : undefined,
         });
         if (selectedStage) {
           optimisticStageUpdate(leadId, {
@@ -466,6 +481,8 @@ export function PostCallScreen() {
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
         {stages.map((stage) => {
           const selected = selectedStageId === stage.id;
+          const isDnd =
+            /^do\s*not\s*disturb$/i.test(stage.name.trim()) || /^dnd$/i.test(stage.name.trim());
           return (
             <Pressable
               key={stage.id}
@@ -485,7 +502,7 @@ export function PostCallScreen() {
               <Text
                 style={{
                   color: selected ? colors.onPrimary : colors.onPrimaryContainer,
-                  fontWeight: "600",
+                  fontWeight: isDnd ? "800" : "600",
                   fontSize: 13,
                 }}
               >
@@ -541,7 +558,13 @@ export function PostCallScreen() {
         name="notes"
         render={({ field: { onChange, value } }) => (
           <TextField
-            label="Notes"
+            label={
+              needsDndNote
+                ? "Do Not Disturb note (required)"
+                : needsLostReason
+                  ? "Lost note (required)"
+                  : "Notes"
+            }
             value={value}
             onChangeText={onChange}
             multiline
@@ -549,6 +572,16 @@ export function PostCallScreen() {
           />
         )}
       />
+      {needsLostReason ? (
+        <Text style={{ color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 12 }}>
+          A note is required when marking this lead as Lost.
+        </Text>
+      ) : null}
+      {needsDndNote ? (
+        <Text style={{ color: colors.onSurfaceVariant, fontSize: 12, marginBottom: 12 }}>
+          A note is required when marking this lead as Do Not Disturb.
+        </Text>
+      ) : null}
 
       <Text style={{ fontWeight: "700", color: colors.onSurface, marginBottom: 8 }}>
         Follow-up

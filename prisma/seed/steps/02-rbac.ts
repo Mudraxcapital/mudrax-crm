@@ -111,6 +111,12 @@ export async function seedRbac(
     "role_permission.manage",
     // No use-case / API / UI — dead grant that previously exposed a non-existent surface.
     "lead.call_feedback.record",
+    // Removed unimplemented Admin surfaces (no production UI/API wiring).
+    "api_key.manage",
+    "user.impersonate",
+    "permission.view",
+    "audit.view",
+    "lead_center.manage",
   ];
   const obsolete = await prisma.permission.findMany({
     where: { code: { in: obsoleteCodes } },

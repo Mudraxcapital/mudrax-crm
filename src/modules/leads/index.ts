@@ -15,6 +15,11 @@ import { makeCreateLead } from "./application/use-cases/createLead";
 import { makeUpdateLead } from "./application/use-cases/updateLead";
 import { makeChangeLeadStage } from "./application/use-cases/changeLeadStage";
 import { makeAssignLead } from "./application/use-cases/assignLead";
+import { makeTemporarilyAssignLead } from "./application/use-cases/temporarilyAssignLead";
+import {
+  makeRevertExpiredTemporaryAssignments,
+  makeRevertTemporaryLeadAssignment,
+} from "./application/use-cases/revertTemporaryLeadAssignments";
 import {
   makeCountLeadCustomers,
   makeCountLeads,
@@ -35,7 +40,10 @@ import {
 } from "./application/use-cases/getLeadStatistics";
 import { makeAddLeadNote } from "./application/use-cases/addLeadNote";
 import { makeUpdateLeadNote } from "./application/use-cases/updateLeadNote";
-import { makeListLeadNotes } from "./application/use-cases/listLeadNotes";
+import {
+  makeListLeadNotes,
+  makeListLatestLeadNoteBodies,
+} from "./application/use-cases/listLeadNotes";
 import { makeUpdateLeadNextAction } from "./application/use-cases/updateLeadNextAction";
 import {
   makeCreateSavedView,
@@ -109,8 +117,11 @@ export {
   InvalidLeadStageReferenceError,
   InvalidLostReasonReferenceError,
   LostReasonRequiredError,
+  LostNoteRequiredError,
+  DndNoteRequiredError,
   LeadAlreadyClosedError,
   InvalidAssigneeReferenceError,
+  InvalidTemporaryAssignmentError,
   LeadNoteNotFoundError,
   SavedViewNotFoundError,
   ImportBatchNotFoundError,
@@ -238,6 +249,11 @@ export type { CreateLeadCommand } from "./application/use-cases/createLead";
 export type { UpdateLeadCommand } from "./application/use-cases/updateLead";
 export type { ChangeLeadStageCommand } from "./application/use-cases/changeLeadStage";
 export type { AssignLeadCommand } from "./application/use-cases/assignLead";
+export type { TemporarilyAssignLeadCommand } from "./application/use-cases/temporarilyAssignLead";
+export type {
+  RevertExpiredTemporaryAssignmentsCommand,
+  RevertTemporaryLeadAssignmentCommand,
+} from "./application/use-cases/revertTemporaryLeadAssignments";
 export type { AddLeadNoteCommand } from "./application/use-cases/addLeadNote";
 export type { UpdateLeadNoteCommand } from "./application/use-cases/updateLeadNote";
 export type {
@@ -263,8 +279,25 @@ export const createLead = makeCreateLead(
   leadFieldRepository,
 );
 export const updateLead = makeUpdateLead(leadRepository, leadCatalogRepository, leadFieldRepository);
-export const changeLeadStage = makeChangeLeadStage(leadRepository, leadCatalogRepository);
+export const changeLeadStage = makeChangeLeadStage(
+  leadRepository,
+  leadCatalogRepository,
+  leadNoteRepository,
+);
 export const assignLead = makeAssignLead(leadRepository, leadCatalogRepository, userLookup);
+export const temporarilyAssignLead = makeTemporarilyAssignLead(
+  leadRepository,
+  leadCatalogRepository,
+  userLookup,
+);
+export const revertTemporaryLeadAssignment = makeRevertTemporaryLeadAssignment(
+  leadRepository,
+  userLookup,
+);
+export const revertExpiredTemporaryAssignments = makeRevertExpiredTemporaryAssignments(
+  leadRepository,
+  userLookup,
+);
 export const getLead = makeGetLead(leadRepository, leadCatalogRepository, leadFieldRepository);
 export const getLeadsByIds = makeGetLeadsByIds(leadRepository, leadCatalogRepository);
 export const listLeads = makeListLeads(leadRepository, leadCatalogRepository, leadFieldRepository);
@@ -288,6 +321,7 @@ export const getLeadsBySource = makeGetLeadsBySource(leadRepository, leadCatalog
 export const addLeadNote = makeAddLeadNote(leadRepository, leadNoteRepository);
 export const updateLeadNote = makeUpdateLeadNote(leadNoteRepository);
 export const listLeadNotes = makeListLeadNotes(leadNoteRepository);
+export const listLatestLeadNoteBodies = makeListLatestLeadNoteBodies(leadNoteRepository);
 export const updateLeadNextAction = makeUpdateLeadNextAction(leadRepository);
 
 export const listSavedViews = makeListSavedViews(savedViewRepository);
@@ -331,10 +365,22 @@ export const bulkAssignLeads = makeBulkAssignLeads(
   leadCatalogRepository,
   userLookup,
 );
-export const bulkChangeLeadStage = makeBulkChangeLeadStage(leadRepository, leadCatalogRepository);
-export const bulkCloseLeads = makeBulkCloseLeads(leadRepository, leadCatalogRepository);
+export const bulkChangeLeadStage = makeBulkChangeLeadStage(
+  leadRepository,
+  leadCatalogRepository,
+  leadNoteRepository,
+);
+export const bulkCloseLeads = makeBulkCloseLeads(
+  leadRepository,
+  leadCatalogRepository,
+  leadNoteRepository,
+);
 export const bulkHardDeleteLeads = makeBulkHardDeleteLeads(leadRepository);
-export const mergeLeads = makeMergeLeads(leadRepository, leadCatalogRepository);
+export const mergeLeads = makeMergeLeads(
+  leadRepository,
+  leadCatalogRepository,
+  leadNoteRepository,
+);
 export const getKanbanBoard = makeGetKanbanBoard(leadRepository, leadCatalogRepository);
 export const getAssigneePortfolio = makeGetAssigneePortfolio(
   leadRepository,

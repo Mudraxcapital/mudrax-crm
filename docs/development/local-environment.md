@@ -52,7 +52,7 @@ All three run on one private Docker network (`mudrax-crm-network`) defined in
    # or: npm run docker:logs
    ```
 
-4. Once healthy, open [http://localhost:3000](http://localhost:3000).
+4. Once healthy, open [http://mudrax.crm:3000](http://mudrax.crm:3000) (same app as `localhost:3000`).
 
 5. Check that everything reports healthy:
 

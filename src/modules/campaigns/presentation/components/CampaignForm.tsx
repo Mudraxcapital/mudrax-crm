@@ -20,14 +20,46 @@ type CampaignFormAction = (
 export function CampaignForm({
   action,
   agents = [],
+  /** When set (Admin), require selecting which Manager owns the campaign book. */
+  ownerManagers = [],
+  requireOwnerManager = false,
 }: {
   action: CampaignFormAction;
   agents?: Array<{ id: string; fullName: string }>;
+  ownerManagers?: Array<{ id: string; fullName: string }>;
+  requireOwnerManager?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialState);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
+      {requireOwnerManager ? (
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="ownerManagerId" className="mx-label">
+            Owner Manager
+          </label>
+          <select
+            id="ownerManagerId"
+            name="ownerManagerId"
+            required
+            defaultValue=""
+            className="mx-input"
+          >
+            <option value="" disabled>
+              Select Manager…
+            </option>
+            {ownerManagers.map((manager) => (
+              <option key={manager.id} value={manager.id}>
+                {manager.fullName}
+              </option>
+            ))}
+          </select>
+          <p className="text-muted text-xs">
+            Campaigns belong to a Manager book. Pick the Manager who will own this campaign.
+          </p>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-1.5">
         <label htmlFor="name" className="mx-label">
           Name

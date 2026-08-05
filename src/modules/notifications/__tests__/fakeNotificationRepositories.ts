@@ -763,7 +763,7 @@ export class FakeNotificationChannelRepository implements NotificationChannelRep
 
   async getOrCreateWithNullProvider(
     organizationId: string,
-    channelType: "EMAIL" | "SMS" | "WHATSAPP",
+    channelType: "EMAIL" | "SMS" | "WHATSAPP" | "IN_APP",
   ) {
     let channel = await this.findByOrganizationAndType(organizationId, channelType);
     if (!channel) {
@@ -798,7 +798,12 @@ export class FakeNotificationChannelRepository implements NotificationChannelRep
   }
 
   async findActiveProvider(organizationId: string, channelType: ChannelType) {
-    if (channelType !== "EMAIL" && channelType !== "SMS" && channelType !== "WHATSAPP") {
+    if (
+      channelType !== "EMAIL" &&
+      channelType !== "SMS" &&
+      channelType !== "WHATSAPP" &&
+      channelType !== "IN_APP"
+    ) {
       return null;
     }
     const { provider } = await this.getOrCreateWithNullProvider(organizationId, channelType);

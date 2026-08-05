@@ -33,9 +33,8 @@ const BCRYPT_COST_FACTOR = 12;
 /**
  * DEV-ONLY password hash for the bootstrap Administrator seed row, hashed
  * with the same bcrypt strategy `src/modules/auth` verifies against. The
- * plaintext (`ADMIN_DEV_PASSWORD` in steps/03-admin-user.ts) is publicly
- * documented in README.md — treat it as disposable in any shared
- * environment.
+ * plaintext (`SEED_ADMIN_PASSWORD` / default in steps/03-admin-user.ts) is a
+ * development placeholder — treat it as disposable in any shared environment.
  */
 export function hashSeedPassword(plainTextPassword: string): string {
   return bcrypt.hashSync(plainTextPassword, BCRYPT_COST_FACTOR);

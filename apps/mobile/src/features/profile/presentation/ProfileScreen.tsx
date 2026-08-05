@@ -20,9 +20,14 @@ interface PasswordForm {
   confirmPassword: string;
 }
 
-/** Mirrors web `roleMaySelfServiceChangePassword` — Admin only. */
+/** Mirrors web `roleMaySelfServiceChangePassword` — every fixed role. */
 function canSelfServiceChangePassword(primaryRole: string | null | undefined): boolean {
-  return primaryRole === "Admin";
+  return (
+    primaryRole === "Admin" ||
+    primaryRole === "Manager" ||
+    primaryRole === "Team Lead" ||
+    primaryRole === "Caller"
+  );
 }
 
 export function ProfileScreen() {
@@ -32,7 +37,6 @@ export function ProfileScreen() {
   const roleNames = useRoleNames();
   const signOut = useSessionStore((s) => s.signOut);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -62,12 +66,11 @@ export function ProfileScreen() {
   const onChangePassword = handleSubmit(async (values) => {
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       await changePassword(values);
       reset();
-      setMessage("Password updated.");
       setShowPasswordForm(false);
+      await signOut();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change password.");
     } finally {
@@ -182,7 +185,9 @@ export function ProfileScreen() {
               >
                 <Text style={{ color: colors.onSurface, fontWeight: "700" }}>Change password</Text>
                 <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, fontSize: 13 }}>
-                  {showPasswordForm ? "Hide form" : "Tap to update your password"}
+                  {showPasswordForm
+                    ? "Hide form"
+                    : "Tap to update your password (you will be signed out afterward)"}
                 </Text>
               </View>
             )}
@@ -238,9 +243,6 @@ export function ProfileScreen() {
               {error ? (
                 <Text style={{ color: colors.error, marginBottom: 8 }}>{error}</Text>
               ) : null}
-              {message ? (
-                <Text style={{ color: colors.success, marginBottom: 8 }}>{message}</Text>
-              ) : null}
               <AppButton
                 label="Update password"
                 loading={saving}
@@ -249,22 +251,7 @@ export function ProfileScreen() {
             </View>
           ) : null}
         </>
-      ) : (
-        <>
-          <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>Security</Text>
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.surfaceVariant, borderColor: colors.outline },
-            ]}
-          >
-            <Text style={{ color: colors.onSurface, fontWeight: "700" }}>Password</Text>
-            <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, fontSize: 13 }}>
-              Managed by your administrator. Contact an Admin if you need a reset.
-            </Text>
-          </View>
-        </>
-      )}
+      ) : null}
 
       {recordingSupported ? (
         <>

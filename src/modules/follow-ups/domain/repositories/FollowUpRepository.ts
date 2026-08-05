@@ -39,6 +39,8 @@ export interface EscalateFollowUpData {
   escalatedToUserId: string;
   /** When set, status becomes ESCALATED; otherwise only escalated* fields update. */
   markEscalated?: boolean;
+  /** When true, also moves currentAssigneeUserId to the escalation recipient. */
+  reassignToEscalatedUser?: boolean;
 }
 
 export interface ListDueFollowUpsFilter {

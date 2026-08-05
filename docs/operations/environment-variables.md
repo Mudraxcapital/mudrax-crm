@@ -9,8 +9,8 @@ Mudrax CRM never commits real secrets. Use `.env` locally (gitignored) and
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string (Prisma) |
 | `AUTH_SECRET` | Auth.js signing secret (≥32 random chars) |
-| `AUTH_URL` | Public app origin used by Auth.js |
-| `APP_URL` | Public app URL |
+| `AUTH_URL` | Public app origin used by Auth.js (`http://mudrax.crm:3000` local, `https://mudrax.crm` prod) |
+| `APP_URL` | Public app URL (same host as `AUTH_URL`) |
 
 ## Strongly recommended (production)
 
@@ -27,4 +27,5 @@ Mudrax CRM never commits real secrets. Use `.env` locally (gitignored) and
 
 - Never commit `.env`, credentials, API tokens, or private keys.
 - Rotate `AUTH_SECRET`, DB, and Redis passwords independently.
-- Seed passwords (`ADMIN_DEV_PASSWORD`) are **dev-only** — never use against production.
+- Seed passwords (`SEED_ADMIN_PASSWORD` / `SEED_DEMO_PASSWORD`) are **dev-only** — never use against production.
+- Admin login protection (Redis): `ADMIN_LOGIN_RATE_LIMIT` (default 5), `ADMIN_LOGIN_RATE_WINDOW_SECONDS` (60), `ADMIN_LOGIN_FAIL_THRESHOLD` (10), `ADMIN_LOGIN_COOLDOWN_SECONDS` (900).

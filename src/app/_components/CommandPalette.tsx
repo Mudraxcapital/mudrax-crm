@@ -55,6 +55,14 @@ const QUICK_ACTIONS = [
     adminOnly: true,
   },
   {
+    id: "qa-notification-channel",
+    title: "Notification Channel",
+    subtitle: "Your alerts & follow-ups",
+    href: "/notifications/inbox",
+    permissions: ["notification.view"],
+    adminOnly: true,
+  },
+  {
     id: "qa-calendar",
     title: "Calendar",
     subtitle: "Quick action",
@@ -75,7 +83,7 @@ const QUICK_ACTIONS = [
     title: "Duplicate Detection",
     subtitle: "Quick action",
     href: "/customers/duplicates",
-    permissions: ["customer.merge", "customer.view"],
+    permissions: ["customer.duplicate.view"],
     adminOnly: true,
   },
   {
@@ -147,9 +155,9 @@ const CALLER_QUICK_ACTIONS = [
   },
   {
     id: "cqa-notif",
-    title: "Notifications",
-    subtitle: "Caller workspace",
-    href: "/caller/notifications",
+    title: "Notification Channel",
+    subtitle: "Your alerts & follow-ups",
+    href: "/notifications/inbox",
   },
   { id: "cqa-profile", title: "Profile", subtitle: "Account settings", href: "/profile" },
 ] as const;

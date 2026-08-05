@@ -1,6 +1,6 @@
 // ============================================================================
 // Administrative password reset — Admin only, never for Admin targets or self.
-// Does not force a password change on next login; the assigned password is used as-is.
+// Forces a password change on next login for Managers, Team Leads, and Callers.
 // ============================================================================
 
 import type { PasswordHasher } from "@/modules/auth/application/ports/PasswordHasher";
@@ -65,7 +65,9 @@ export function makeResetPassword(
 
     const passwordHash = await passwordHasher.hash(password);
     await repository.setPasswordHashWithAudit(userId, passwordHash, actor, correlationId, {
-      mustChangePassword: false,
+      mustChangePassword: true,
+      // Lockout recovery: unsuspend + clear failed-attempt counter.
+      reactivateIfSuspended: true,
       action: "Password Reset (Admin)",
       ipAddress: ipAddress ?? null,
     });

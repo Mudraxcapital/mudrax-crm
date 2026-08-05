@@ -8,7 +8,7 @@ import {
   isCallerWorkspaceUser,
   type AuthorizationContext,
 } from "@/modules/rbac";
-import { listCampaignMembers } from "@/modules/campaigns";
+import { isDoNotDisturbCampaignName, listCampaignMembers } from "@/modules/campaigns";
 
 /** Minimal Campaign shape required for hierarchy checks. */
 export interface CampaignAccessSubject {
@@ -67,12 +67,17 @@ export async function teamLeadHasCampaignMembership(
  */
 export async function canAccessCampaignAsStaff(
   authContext: AuthorizationContext,
-  campaign: CampaignAccessSubject & { id: string },
+  campaign: CampaignAccessSubject & { id: string; name?: string },
 ): Promise<boolean> {
   if (!canAccessCampaignRecord(authContext, campaign)) {
     return false;
   }
   if (authContext.hierarchy.primaryRole === "Team Lead") {
+    // Do Not Disturb is a system holding campaign — Team Leads in the manager
+    // book may open it without being enrolled as members.
+    if (campaign.name && isDoNotDisturbCampaignName(campaign.name)) {
+      return true;
+    }
     return teamLeadHasCampaignMembership(authContext, campaign);
   }
   return true;
@@ -100,15 +105,20 @@ export async function assertCanAccessCampaignAsStaff(
  * Narrow a campaign list to those the actor may open (Team Lead membership).
  * Admin / Manager lists are returned unchanged.
  */
-export async function filterCampaignsForStaffAccess<T extends CampaignAccessSubject & { id: string }>(
-  authContext: AuthorizationContext,
-  campaigns: T[],
-): Promise<T[]> {
+export async function filterCampaignsForStaffAccess<
+  T extends CampaignAccessSubject & { id: string; name?: string },
+>(authContext: AuthorizationContext, campaigns: T[]): Promise<T[]> {
   if (authContext.hierarchy.primaryRole !== "Team Lead") {
     return campaigns;
   }
   const kept: T[] = [];
   for (const campaign of campaigns) {
+    if (campaign.name && isDoNotDisturbCampaignName(campaign.name)) {
+      if (assertOwnsManagerData(authContext.hierarchy, campaign.ownerManagerId)) {
+        kept.push(campaign);
+      }
+      continue;
+    }
     if (await teamLeadHasCampaignMembership(authContext, campaign)) {
       kept.push(campaign);
     }

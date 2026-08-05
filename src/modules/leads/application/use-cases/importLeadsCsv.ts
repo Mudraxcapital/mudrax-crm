@@ -37,6 +37,7 @@ import {
   type DuplicateMatchMode,
   type DuplicateResolutionMode,
 } from "./detectImportDuplicates";
+import { isDoNotDisturbStageName } from "../lib/doNotDisturbPolicy";
 import { previewLeadDistribution } from "./previewLeadDistribution";
 import { makeChangeLeadStage } from "./changeLeadStage";
 
@@ -170,6 +171,42 @@ async function listLeadsForImportDedup(
   return [...byId.values()];
 }
 
+/**
+ * Campaign-scoped import still must see org hierarchy DND leads so they are
+ * always skipped (they live in the Do Not Disturb campaign).
+ */
+async function listLeadsForImportDedupIncludingDnd(
+  leadRepository: LeadRepository,
+  organizationId: string,
+  input: {
+    baseFilter?: ListLeadsFilter;
+    phoneSnapshots: string[];
+    emailSnapshots: string[];
+    dndStageId: string | null;
+  },
+) {
+  const scoped = await listLeadsForImportDedup(leadRepository, organizationId, {
+    baseFilter: input.baseFilter,
+    phoneSnapshots: input.phoneSnapshots,
+    emailSnapshots: input.emailSnapshots,
+  });
+  if (!input.dndStageId) return scoped;
+
+  const { campaignId: _campaignId, ...withoutCampaign } = input.baseFilter ?? {};
+  const dndLeads = await listLeadsForImportDedup(leadRepository, organizationId, {
+    baseFilter: {
+      ...withoutCampaign,
+      currentStageId: input.dndStageId,
+    },
+    phoneSnapshots: input.phoneSnapshots,
+    emailSnapshots: input.emailSnapshots,
+  });
+
+  const byId = new Map(scoped.map((lead) => [lead.id, lead]));
+  for (const lead of dndLeads) byId.set(lead.id, lead);
+  return [...byId.values()];
+}
+
 /** Expand a phone into common CRM storage variants for targeted dedup queries. */
 function phoneLookupVariants(phone: string): string[] {
   const trimmed = phone.trim();
@@ -235,7 +272,11 @@ export function makeImportLeadsCsv(
   noteRepository: LeadNoteRepository,
   fieldRepository: LeadFieldDefinitionRepository,
 ) {
-  const changeLeadStage = makeChangeLeadStage(leadRepository, catalogRepository);
+  const changeLeadStage = makeChangeLeadStage(
+    leadRepository,
+    catalogRepository,
+    noteRepository,
+  );
 
   return async function importLeadsCsv(command: {
     organizationId: string;
@@ -365,11 +406,18 @@ export function makeImportLeadsCsv(
       for (const variant of phoneLookupVariants(phone)) phoneSnapshots.add(variant);
       if (email) emailSnapshots.add(email);
     }
-    const existingLeads = await listLeadsForImportDedup(leadRepository, organizationId, {
-      baseFilter: command.existingLeadsFilter,
-      phoneSnapshots: [...phoneSnapshots],
-      emailSnapshots: [...emailSnapshots],
-    });
+    const dndStage =
+      productionStages.find((stage) => isDoNotDisturbStageName(stage.name)) ?? null;
+    const existingLeads = await listLeadsForImportDedupIncludingDnd(
+      leadRepository,
+      organizationId,
+      {
+        baseFilter: command.existingLeadsFilter,
+        phoneSnapshots: [...phoneSnapshots],
+        emailSnapshots: [...emailSnapshots],
+        dndStageId: dndStage?.id ?? null,
+      },
+    );
     const classifications = classifyImportDuplicates({
       rows: tableRows.map((row, index) => ({
         rowNumber: index + 1,
@@ -418,6 +466,8 @@ export function makeImportLeadsCsv(
       const classification = classByRow.get(index + 1);
       const isDup =
         classification?.category === "exact" || classification?.category === "possible";
+      // DND matches are never re-imported.
+      if (classification?.isDnd) continue;
       if (isDup && duplicateResolution === "skip_duplicates") continue;
       if (isDup && (duplicateResolution === "update_existing" || duplicateResolution === "merge")) {
         continue; // handled as update path, not new create
@@ -453,6 +503,10 @@ export function makeImportLeadsCsv(
     });
 
     const strategy = input.distributionStrategy;
+    const percentages =
+      strategy === "MANUAL" && input.percentages && Object.keys(input.percentages).length > 0
+        ? input.percentages
+        : undefined;
     const distribution =
       strategy && distributionAgents.length > 0
         ? previewLeadDistribution({
@@ -460,6 +514,7 @@ export function makeImportLeadsCsv(
             strategy,
             agents: distributionAgents,
             manualAssigneeUserId: input.manualAssigneeUserId,
+            percentages,
           })
         : null;
 
@@ -473,10 +528,10 @@ export function makeImportLeadsCsv(
       }
     }
 
-    // Updates / merges also receive agents via round-robin over selected agents.
+    // Updates / merges also receive agents via the same distribution strategy.
     const updateAssigneeByRowIndex = new Map<number, string>();
     if (selectedAgentIds.length > 0) {
-      let cursor = 0;
+      const updateIndexes: number[] = [];
       for (let index = 0; index < tableRows.length; index++) {
         const classification = classByRow.get(index + 1);
         const isDup =
@@ -485,12 +540,34 @@ export function makeImportLeadsCsv(
           isDup &&
           (duplicateResolution === "update_existing" || duplicateResolution === "merge")
         ) {
-          const agentId =
-            input.distributionStrategy === "MANUAL" && input.manualAssigneeUserId
-              ? input.manualAssigneeUserId
-              : selectedAgentIds[cursor % selectedAgentIds.length]!;
-          updateAssigneeByRowIndex.set(index, agentId);
-          cursor += 1;
+          updateIndexes.push(index);
+        }
+      }
+
+      if (updateIndexes.length > 0) {
+        if (strategy === "MANUAL" && percentages && distributionAgents.length > 0) {
+          const updateDistribution = previewLeadDistribution({
+            leadCount: updateIndexes.length,
+            strategy: "MANUAL",
+            agents: distributionAgents,
+            percentages,
+          });
+          for (const assignment of updateDistribution.assignments) {
+            const sourceIndex = updateIndexes[assignment.rowIndex];
+            if (sourceIndex != null) {
+              updateAssigneeByRowIndex.set(sourceIndex, assignment.userId);
+            }
+          }
+        } else {
+          let cursor = 0;
+          for (const index of updateIndexes) {
+            const agentId =
+              strategy === "MANUAL" && input.manualAssigneeUserId
+                ? input.manualAssigneeUserId
+                : selectedAgentIds[cursor % selectedAgentIds.length]!;
+            updateAssigneeByRowIndex.set(index, agentId);
+            cursor += 1;
+          }
         }
       }
     }
@@ -512,6 +589,9 @@ export function makeImportLeadsCsv(
       input.sheetName ? `Sheet: ${input.sheetName}` : null,
       `Duplicate detection based on: ${classifications.matchLabel}`,
       `Duplicate resolution: ${duplicateResolution}`,
+      classifications.dndSkipCount > 0
+        ? `Already DND in CRM (skipped): ${classifications.dndSkipCount}`
+        : null,
       selectedStageIds.size > 0 ? `Selected statuses: ${selectedStageIds.size}` : null,
       strategy ? `Distribution: ${strategy}` : null,
       selectedAgentIds.length > 0 ? `Agents: ${selectedAgentIds.length}` : null,
@@ -630,6 +710,21 @@ export function makeImportLeadsCsv(
         }
 
         try {
+          // Do Not Disturb matches are always skipped — never replace/update/reimport.
+          if (classification?.isDnd) {
+            duplicateRowCount += 1;
+            skippedDuplicateCount += 1;
+            importRows.push({
+              importBatchId: batch.id,
+              rowNumber,
+              rawData: row,
+              parseStatus: "INVALID" as const,
+              parseErrors: ["Already Do Not Disturb in CRM — skipped"],
+              resolvedCustomerId: classification.existingCustomerId ?? null,
+            });
+            continue;
+          }
+
           // Replace mode only re-imports checked CRM statuses — skip everything else.
           if (duplicateResolution === "replace_selected_statuses") {
             const stageId = classification?.existingStageId;
@@ -705,21 +800,12 @@ export function makeImportLeadsCsv(
                       input: {
                         stageId: lostStage.id,
                         lostReasonId: replaceLostReason.id,
+                        note: `Replaced via import from ${input.sourceFileName} row ${rowNumber} (closed before re-import as Fresh).`,
                       },
                       actor,
                       correlationId: batch.id,
                     });
                     replacedCount += 1;
-                    if (actor.actorId) {
-                      await noteRepository.createWithAudit(
-                        {
-                          leadId: existingLeadId,
-                          authorUserId: actor.actorId,
-                          body: `Replaced via import from ${input.sourceFileName} row ${rowNumber} (closed before re-import as Fresh).`,
-                        },
-                        actor,
-                      );
-                    }
                   } catch (closeError) {
                     if (!(closeError instanceof LeadAlreadyClosedError)) {
                       throw closeError;
@@ -743,21 +829,12 @@ export function makeImportLeadsCsv(
                     input: {
                       stageId: lostStage.id,
                       lostReasonId: archiveLostReason.id,
+                      note: `Archived via import from ${input.sourceFileName} row ${rowNumber} (history retained).`,
                     },
                     actor,
                     correlationId: batch.id,
                   });
                   archivedCount += 1;
-                  if (actor.actorId) {
-                    await noteRepository.createWithAudit(
-                      {
-                        leadId: existingLeadId,
-                        authorUserId: actor.actorId,
-                        body: `Archived via import from ${input.sourceFileName} row ${rowNumber} (history retained).`,
-                      },
-                      actor,
-                    );
-                  }
                 } catch (closeError) {
                   if (!(closeError instanceof LeadAlreadyClosedError)) {
                     throw closeError;
@@ -1141,18 +1218,24 @@ export function makePreviewImportDuplicates(
       };
     });
 
-    const [existingLeads, stages] = await Promise.all([
-      listLeadsForImportDedup(leadRepository, organizationId, {
-        baseFilter: command.existingLeadsFilter,
-        phoneSnapshots: [...phoneSnapshots],
-        emailSnapshots: [...emailSnapshots],
-      }),
-      catalogRepository.listStages(organizationId),
-    ]);
+    const stages = await catalogRepository.listStages(organizationId);
     const productionStages = stages.filter(
       (stage) => !/^integration\s*test/i.test(stage.name.trim()),
     );
     const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+    const dndStage =
+      productionStages.find((stage) => isDoNotDisturbStageName(stage.name)) ?? null;
+
+    const existingLeads = await listLeadsForImportDedupIncludingDnd(
+      leadRepository,
+      organizationId,
+      {
+        baseFilter: command.existingLeadsFilter,
+        phoneSnapshots: [...phoneSnapshots],
+        emailSnapshots: [...emailSnapshots],
+        dndStageId: dndStage?.id ?? null,
+      },
+    );
 
     return classifyImportDuplicates({
       rows: candidates,

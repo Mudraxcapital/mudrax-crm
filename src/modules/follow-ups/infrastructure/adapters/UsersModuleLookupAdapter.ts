@@ -5,7 +5,7 @@
 // the only file in `follow-ups` allowed to import from `users` (ADR 0001).
 // ============================================================================
 
-import { getUserScopeContext, getUserSummary } from "@/modules/users";
+import { getUserScopeContext, getUserSummary, listUsersByRole } from "@/modules/users";
 import type {
   UserHierarchyLookup,
   UserLookupPort,
@@ -28,5 +28,14 @@ export class UsersModuleLookupAdapter implements UserLookupPort {
       assignedTeamLeadId: scope.assignedTeamLeadId,
       reportingManagerId: scope.reportingManagerId,
     };
+  }
+
+  async listActiveAdminIds(organizationId: string): Promise<string[]> {
+    const admins = await listUsersByRole("Admin");
+    return admins
+      .filter(
+        (user) => user.organizationId === organizationId && user.status === "ACTIVE",
+      )
+      .map((user) => user.id);
   }
 }

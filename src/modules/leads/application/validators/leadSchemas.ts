@@ -53,6 +53,12 @@ export const updateLeadSchema = z.object({
 export const changeLeadStageSchema = z.object({
   stageId: uuidSchema,
   lostReasonId: uuidSchema.optional(),
+  /** Required by the use-case when the target stage is Closed-Lost or Do Not Disturb. */
+  note: z
+    .string()
+    .trim()
+    .max(4000, "Note is too long.")
+    .optional(),
 });
 
 export const assignLeadSchema = z.object({

@@ -55,10 +55,11 @@ export interface Provider {
 
 /** Default Null-adapter provider type per sendable channel (schema enum has no NULL value). */
 export function defaultNullProviderType(
-  channelType: "EMAIL" | "SMS" | "WHATSAPP",
+  channelType: "EMAIL" | "SMS" | "WHATSAPP" | "IN_APP",
 ): NotificationProviderType {
   if (channelType === "EMAIL") return "SENDGRID";
   if (channelType === "SMS") return "TWILIO";
+  if (channelType === "IN_APP") return "FIREBASE";
   return "META_WHATSAPP";
 }
 

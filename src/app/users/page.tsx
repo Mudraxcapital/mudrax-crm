@@ -27,17 +27,18 @@ export default async function UsersPage() {
   const hierarchy = authContext.hierarchy;
   const visibleIds = hierarchy.visibleUserIds;
 
-  const creatableRoles = rolesActorMayCreate(
-    authContext.roles.map((role) => role.name),
-    hierarchy,
-  );
-
   const [users, teamLeads, managers, admins] = await Promise.all([
     listUsers({ userIds: visibleIds ?? undefined }),
     listUsersByRole("Team Lead"),
     listUsersByRole("Manager"),
     listUsersByRole("Admin"),
   ]);
+
+  // System allows exactly one Admin — hide the role once that slot is filled.
+  const creatableRoles = rolesActorMayCreate(
+    authContext.roles.map((role) => role.name),
+    hierarchy,
+  ).filter((role) => role !== "Admin" || admins.length === 0);
 
   const leadCounts =
     canDelete && users.length > 0

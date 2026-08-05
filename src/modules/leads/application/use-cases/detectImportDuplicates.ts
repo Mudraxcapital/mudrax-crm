@@ -6,6 +6,8 @@
 // duplicates by current CRM Lead Stage (never hardcoded statuses).
 // ============================================================================
 
+import { isDoNotDisturbStageName } from "../lib/doNotDisturbPolicy";
+
 export type DuplicateMatchMode = "phone" | "email" | "phone_name" | "phone_or_email";
 
 export type DuplicateCategory = "new" | "possible" | "exact";
@@ -64,6 +66,8 @@ export interface DuplicateClassification {
   existingStageId: string | null;
   existingStageName: string | null;
   existingUpdatedAt: string | null;
+  /** True when the CRM match is already Do Not Disturb — always skipped on import. */
+  isDnd: boolean;
   name: string;
   phone: string;
   email: string;
@@ -86,6 +90,11 @@ export interface DuplicateDetectionSummary {
   alreadyExisting: number;
   /** Rows that repeat an earlier phone/email inside the same Excel file. */
   inFileDuplicateCount: number;
+  /**
+   * CRM matches already marked Do Not Disturb — always skipped on import
+   * regardless of duplicate resolution strategy.
+   */
+  dndSkipCount: number;
   newLeadCount: number;
   newLeads: DuplicateClassification[];
   possibleDuplicates: DuplicateClassification[];
@@ -262,6 +271,9 @@ export function classifyImportDuplicates(input: {
     if (phone) seenPhonesInFile.add(phone);
     if (email) seenEmailsInFile.add(email);
 
+    const isDnd =
+      origin === "crm" && Boolean(match && isDoNotDisturbStageName(match.currentStageName));
+
     const entry: DuplicateClassification = {
       rowNumber: row.rowNumber,
       category,
@@ -272,6 +284,7 @@ export function classifyImportDuplicates(input: {
       existingStageId: match?.currentStageId ?? null,
       existingStageName: match?.currentStageName ?? null,
       existingUpdatedAt: match?.updatedAt.toISOString() ?? null,
+      isDnd,
       name: row.name,
       phone: row.phone,
       email: row.email,
@@ -293,6 +306,7 @@ export function classifyImportDuplicates(input: {
     totalRows: input.rows.length,
     alreadyExisting: crmDuplicates.length,
     inFileDuplicateCount: inFileDuplicates.length,
+    dndSkipCount: crmDuplicates.filter((row) => row.isDnd).length,
     newLeadCount: newLeads.length,
     newLeads,
     possibleDuplicates,

@@ -116,7 +116,7 @@ What this does:
 2. Starts **Postgres** + **Redis** via Docker Compose  
 3. Waits until Postgres is healthy  
 4. Runs `prisma generate`  
-5. Starts Next.js on [http://localhost:3000](http://localhost:3000)
+5. Starts Next.js on [http://mudrax.crm:3000](http://mudrax.crm:3000) (same app as localhost; see hosts note below)
 
 **First time only — apply schema and seed users:**
 
@@ -152,8 +152,13 @@ npm run dev
 
 | URL | Purpose |
 | --- | --- |
-| [http://localhost:3000](http://localhost:3000) | Web CRM |
-| [http://localhost:3000/login](http://localhost:3000/login) | Sign in with seeded Admin / role users |
+| [http://mudrax.crm:3000](http://mudrax.crm:3000) | Web CRM (canonical local hostname) |
+| [http://mudrax.crm:3000/login](http://mudrax.crm:3000/login) | Sign in with seeded Admin / role users |
+| `http://localhost:3000` | Same app (fallback if hosts entry is missing) |
+
+**Hostname:** Map `mudrax.crm` → `127.0.0.1` in your OS hosts file (Windows:
+`C:\Windows\System32\drivers\etc\hosts`). Production keeps the same name as
+`https://mudrax.crm` via company DNS + Nginx TLS — see `deploy/env/`.
 
 ### 6) Everyday commands
 

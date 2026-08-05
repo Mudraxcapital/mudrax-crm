@@ -15,6 +15,10 @@ export interface Lead {
   lostReasonId: string | null;
   campaignId: string | null;
   currentAssigneeUserId: string | null;
+  /** Original assignee while a temporary cover is active. */
+  permanentAssigneeUserId: string | null;
+  /** When the temporary cover expires (null = not temporary). */
+  temporaryAssigneeUntil: Date | null;
   ownerManagerId: string | null;
   ownerTeamLeadId: string | null;
   fullNameSnapshot: string;

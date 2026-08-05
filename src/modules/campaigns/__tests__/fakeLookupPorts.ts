@@ -11,6 +11,22 @@ import type {
   LeadAssignmentPort,
 } from "../application/ports/LeadAssignmentPort";
 
+export function fakeLeadSummary(
+  partial: Partial<LeadAssignmentLookupSummary> &
+    Pick<LeadAssignmentLookupSummary, "id" | "organizationId">,
+): LeadAssignmentLookupSummary {
+  return {
+    currentAssigneeUserId: null,
+    permanentAssigneeUserId: null,
+    temporaryAssigneeUntil: null,
+    isTemporaryAssignee: false,
+    currentStageBucket: "INITIAL",
+    wonAt: null,
+    lostAt: null,
+    ...partial,
+  };
+}
+
 export class FakeUserLookupPort implements UserLookupPort {
   users = new Map<string, UserLookupSummary>();
 
@@ -27,6 +43,13 @@ export class FakeLeadAssignmentPort implements LeadAssignmentPort {
     actorId: string | null;
     campaignAssignmentId: string;
   }[] = [];
+  tempAssignCalls: {
+    leadId: string;
+    assignedToUserId: string;
+    durationDays: number;
+    actorId: string | null;
+  }[] = [];
+  revertTempCalls: { leadId: string; actorId: string | null }[] = [];
   failFor = new Set<string>();
 
   async findById(leadId: string): Promise<LeadAssignmentLookupSummary | null> {
@@ -51,5 +74,57 @@ export class FakeLeadAssignmentPort implements LeadAssignmentPort {
       throw new Error(`Simulated assignment failure for Lead ${leadId}`);
     }
     this.assignCalls.push({ leadId, assignedToUserId, actorId, campaignAssignmentId });
+    const existing = this.leads.get(leadId);
+    if (existing) {
+      this.leads.set(leadId, {
+        ...existing,
+        currentAssigneeUserId: assignedToUserId,
+        permanentAssigneeUserId: null,
+        temporaryAssigneeUntil: null,
+        isTemporaryAssignee: false,
+      });
+    }
+  }
+
+  async temporarilyAssign(
+    leadId: string,
+    assignedToUserId: string,
+    durationDays: number,
+    actorId: string | null,
+  ): Promise<void> {
+    if (this.failFor.has(leadId)) {
+      throw new Error(`Simulated assignment failure for Lead ${leadId}`);
+    }
+    this.tempAssignCalls.push({ leadId, assignedToUserId, durationDays, actorId });
+    const existing = this.leads.get(leadId);
+    if (existing) {
+      const until = new Date();
+      until.setUTCDate(until.getUTCDate() + durationDays);
+      this.leads.set(leadId, {
+        ...existing,
+        permanentAssigneeUserId:
+          existing.permanentAssigneeUserId ?? existing.currentAssigneeUserId,
+        currentAssigneeUserId: assignedToUserId,
+        temporaryAssigneeUntil: until.toISOString(),
+        isTemporaryAssignee: true,
+      });
+    }
+  }
+
+  async revertTemporary(leadId: string, actorId: string | null): Promise<void> {
+    if (this.failFor.has(leadId)) {
+      throw new Error(`Simulated assignment failure for Lead ${leadId}`);
+    }
+    this.revertTempCalls.push({ leadId, actorId });
+    const existing = this.leads.get(leadId);
+    if (existing?.permanentAssigneeUserId) {
+      this.leads.set(leadId, {
+        ...existing,
+        currentAssigneeUserId: existing.permanentAssigneeUserId,
+        permanentAssigneeUserId: null,
+        temporaryAssigneeUntil: null,
+        isTemporaryAssignee: false,
+      });
+    }
   }
 }

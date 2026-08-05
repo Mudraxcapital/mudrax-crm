@@ -25,4 +25,6 @@ export interface UserLookupPort {
   findById(userId: string): Promise<UserLookupSummary | null>;
   /** Optional — background escalation jobs resolve TL/Manager via hierarchy. */
   findHierarchy?(userId: string): Promise<UserHierarchyLookup | null>;
+  /** Optional — second-level escalation notifies active Admins. */
+  listActiveAdminIds?(organizationId: string): Promise<string[]>;
 }

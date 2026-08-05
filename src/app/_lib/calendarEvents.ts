@@ -53,8 +53,8 @@ export async function listCalendarEvents(
           assignedToUserIds,
           scheduledFrom: range.from,
           scheduledTo: range.to,
-          // Month-scoped query — high ceiling for dense books, not a silent drop.
-          limit: 50_000,
+          // Month-scoped query — capped to keep Admin calendars responsive.
+          limit: 5_000,
         })
       : Promise.resolve([]),
     includeCalls
@@ -63,7 +63,7 @@ export async function listCalendarEvents(
           initiatedTo: range.to,
           agentUserId,
           agentUserIds,
-          limit: 50_000,
+          limit: 5_000,
         })
       : Promise.resolve([]),
     includeDeadlines
@@ -73,7 +73,7 @@ export async function listCalendarEvents(
           hasNextAction: true,
           nextActionFrom: range.from,
           nextActionTo: range.to,
-          limit: 50_000,
+          limit: 5_000,
         })
       : Promise.resolve([]),
   ]);
